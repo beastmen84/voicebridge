@@ -198,10 +198,13 @@ class TtsWorkflowMixin:
     def update_local_tts_model_status(self):
         if not hasattr(self, "local_tts_model_status"):
             return
-        if local_tts_model_ready():
-            self.local_tts_model_status.setText(f"XTTS-v2 model ready: {local_tts_model_cache_dir()}")
+        model_ready = local_tts_model_ready()
+        if model_ready:
+            self.local_tts_model_status.setText("XTTS-v2 model ready.")
         else:
             self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
+        if hasattr(self, "tts_download_model_button"):
+            self.tts_download_model_button.setVisible(not model_ready)
         self.update_tts_button_state()
 
     def update_tts_engine_ui(self):

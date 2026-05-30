@@ -1,5 +1,7 @@
 from voicebridge.voice_profiles import VOICE_PROFILE_LANGUAGES
 
+VOICE_PROFILE_RECORDING_BREAK_MARKS = ".!?;؟؛。！？।"
+
 VOICE_PROFILE_RECORDING_SCRIPTS = {
     "it": (
         "Oggi registriamo una voce chiara, naturale e costante. Prima leggo piano, poi con più energia: "
@@ -111,6 +113,28 @@ VOICE_PROFILE_RECORDING_SCRIPTS = {
 
 def voice_profile_recording_script(language_code: str) -> str:
     return VOICE_PROFILE_RECORDING_SCRIPTS.get(language_code, VOICE_PROFILE_RECORDING_SCRIPTS["en"])
+
+
+def voice_profile_recording_script_for_display(language_code: str) -> str:
+    return format_voice_profile_recording_script(voice_profile_recording_script(language_code))
+
+
+def format_voice_profile_recording_script(script: str) -> str:
+    normalized_script = " ".join(script.split())
+    lines: list[str] = []
+    current: list[str] = []
+    for character in normalized_script:
+        current.append(character)
+        if character in VOICE_PROFILE_RECORDING_BREAK_MARKS:
+            line = "".join(current).strip()
+            if line:
+                lines.append(line)
+            current = []
+
+    remainder = "".join(current).strip()
+    if remainder:
+        lines.append(remainder)
+    return "\n\n".join(lines)
 
 
 def voice_profile_recording_script_languages() -> set[str]:

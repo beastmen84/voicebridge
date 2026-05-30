@@ -4,6 +4,7 @@ from voicebridge.voice_profile_recording_dialog import build_recording_quality_d
 from voicebridge.voice_profile_scripts import (
     VOICE_PROFILE_RECORDING_SCRIPTS,
     voice_profile_recording_script,
+    voice_profile_recording_script_for_display,
     voice_profile_recording_script_languages,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_LANGUAGES
@@ -26,6 +27,15 @@ def test_recording_scripts_cover_all_profile_languages() -> None:
 
 def test_unknown_recording_script_falls_back_to_english() -> None:
     assert voice_profile_recording_script("unknown") == VOICE_PROFILE_RECORDING_SCRIPTS["en"]
+
+
+def test_recording_script_display_uses_reading_breaks() -> None:
+    for language_code in VOICE_PROFILE_LANGUAGES:
+        display_script = voice_profile_recording_script_for_display(language_code)
+        lines = display_script.split("\n\n")
+        assert len(lines) >= 4
+        assert all(line.strip() == line for line in lines)
+        assert all(line for line in lines)
 
 
 def test_recording_quality_details_include_cleanup_metrics() -> None:

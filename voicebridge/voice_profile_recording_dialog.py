@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from voicebridge.audio_recorder import AudioRecorderError, SoundDevicePcmRecorder, select_input_settings
 from voicebridge.languages import language_name
-from voicebridge.voice_profile_scripts import voice_profile_recording_script
+from voicebridge.voice_profile_scripts import voice_profile_recording_script_for_display
 from voicebridge.voice_profiles import voice_profile_recording_path
 from voicebridge.wav_writer import (
     Pcm16ProcessingResult,
@@ -120,7 +120,7 @@ class VoiceProfileRecordingDialog(QDialog):
         self.script_box.setObjectName("RecordingScript")
         self.script_box.setReadOnly(True)
         self.script_box.setFont(QFont("Segoe UI", 15))
-        self.script_box.setPlainText(voice_profile_recording_script(language_code))
+        self.script_box.setPlainText(voice_profile_recording_script_for_display(language_code))
         self.script_box.setMinimumHeight(320)
         layout.addWidget(self.script_box, 1)
 

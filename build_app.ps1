@@ -39,6 +39,8 @@ try {
         --windowed `
         --icon (Join-Path $PSScriptRoot "images\file_to_mp3.ico") `
         --add-data "$PSScriptRoot\images;images" `
+        --hidden-import sounddevice `
+        --collect-all _sounddevice_data `
         --name VoiceBridge `
         (Join-Path $PSScriptRoot "voicebridge_qt.py")
     if ($LASTEXITCODE -ne 0) {

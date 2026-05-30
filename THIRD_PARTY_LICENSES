@@ -16,6 +16,9 @@ PySide6 / shiboken6     LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
                                                                  https://pyside.org
 python-docx             MIT                                      https://github.com/python-openxml/python-docx
 pypdf                   BSD-3-Clause                             https://github.com/py-pdf/pypdf
+sounddevice             MIT                                      https://github.com/spatialaudio/python-sounddevice
+cffi                    MIT                                      https://foss.heptapod.net/pypy/cffi
+pycparser               BSD-3-Clause                             https://github.com/eliben/pycparser
 pywin32                 PSF                                      https://github.com/mhammond/pywin32
 
 Optional OCR dependencies

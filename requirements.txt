@@ -4,4 +4,5 @@ langdetect
 PySide6
 python-docx
 pypdf
+sounddevice
 pywin32; platform_system == "Windows"

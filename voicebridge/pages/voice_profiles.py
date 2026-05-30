@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtMultimedia import QAudioFormat, QAudioOutput, QAudioSource, QMediaDevices, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,6 +18,12 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
+from voicebridge.audio_recorder import (
+    AudioRecorderError,
+    SoundDevicePcmRecorder,
+    list_input_devices,
+    select_input_settings,
+)
 from voicebridge.languages import language_name
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
@@ -142,38 +148,30 @@ class VoiceProfilesWorkflowMixin:
     def refresh_voice_profile_microphones(self) -> None:
         if not hasattr(self, "profile_microphone_combo"):
             return
-        current_description = self.profile_microphone_combo.currentText()
-        devices = QMediaDevices.audioInputs()
+        current_device_index = self.profile_microphone_combo.currentData(Qt.ItemDataRole.UserRole)
         self.profile_microphone_combo.blockSignals(True)
         try:
             self.profile_microphone_combo.clear()
-            for index, device in enumerate(devices):
-                self.profile_microphone_combo.addItem(device.description(), index)
-            if current_description:
-                self.profile_microphone_combo.setCurrentText(current_description)
+            try:
+                devices = list_input_devices()
+            except AudioRecorderError as exc:
+                self.profile_record_status_label.setText(str(exc))
+                devices = []
+            for device in devices:
+                default_suffix = " | default" if device.is_default else ""
+                label = f"{device.name} | {device.host_api}{default_suffix}"
+                self.profile_microphone_combo.addItem(label, device.index)
+                if device.index == current_device_index:
+                    self.profile_microphone_combo.setCurrentIndex(self.profile_microphone_combo.count() - 1)
+            if not devices:
+                self.profile_record_status_label.setText("No microphone input was detected by sounddevice.")
         finally:
             self.profile_microphone_combo.blockSignals(False)
         self.update_voice_profile_buttons()
 
-    def selected_voice_profile_audio_device(self):
-        devices = QMediaDevices.audioInputs()
+    def selected_voice_profile_audio_device(self) -> int | None:
         device_index = self.profile_microphone_combo.currentData(Qt.ItemDataRole.UserRole)
-        if isinstance(device_index, int) and 0 <= device_index < len(devices):
-            return devices[device_index]
-        if devices:
-            return devices[0]
-        return None
-
-    @staticmethod
-    def voice_profile_recording_format(device) -> QAudioFormat:
-        for sample_rate in (VOICE_PROFILE_RECORD_SAMPLE_RATE, 48_000, 44_100, 22_050, 16_000):
-            audio_format = QAudioFormat()
-            audio_format.setSampleRate(sample_rate)
-            audio_format.setChannelCount(VOICE_PROFILE_RECORD_CHANNELS)
-            audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-            if device.isFormatSupported(audio_format):
-                return audio_format
-        raise ValueError("The selected microphone does not support PCM WAV recording.")
+        return device_index if isinstance(device_index, int) else None
 
     def start_voice_profile_recording(self) -> None:
         if self.voice_profile_is_recording():
@@ -186,34 +184,24 @@ class VoiceProfilesWorkflowMixin:
             self.show_error("Voice Profiles", "No microphone input was detected.")
             return
         try:
-            audio_format = self.voice_profile_recording_format(device)
-        except ValueError as exc:
+            settings = select_input_settings(
+                device,
+                preferred_sample_rate=VOICE_PROFILE_RECORD_SAMPLE_RATE,
+                channel_count=VOICE_PROFILE_RECORD_CHANNELS,
+            )
+            recorder = SoundDevicePcmRecorder(device, settings)
+            recorder.start()
+        except AudioRecorderError as exc:
             self.show_error("Voice Profiles", str(exc))
             return
 
-        self.profile_record_buffer = bytearray()
-        self.profile_record_format = audio_format
+        self.profile_record_format = settings
         self.profile_record_path = voice_profile_recording_path(self.profile_name_edit.text())
         self.profile_record_started_at = time.monotonic()
-        self.profile_record_source = QAudioSource(device, audio_format, self)
-        self.profile_record_io = self.profile_record_source.start()
-        if self.profile_record_io is None:
-            self.profile_record_source = None
-            self.show_error("Voice Profiles", "Could not start microphone recording.")
-            self.update_voice_profile_buttons()
-            return
-        self.profile_record_io.readyRead.connect(self.read_voice_profile_recording_data)
+        self.profile_record_source = recorder
         self.profile_record_timer.start(200)
         self.profile_record_status_label.setText("Recording... 00:00 / 00:30")
         self.update_voice_profile_buttons()
-
-    def read_voice_profile_recording_data(self) -> None:
-        record_io = getattr(self, "profile_record_io", None)
-        if record_io is None:
-            return
-        data = record_io.readAll()
-        if data:
-            self.profile_record_buffer.extend(bytes(data))
 
     def voice_profile_is_recording(self) -> bool:
         return getattr(self, "profile_record_source", None) is not None
@@ -239,17 +227,21 @@ class VoiceProfilesWorkflowMixin:
     def stop_voice_profile_recording(self, auto_stopped: bool = False) -> None:
         if not self.voice_profile_is_recording():
             return
-        self.read_voice_profile_recording_data()
-        source = self.profile_record_source
+        recorder = self.profile_record_source
         self.profile_record_timer.stop()
         self.profile_record_source = None
-        self.profile_record_io = None
-        source.stop()
+        try:
+            recorder.stop()
+        except AudioRecorderError as exc:
+            self.profile_record_status_label.setText("Recording failed.")
+            self.show_error("Voice Profiles", str(exc))
+            self.update_voice_profile_buttons()
+            return
 
-        audio_format = self.profile_record_format
-        sample_rate = audio_format.sampleRate()
-        channel_count = audio_format.channelCount()
-        pcm_data = trim_pcm16_to_frames(bytes(self.profile_record_buffer), channel_count)
+        settings = self.profile_record_format
+        sample_rate = settings.sample_rate
+        channel_count = settings.channel_count
+        pcm_data = trim_pcm16_to_frames(recorder.read_pcm(), channel_count)
         recording = prepare_voice_reference_pcm(pcm_data, sample_rate, channel_count)
         duration = recording.duration_seconds
         try:
@@ -264,7 +256,9 @@ class VoiceProfilesWorkflowMixin:
             return
 
         self.profile_reference_picker.set_text(str(self.profile_record_path))
-        cleanup_message = f" {' '.join(recording.messages)}" if recording.messages else ""
+        recorder_messages = recorder.status_messages
+        cleanup_messages = (*recording.messages, *recorder_messages)
+        cleanup_message = f" {' '.join(cleanup_messages)}" if cleanup_messages else ""
         if duration < VOICE_PROFILE_RECORD_MIN_SECONDS:
             message = f"Recorded {duration:.1f}s. Use at least 10s for better cloning.{cleanup_message}"
         elif duration < VOICE_PROFILE_RECORD_TARGET_SECONDS:
@@ -420,8 +414,6 @@ class VoiceProfilesWorkflowMixin:
         self.profile_record_timer = QTimer(self)
         self.profile_record_timer.timeout.connect(self.update_voice_profile_recording_timer)
         self.profile_record_source = None
-        self.profile_record_io = None
-        self.profile_record_buffer = bytearray()
         self.profile_record_format = None
         self.profile_record_path = None
         self.profile_record_started_at = 0.0
@@ -479,7 +471,7 @@ class VoiceProfilesWorkflowMixin:
         grid.setColumnStretch(1, 2)
         layout.addStretch(1)
 
+        self.new_voice_profile()
         self.refresh_voice_profiles_list()
         self.refresh_voice_profile_microphones()
-        self.new_voice_profile()
         return page

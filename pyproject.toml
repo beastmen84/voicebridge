@@ -15,3 +15,6 @@ ignore = [
     # Optional/heavy dependencies are imported lazily in OCR/STT helpers.
     "PLC0415",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

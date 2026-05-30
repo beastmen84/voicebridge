@@ -87,8 +87,9 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 3. In alternativa, registrare direttamente dal microfono con `Record` e `Stop`; l'app salva un WAV reference in `voice_profiles`.
 4. Aprire `Text to Speech`.
 5. Selezionare engine `Local TTS`.
-6. Scegliere profilo vocale e device `Auto`, `CPU` o `CUDA`.
-7. Generare l'MP3.
+6. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
+7. Scegliere profilo vocale e device `Auto`, `CPU` o `CUDA`.
+8. Generare l'MP3.
 
 Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
 dopo il download il modello resta disponibile localmente.
@@ -227,7 +228,7 @@ Build completo pulito:
 
 - `requirements-stt.txt` e `requirements-local-tts.txt` non servono al programma a runtime, ma documentano come ricreare il runtime ML.
 - Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
-- Il primo avvio Local TTS puo' scaricare XTTS-v2 e richiede spazio aggiuntivo in `models\coqui`.
+- `Download XTTS-v2` scarica un unico modello multilingua in `models\coqui` e richiede circa 1.8-2.3 GB.
 - Il supporto offline di allineamento incluso e' per inglese e italiano. Altri modelli di allineamento possono essere scaricati su richiesta dalle funzioni SRT.
 - La generazione Edge TTS resta online; Local TTS usa il runtime ML locale.
 - Il README, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.

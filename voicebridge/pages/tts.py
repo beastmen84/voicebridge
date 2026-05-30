@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -32,7 +33,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from voicebridge.app_paths import external_base_dir, local_tts_model_dir, local_tts_worker_path, ml_python_path
+from voicebridge.app_paths import (
+    external_base_dir,
+    local_tts_model_cache_dir,
+    local_tts_model_dir,
+    local_tts_model_ready,
+    local_tts_worker_path,
+    ml_python_path,
+)
 from voicebridge.constants import (
     DEFAULT_RATE,
     DEFAULT_VOICE_SHORT_NAME,
@@ -187,6 +195,15 @@ class TtsWorkflowMixin:
             self.local_voice_profile_status.setText("Create a ready reference profile in Voice Profiles.")
         self.update_tts_button_state()
 
+    def update_local_tts_model_status(self):
+        if not hasattr(self, "local_tts_model_status"):
+            return
+        if local_tts_model_ready():
+            self.local_tts_model_status.setText(f"XTTS-v2 model ready: {local_tts_model_cache_dir()}")
+        else:
+            self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
+        self.update_tts_button_state()
+
     def update_tts_engine_ui(self):
         if not hasattr(self, "tts_engine_combo"):
             return
@@ -200,8 +217,12 @@ class TtsWorkflowMixin:
         if local:
             self.refresh_local_voice_profile_combo()
             self.update_tts_local_device_options()
+            self.update_local_tts_model_status()
             self.refresh_stt_preflight_async()
-            self.tts_status.setText("Local TTS ready. Coqui XTTS must be installed in the ML runtime.")
+            if local_tts_model_ready():
+                self.tts_status.setText("Local TTS ready.")
+            else:
+                self.tts_status.setText("Download XTTS-v2 before Local TTS generation.")
         elif hasattr(self, "tts_status"):
             self.tts_status.setText("Ready.")
         self.update_tts_button_state()
@@ -451,10 +472,16 @@ class TtsWorkflowMixin:
             and not self.input_file_error_message
         )
         if self.tts_engine_key() == "local":
-            ready = common_ready and bool(self.selected_tts_voice_profile())
+            ready = common_ready and bool(self.selected_tts_voice_profile()) and local_tts_model_ready()
         else:
             ready = common_ready and not self.is_loading_voices and bool(self.current_voice_map)
         self.tts_generate_button.setEnabled(ready)
+        if hasattr(self, "tts_download_model_button"):
+            self.tts_download_model_button.setEnabled(
+                common_ready
+                and self.tts_engine_key() == "local"
+                and not local_tts_model_ready()
+            )
         self.tts_cancel_button.setEnabled(self.is_converting and not self.tts_cancel_requested)
         output_ready = bool(self.tts_last_output_path and Path(self.tts_last_output_path).is_file())
         self.tts_open_output_button.setEnabled(output_ready)
@@ -686,6 +713,8 @@ class TtsWorkflowMixin:
             raise ValueError(self.input_file_error_message)
         if not profile:
             raise ValueError("Please create and select a ready voice profile.")
+        if not local_tts_model_ready():
+            raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 first.")
         if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
             raise ValueError("CUDA is not available in the current ML runtime on this machine.")
         self.tts_output_picker.set_text(save_path)
@@ -750,6 +779,107 @@ class TtsWorkflowMixin:
             return
         self.start_tts_busy("Generating multi-voice audio...", percent=True)
         threading.Thread(target=self.multi_voice_conversion_worker, args=(save_path, segments), daemon=True).start()
+
+    def confirm_xtts_model_license(self):
+        answer = QMessageBox.question(
+            self,
+            "Download XTTS-v2",
+            (
+                "XTTS-v2 is a single multilingual model of about 1.8-2.3 GB.\n\n"
+                "The model uses the Coqui Public Model License and is limited to non-commercial use, "
+                "including generated output.\n\n"
+                "Download the model now?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def start_local_tts_model_download(self):
+        if local_tts_model_ready():
+            self.update_local_tts_model_status()
+            self.show_info("Local TTS", "XTTS-v2 model is already downloaded.")
+            return
+        python_path = ml_python_path()
+        worker_path = local_tts_worker_path()
+        if not python_path.is_file():
+            self.tts_status.setText("Local TTS environment missing.")
+            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            return
+        if not worker_path.is_file():
+            self.tts_status.setText("Local TTS worker missing.")
+            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            return
+        if not self.confirm_xtts_model_license():
+            self.tts_status.setText("XTTS-v2 download cancelled.")
+            return
+        self.start_tts_busy("Downloading XTTS-v2 model...", percent=True)
+        threading.Thread(
+            target=self.local_tts_model_download_worker,
+            args=(python_path, worker_path),
+            daemon=True,
+        ).start()
+
+    def local_tts_model_download_worker(self, python_path, worker_path):
+        command = [
+            str(python_path),
+            "-u",
+            str(worker_path),
+            "--download-model",
+            "--accept-license",
+            "--model-dir",
+            str(local_tts_model_dir()),
+        ]
+        recent_output = []
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            process = subprocess.Popen(
+                command,
+                cwd=str(external_base_dir()),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+            )
+            self.tts_process = process
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("PROGRESS: "):
+                    try:
+                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
+                    except ValueError:
+                        continue
+                    self.post(self.update_tts_progress_percent, progress_percent)
+                    continue
+                recent_output.append(line)
+                recent_output = recent_output[-12:]
+                if line.startswith("STATUS: "):
+                    self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
+                if self.tts_cancel_requested and process.poll() is None:
+                    process.terminate()
+            return_code = process.wait()
+            if self.tts_cancel_requested:
+                self.post(self.conversion_cancelled)
+                return
+            if return_code != 0:
+                raise RuntimeError("\n".join(recent_output[-8:]) or f"XTTS-v2 download exited with code {return_code}.")
+            self.post(self.local_tts_model_download_succeeded)
+        except (OSError, RuntimeError, TimeoutError, AssertionError) as exc:
+            self.post(self.conversion_failed, str(exc))
+        finally:
+            self.tts_process = None
+            self.post(self.finish_tts_conversion)
+
+    def local_tts_model_download_succeeded(self):
+        self.tts_status.setText("XTTS-v2 model ready.")
+        self.update_local_tts_model_status()
+        self.show_info("Local TTS", f"XTTS-v2 model downloaded:\n{local_tts_model_cache_dir()}")
 
     def start_local_tts_conversion(self):
         try:
@@ -973,6 +1103,7 @@ class TtsWorkflowMixin:
     def finish_tts_conversion(self):
         self.is_converting = False
         self.tts_progress.hide()
+        self.update_local_tts_model_status()
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
@@ -1124,10 +1255,17 @@ class TtsWorkflowMixin:
         local_device_row.addWidget(QLabel("Device"))
         local_device_row.addWidget(self.tts_local_device_combo)
         local_device_row.addStretch(1)
+        self.local_tts_model_status = QLabel("XTTS-v2 model not downloaded. Required once for all languages.")
+        self.local_tts_model_status.setObjectName("Muted")
+        self.local_tts_model_status.setWordWrap(True)
+        self.tts_download_model_button = QPushButton("Download XTTS-v2")
+        self.tts_download_model_button.clicked.connect(self.start_local_tts_model_download)
         local_voice_layout.addWidget(QLabel("Voice profile"))
         local_voice_layout.addLayout(profile_row)
         local_voice_layout.addWidget(self.local_voice_profile_status)
         local_voice_layout.addLayout(local_device_row)
+        local_voice_layout.addWidget(self.local_tts_model_status)
+        local_voice_layout.addWidget(self.tts_download_model_button)
 
         voice_card.content_layout.addWidget(self.edge_voice_panel)
         voice_card.content_layout.addWidget(self.local_voice_panel)

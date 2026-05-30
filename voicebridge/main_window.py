@@ -109,6 +109,8 @@ class VoiceBridgeQt(
     local_voice_profile_combo: QComboBox
     local_voice_profile_status: QLabel
     tts_local_device_combo: QComboBox
+    local_tts_model_status: QLabel
+    tts_download_model_button: QPushButton
     rate_combo: QComboBox
     tts_generate_button: QPushButton
     tts_cancel_button: QPushButton

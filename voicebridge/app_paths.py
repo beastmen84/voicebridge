@@ -58,6 +58,19 @@ def local_tts_model_dir():
     return stt_models_root() / "coqui"
 
 
+def local_tts_model_cache_dir():
+    return local_tts_model_dir() / "tts" / "tts_models--multilingual--multi-dataset--xtts_v2"
+
+
+def local_tts_model_required_files():
+    return ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
+
+
+def local_tts_model_ready():
+    model_dir = local_tts_model_cache_dir()
+    return all((model_dir / filename).is_file() for filename in local_tts_model_required_files())
+
+
 def stt_runtime_site_packages():
     base_dir = external_base_dir()
     if (base_dir / "python-ml").is_dir():

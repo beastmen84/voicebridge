@@ -10,12 +10,18 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
+    QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -34,14 +40,19 @@ from media_tools import (
 )
 from voicebridge.constants import (
     BURN_QUALITY_AUTO,
+    BURN_QUALITY_AUTO_LABEL,
+    VIDEO_CLEANUP_FREEZE_LABEL,
     VIDEO_CLEANUP_METHOD_BY_LABEL,
     VIDEO_CLEANUP_METHOD_DESCRIPTIONS,
     VIDEO_CLEANUP_METHOD_FREEZE,
+    VIDEO_CLEANUP_METHOD_LABELS,
     VIDEO_CLEANUP_METHOD_REMOVE,
     VIDEO_CLEANUP_QUALITY_BY_LABEL,
     VIDEO_CLEANUP_QUALITY_DESCRIPTIONS,
+    VIDEO_CLEANUP_QUALITY_LABELS,
 )
 from voicebridge.ui.helpers import open_path
+from voicebridge.ui.widgets import Card, FilePicker
 
 
 class VideoCleanupWorkflowMixin:
@@ -770,4 +781,123 @@ class VideoCleanupWorkflowMixin:
             return
         self.cleanup_log.show()
         self.cleanup_details_button.setText("Hide details")
+
+    def build_video_cleanup_page(self):
+        page, layout = self.page_container()
+        self.page_header(
+            layout,
+            "CLEANUP",
+            "Video Cleanup",
+            "Detect isolated black-frame glitches and clean selected frames before export or subtitling.",
+            "BadgeGreen",
+        )
+
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        layout.addLayout(grid)
+
+        files_card = Card("Files")
+        files_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.cleanup_media_picker = FilePicker("Video file")
+        self.cleanup_output_picker = FilePicker("Save repaired video as", "Save as...")
+        self.cleanup_media_picker.button.clicked.connect(self.select_cleanup_media_file)
+        self.cleanup_output_picker.button.clicked.connect(self.select_cleanup_output_file)
+        self.cleanup_media_picker.edit.textChanged.connect(self.cleanup_media_changed)
+        files_card.content_layout.addWidget(self.cleanup_media_picker)
+
+        settings_card = Card("Detection")
+        settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.cleanup_rule_note = QLabel(
+            "Only isolated one-frame black glitches are repairable. "
+            "Longer runs, including black heads/tails, are reported and left untouched."
+        )
+        self.cleanup_rule_note.setObjectName("Muted")
+        self.cleanup_rule_note.setWordWrap(True)
+        self.cleanup_repair_options = QWidget()
+        repair_options_layout = QVBoxLayout(self.cleanup_repair_options)
+        repair_options_layout.setContentsMargins(0, 8, 0, 0)
+        repair_options_layout.setSpacing(8)
+        self.cleanup_method_label = QLabel("Clean method")
+        self.cleanup_method_combo = QComboBox()
+        self.cleanup_method_combo.addItems(VIDEO_CLEANUP_METHOD_LABELS)
+        self.cleanup_method_combo.setCurrentText(VIDEO_CLEANUP_FREEZE_LABEL)
+        self.cleanup_method_combo.currentTextChanged.connect(self.update_cleanup_method_description)
+        self.cleanup_method_description = QLabel(VIDEO_CLEANUP_METHOD_DESCRIPTIONS[VIDEO_CLEANUP_FREEZE_LABEL])
+        self.cleanup_method_description.setObjectName("Muted")
+        self.cleanup_method_description.setWordWrap(True)
+        self.cleanup_quality_label = QLabel("Output quality")
+        self.cleanup_quality_combo = QComboBox()
+        self.cleanup_quality_combo.addItems(VIDEO_CLEANUP_QUALITY_LABELS)
+        self.cleanup_quality_combo.setCurrentText(BURN_QUALITY_AUTO_LABEL)
+        self.cleanup_quality_combo.currentTextChanged.connect(self.update_cleanup_quality_description)
+        self.cleanup_quality_description = QLabel(VIDEO_CLEANUP_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
+        self.cleanup_quality_description.setObjectName("Muted")
+        self.cleanup_quality_description.setWordWrap(True)
+        settings_card.content_layout.addWidget(self.cleanup_rule_note)
+        repair_options_layout.addWidget(self.cleanup_output_picker)
+        repair_options_layout.addWidget(self.cleanup_method_label)
+        repair_options_layout.addWidget(self.cleanup_method_combo)
+        repair_options_layout.addWidget(self.cleanup_method_description)
+        repair_options_layout.addWidget(self.cleanup_quality_label)
+        repair_options_layout.addWidget(self.cleanup_quality_combo)
+        repair_options_layout.addWidget(self.cleanup_quality_description)
+        settings_card.content_layout.addWidget(self.cleanup_repair_options)
+
+        grid.addWidget(files_card, 0, 0)
+        grid.addWidget(settings_card, 0, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+
+        results_card = Card("Results")
+        self.cleanup_results = QListWidget()
+        self.cleanup_results.setMinimumHeight(160)
+        results_card.content_layout.addWidget(self.cleanup_results)
+        layout.addWidget(results_card)
+
+        action_card = Card()
+        action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        self.cleanup_start_button = QPushButton("Detect black frames")
+        self.cleanup_start_button.setObjectName("PrimaryButton")
+        self.cleanup_repair_button = QPushButton("Clean selected frames")
+        self.cleanup_repair_button.setObjectName("PrimaryButton")
+        self.cleanup_cancel_button = QPushButton("Cancel")
+        self.cleanup_open_output_button = QPushButton("Open output")
+        self.cleanup_open_folder_button = QPushButton("Open folder")
+        self.cleanup_details_button = QPushButton("Show details")
+        self.cleanup_start_button.clicked.connect(self.start_video_cleanup_from_page)
+        self.cleanup_repair_button.clicked.connect(self.start_video_cleanup_repair_from_page)
+        self.cleanup_cancel_button.clicked.connect(self.cancel_video_cleanup_job)
+        self.cleanup_open_output_button.clicked.connect(self.open_cleanup_output)
+        self.cleanup_open_folder_button.clicked.connect(self.open_cleanup_output_folder)
+        self.cleanup_details_button.clicked.connect(self.toggle_cleanup_details)
+        actions.addWidget(self.cleanup_start_button)
+        actions.addWidget(self.cleanup_repair_button)
+        actions.addWidget(self.cleanup_cancel_button)
+        actions.addStretch(1)
+        actions.addWidget(self.cleanup_open_output_button)
+        actions.addWidget(self.cleanup_open_folder_button)
+        actions.addWidget(self.cleanup_details_button)
+        action_card.content_layout.addLayout(actions)
+        self.cleanup_progress = QProgressBar()
+        self.cleanup_progress.setRange(0, 0)
+        self.cleanup_progress.hide()
+        self.cleanup_status = QLabel("Ready.")
+        self.cleanup_status.setObjectName("StatusText")
+        self.cleanup_log = QPlainTextEdit()
+        self.cleanup_log.setObjectName("LogBox")
+        self.cleanup_log.setReadOnly(True)
+        self.cleanup_log.setMinimumHeight(160)
+        self.cleanup_log.hide()
+        action_card.content_layout.addWidget(self.cleanup_progress)
+        action_card.content_layout.addWidget(self.cleanup_status)
+        action_card.content_layout.addWidget(self.cleanup_log)
+        layout.addWidget(action_card)
+        layout.addStretch(1)
+
+        self.cleanup_repair_options.hide()
+        self.cleanup_repair_button.hide()
+        self.update_video_cleanup_button_state()
+        return page
 

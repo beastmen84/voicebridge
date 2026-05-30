@@ -6,7 +6,20 @@ from contextlib import suppress
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+)
 
 from app_paths import external_base_dir, stt_python_path, stt_worker_path
 from languages import language_name
@@ -19,6 +32,7 @@ from voicebridge.constants import (
     STT_SRT_MODES,
 )
 from voicebridge.ui.helpers import open_path
+from voicebridge.ui.widgets import Card, FilePicker
 
 
 class SttWorkflowMixin:
@@ -520,3 +534,109 @@ class SttWorkflowMixin:
     def open_stt_output_folder(self):
         if self.stt_last_output_path and Path(self.stt_last_output_path).is_file():
             open_path(Path(self.stt_last_output_path).parent)
+
+    def build_stt_page(self):
+        page, layout = self.page_container()
+        self.page_header(
+            layout,
+            "STT",
+            "Transcription",
+            "Creates transcripts or SRT subtitles locally with the bundled offline STT package.",
+            "BadgeGreen",
+        )
+
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        layout.addLayout(grid)
+
+        media_card = Card("Media and output")
+        media_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.stt_media_picker = FilePicker("Media file")
+        self.stt_text_picker = FilePicker("Provided transcript file")
+        self.stt_output_picker = FilePicker("Save output as", "Save as...")
+        self.stt_media_picker.button.clicked.connect(self.select_stt_media_file)
+        self.stt_text_picker.button.clicked.connect(self.select_stt_text_file)
+        self.stt_output_picker.button.clicked.connect(self.select_stt_output_file)
+        media_card.content_layout.addWidget(self.stt_media_picker)
+        media_card.content_layout.addWidget(self.stt_text_picker)
+        media_card.content_layout.addWidget(self.stt_output_picker)
+
+        settings_card = Card("Transcription settings")
+        settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.stt_mode_combo = QComboBox()
+        self.stt_mode_combo.addItems(list(STT_MODE_LABELS))
+        self.stt_mode_combo.currentTextChanged.connect(self.stt_mode_changed)
+        self.stt_language_combo = QComboBox()
+        self.stt_language_combo.setMinimumWidth(260)
+        self.stt_language_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.populate_stt_language_combo()
+        self.stt_language_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        settings_card.content_layout.addWidget(QLabel("Mode"))
+        settings_card.content_layout.addWidget(self.stt_mode_combo)
+        settings_row = QHBoxLayout()
+        settings_row.addWidget(QLabel("Language"))
+        settings_row.addWidget(self.stt_language_combo, 1)
+        settings_row.addWidget(QLabel("Runtime"))
+        runtime_label = QLabel("CPU-only")
+        runtime_label.setObjectName("Muted")
+        settings_row.addWidget(runtime_label)
+        settings_card.content_layout.addLayout(settings_row)
+        self.stt_preflight_label = QLabel("Checking STT offline package...")
+        self.stt_preflight_label.setWordWrap(True)
+        self.stt_preflight_box = QFrame()
+        self.stt_preflight_box.setObjectName("GoodBox")
+        pf_layout = QVBoxLayout(self.stt_preflight_box)
+        pf_layout.setContentsMargins(12, 10, 12, 10)
+        pf_layout.addWidget(self.stt_preflight_label)
+        settings_card.content_layout.addWidget(self.stt_preflight_box)
+
+        grid.addWidget(media_card, 0, 0)
+        grid.addWidget(settings_card, 0, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+
+        action_card = Card()
+        action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        self.stt_generate_button = QPushButton("Generate")
+        self.stt_generate_button.setObjectName("PrimaryButton")
+        self.stt_cancel_button = QPushButton("Cancel")
+        self.stt_open_output_button = QPushButton("Open output")
+        self.stt_open_folder_button = QPushButton("Open folder")
+        self.stt_video_button = QPushButton("Open Subtitles")
+        self.stt_details_button = QPushButton("Show details")
+        self.stt_generate_button.clicked.connect(self.start_stt_job)
+        self.stt_cancel_button.clicked.connect(self.cancel_stt_job)
+        self.stt_open_output_button.clicked.connect(self.open_stt_output)
+        self.stt_open_folder_button.clicked.connect(self.open_stt_output_folder)
+        self.stt_details_button.clicked.connect(self.toggle_stt_details)
+        self.stt_video_button.clicked.connect(lambda: self.show_page(3))
+        actions.addWidget(self.stt_generate_button)
+        actions.addWidget(self.stt_cancel_button)
+        actions.addStretch(1)
+        actions.addWidget(self.stt_open_output_button)
+        actions.addWidget(self.stt_open_folder_button)
+        actions.addWidget(self.stt_video_button)
+        actions.addWidget(self.stt_details_button)
+        action_card.content_layout.addLayout(actions)
+        self.stt_progress = QProgressBar()
+        self.stt_progress.setRange(0, 0)
+        self.stt_progress.hide()
+        self.stt_status = QLabel("Ready.")
+        self.stt_status.setObjectName("StatusText")
+        self.stt_log = QPlainTextEdit()
+        self.stt_log.setObjectName("LogBox")
+        self.stt_log.setReadOnly(True)
+        self.stt_log.setMinimumHeight(160)
+        self.stt_log.hide()
+        action_card.content_layout.addWidget(self.stt_progress)
+        action_card.content_layout.addWidget(self.stt_status)
+        action_card.content_layout.addWidget(self.stt_log)
+        layout.addWidget(action_card)
+        layout.addStretch(1)
+
+        self.stt_mode_changed()
+        self.update_stt_button_state()
+        return page
+

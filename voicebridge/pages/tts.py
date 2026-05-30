@@ -11,7 +11,25 @@ from pathlib import Path
 import aiohttp
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from languages import language_name
 from media_tools import concatenate_mp3_files
@@ -31,9 +49,11 @@ from voicebridge.constants import (
     DEFAULT_VOICE_SHORT_NAME,
     RATE_CHOICES,
     TTS_SPLIT_LINES,
+    TTS_SPLIT_PARAGRAPHS,
 )
 from voicebridge.models import TtsSegment
 from voicebridge.ui.helpers import open_path, qt_file_filter
+from voicebridge.ui.widgets import Card, FilePicker
 from voices import (
     FALLBACK_VOICES,
     build_voice_options,
@@ -682,4 +702,230 @@ class TtsWorkflowMixin:
     def open_tts_output_folder(self):
         if self.tts_last_output_path and Path(self.tts_last_output_path).is_file():
             open_path(Path(self.tts_last_output_path).parent)
+
+    def build_tts_page(self):
+        page, layout = self.page_container()
+        self.page_header(
+            layout,
+            "TTS",
+            "Text to Speech",
+            "Uses Microsoft Edge TTS voices. Internet connection is required.",
+            "BadgeBlue",
+        )
+
+        main_grid = QGridLayout()
+        main_grid.setSpacing(16)
+        layout.addLayout(main_grid)
+
+        files_card = Card("Files and mode")
+        files_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.tts_input_picker = FilePicker("Input file")
+        self.tts_output_picker = FilePicker("Save MP3 as", "Save as...")
+        self.tts_input_picker.button.clicked.connect(self.select_input_file)
+        self.tts_output_picker.button.clicked.connect(self.select_save_path)
+        files_card.content_layout.addWidget(self.tts_input_picker)
+        files_card.content_layout.addWidget(self.tts_output_picker)
+        mode_label = QLabel("Voice mode")
+        mode_label.setObjectName("FieldLabel")
+        self.tts_single_mode_button = QPushButton("Single voice")
+        self.tts_multi_mode_button = QPushButton("Multi-voice blocks")
+        for button in (self.tts_single_mode_button, self.tts_multi_mode_button):
+            button.setObjectName("SegmentButton")
+            button.setCheckable(True)
+            button.setMinimumHeight(36)
+        self.tts_single_mode_button.clicked.connect(lambda _checked=False: self.set_tts_mode(0))
+        self.tts_multi_mode_button.clicked.connect(lambda _checked=False: self.set_tts_mode(1))
+        mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(8)
+        mode_row.addWidget(self.tts_single_mode_button)
+        mode_row.addWidget(self.tts_multi_mode_button)
+        mode_row.addStretch(1)
+        self.tts_mode_note = QLabel()
+        self.tts_mode_note.setObjectName("Muted")
+        self.tts_mode_note.setWordWrap(True)
+        files_card.content_layout.addSpacing(4)
+        files_card.content_layout.addWidget(mode_label)
+        files_card.content_layout.addLayout(mode_row)
+        files_card.content_layout.addWidget(self.tts_mode_note)
+
+        self.warning_box = QFrame()
+        self.warning_box.setObjectName("WarningBox")
+        warning_layout = QVBoxLayout(self.warning_box)
+        warning_layout.setContentsMargins(12, 10, 12, 10)
+        self.warning_title = QLabel()
+        self.warning_title.setObjectName("FieldLabel")
+        self.warning_message = QLabel()
+        self.warning_message.setWordWrap(True)
+        self.warning_message.setObjectName("Muted")
+        self.warning_action = QPushButton()
+        self.warning_action.setObjectName("SecondaryButton")
+        self.warning_action.clicked.connect(self.run_warning_action)
+        warning_layout.addWidget(self.warning_title)
+        warning_layout.addWidget(self.warning_message)
+        warning_layout.addWidget(self.warning_action)
+        self.warning_box.hide()
+        files_card.content_layout.addWidget(self.warning_box)
+
+        voice_card = Card("Voice")
+        voice_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.voice_status = QLabel("Loading complete voice list...")
+        self.voice_status.setObjectName("Muted")
+        self.voice_combo = QComboBox()
+        self.voice_combo.setEditable(False)
+        self.voice_combo.currentTextChanged.connect(self.voice_selected)
+        self.voice_search = QLineEdit()
+        self.voice_search.setPlaceholderText("Search voice, locale or style")
+        self.voice_search.textChanged.connect(self.voice_search_changed)
+        self.voice_preferred = QCheckBox("Preferred voice")
+        self.voice_preferred.stateChanged.connect(self.toggle_preferred_voice)
+        self.rate_combo = QComboBox()
+        self.rate_combo.addItems(RATE_CHOICES)
+        self.rate_combo.setCurrentText(DEFAULT_RATE)
+        self.rate_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        voice_card.content_layout.addWidget(self.voice_status)
+        voice_card.content_layout.addWidget(QLabel("Voice"))
+        voice_card.content_layout.addWidget(self.voice_combo)
+        voice_card.content_layout.addWidget(QLabel("Search"))
+        voice_card.content_layout.addWidget(self.voice_search)
+        voice_row = QHBoxLayout()
+        voice_row.addWidget(self.voice_preferred)
+        voice_row.addStretch(1)
+        voice_row.addWidget(QLabel("Speed"))
+        voice_row.addWidget(self.rate_combo)
+        voice_card.content_layout.addLayout(voice_row)
+
+        main_grid.addWidget(files_card, 0, 0)
+        main_grid.addWidget(voice_card, 0, 1)
+        main_grid.setColumnStretch(0, 1)
+        main_grid.setColumnStretch(1, 1)
+
+        self.tts_mode_stack = QStackedWidget()
+        self.single_tts_page = self.build_single_tts_page()
+        self.multi_tts_tab = self.build_multi_tts_tab()
+        self.tts_mode_stack.addWidget(self.single_tts_page)
+        self.tts_mode_stack.addWidget(self.multi_tts_tab)
+        self.tts_mode_stack.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.tts_mode_stack, 1)
+
+        action_bar = Card()
+        action_bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        self.tts_generate_button = QPushButton("Generate MP3")
+        self.tts_generate_button.setObjectName("PrimaryButton")
+        self.tts_cancel_button = QPushButton("Cancel")
+        self.tts_open_output_button = QPushButton("Open output")
+        self.tts_open_folder_button = QPushButton("Open folder")
+        self.tts_generate_button.clicked.connect(self.start_tts_conversion)
+        self.tts_cancel_button.clicked.connect(self.cancel_tts_conversion)
+        self.tts_open_output_button.clicked.connect(self.open_tts_output)
+        self.tts_open_folder_button.clicked.connect(self.open_tts_output_folder)
+        action_layout.addWidget(self.tts_generate_button)
+        action_layout.addWidget(self.tts_cancel_button)
+        action_layout.addStretch(1)
+        action_layout.addWidget(self.tts_open_output_button)
+        action_layout.addWidget(self.tts_open_folder_button)
+        action_bar.content_layout.addLayout(action_layout)
+        self.tts_progress = QProgressBar()
+        self.tts_progress.setRange(0, 0)
+        self.tts_progress.hide()
+        self.tts_status = QLabel("Ready.")
+        self.tts_status.setObjectName("StatusText")
+        action_bar.content_layout.addWidget(self.tts_progress)
+        action_bar.content_layout.addWidget(self.tts_status)
+        layout.addWidget(action_bar)
+        layout.addStretch(1)
+
+        self.set_tts_mode(0)
+        return page
+
+    @staticmethod
+    def build_single_tts_page():
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        return tab
+
+    def tts_mode_index(self):
+        if not hasattr(self, "tts_mode_stack"):
+            return 0
+        return self.tts_mode_stack.currentIndex()
+
+    def set_tts_mode(self, index):
+        index = 1 if index == 1 else 0
+        if not hasattr(self, "tts_mode_stack"):
+            return
+        self.tts_mode_stack.setCurrentIndex(index)
+        self.tts_mode_stack.setVisible(index == 1)
+        self.tts_single_mode_button.setChecked(index == 0)
+        self.tts_multi_mode_button.setChecked(index == 1)
+        self.tts_mode_note.setText(
+            "Uses the selected voice and speed for the whole document."
+            if index == 0
+            else "Split the document into blocks and assign voice or speed per block."
+        )
+        self.tts_mode_stack.updateGeometry()
+        self.update_tts_button_state()
+        self.save_user_settings()
+
+    def build_multi_tts_tab(self):
+        tab = QWidget()
+        layout = QGridLayout(tab)
+        layout.setContentsMargins(0, 12, 0, 0)
+        layout.setSpacing(16)
+
+        left = Card("Blocks")
+        split_row = QHBoxLayout()
+        self.tts_split_combo = QComboBox()
+        self.tts_split_combo.addItems([TTS_SPLIT_PARAGRAPHS, TTS_SPLIT_LINES])
+        self.tts_split_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        split_button = QPushButton("Split document")
+        merge_button = QPushButton("Merge selected")
+        split_button.clicked.connect(self.split_tts_document_into_blocks)
+        merge_button.clicked.connect(self.merge_selected_tts_blocks)
+        split_row.addWidget(self.tts_split_combo)
+        split_row.addWidget(split_button)
+        split_row.addWidget(merge_button)
+        left.content_layout.addLayout(split_row)
+        self.tts_blocks_list = QListWidget()
+        self.tts_blocks_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tts_blocks_list.currentRowChanged.connect(self.load_tts_block_editor)
+        self.tts_blocks_list.setMinimumHeight(220)
+        left.content_layout.addWidget(self.tts_blocks_list, 1)
+
+        right = Card("Block settings")
+        self.block_voice_combo = QComboBox()
+        self.block_rate_combo = QComboBox()
+        self.block_rate_combo.addItems(RATE_CHOICES)
+        self.block_rate_combo.setCurrentText(DEFAULT_RATE)
+        right.content_layout.addWidget(QLabel("Block voice"))
+        right.content_layout.addWidget(self.block_voice_combo)
+        rate_row = QHBoxLayout()
+        rate_row.addWidget(QLabel("Block speed"))
+        rate_row.addWidget(self.block_rate_combo)
+        rate_row.addStretch(1)
+        right.content_layout.addLayout(rate_row)
+        settings_row = QHBoxLayout()
+        apply_selected = QPushButton("Apply to block")
+        apply_current = QPushButton("Use current voice")
+        apply_all = QPushButton("Use current voice for all")
+        apply_selected.clicked.connect(self.apply_block_settings_to_selected)
+        apply_current.clicked.connect(self.apply_current_voice_to_selected_block)
+        apply_all.clicked.connect(self.apply_current_voice_to_all_blocks)
+        settings_row.addWidget(apply_selected)
+        settings_row.addWidget(apply_current)
+        settings_row.addWidget(apply_all)
+        right.content_layout.addLayout(settings_row)
+        self.tts_block_preview = QPlainTextEdit()
+        self.tts_block_preview.setReadOnly(True)
+        self.tts_block_preview.setPlaceholderText("Select a block to preview the text.")
+        self.tts_block_preview.setMinimumHeight(220)
+        right.content_layout.addWidget(self.tts_block_preview, 1)
+
+        layout.addWidget(left, 0, 0)
+        layout.addWidget(right, 0, 1)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 2)
+        return tab
 

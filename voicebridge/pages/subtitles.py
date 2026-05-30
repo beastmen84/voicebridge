@@ -8,7 +8,22 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from media_tools import (
     SubtitleStyle,
@@ -23,9 +38,11 @@ from media_tools import (
 )
 from voicebridge.constants import (
     BURN_QUALITY_AUTO,
+    BURN_QUALITY_AUTO_LABEL,
     BURN_QUALITY_BY_LABEL,
     BURN_QUALITY_CRF_VALUES,
     BURN_QUALITY_DESCRIPTIONS,
+    BURN_QUALITY_LABELS,
     BURN_QUALITY_ORIGINAL_BITRATE,
     BURN_QUALITY_STANDARD,
     VIDEO_SUBTITLE_BURN_LABEL,
@@ -39,6 +56,7 @@ from voicebridge.ui.helpers import (
     open_path,
     validate_video_subtitle_inputs,
 )
+from voicebridge.ui.widgets import Card, FilePicker
 
 
 class SubtitlesWorkflowMixin:
@@ -571,4 +589,160 @@ class SubtitlesWorkflowMixin:
             return
         self.video_log.show()
         self.video_details_button.setText("Hide details")
+
+    def build_video_subtitle_page(self):
+        page, layout = self.page_container()
+        self.page_header(
+            layout,
+            "SUBTITLES",
+            "Subtitles",
+            "Embed an SRT track without re-encoding or burn subtitles directly into the video frames.",
+            "BadgeBlue",
+        )
+
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        layout.addLayout(grid)
+
+        files_card = Card("Files")
+        files_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.video_media_picker = FilePicker("Video file")
+        self.video_srt_picker = FilePicker("SRT file")
+        self.video_output_picker = FilePicker("Save video as", "Save as...")
+        self.video_media_picker.button.clicked.connect(self.select_video_subtitle_media_file)
+        self.video_srt_picker.button.clicked.connect(self.select_video_subtitle_srt_file)
+        self.video_output_picker.button.clicked.connect(self.select_video_subtitle_output_file)
+        self.video_media_picker.edit.textChanged.connect(lambda: self.update_video_subtitle_output(force=False))
+        files_card.content_layout.addWidget(self.video_media_picker)
+        files_card.content_layout.addWidget(self.video_srt_picker)
+        files_card.content_layout.addWidget(self.video_output_picker)
+
+        settings_card = Card("Mode and quality")
+        settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.video_embed_mode_button = QPushButton(VIDEO_SUBTITLE_EMBED_LABEL)
+        self.video_burn_mode_button = QPushButton(VIDEO_SUBTITLE_BURN_LABEL)
+        for button in (self.video_embed_mode_button, self.video_burn_mode_button):
+            button.setObjectName("SegmentButton")
+            button.setCheckable(True)
+            button.setMinimumHeight(36)
+        self.video_embed_mode_button.clicked.connect(
+            lambda _checked=False: self.set_video_subtitle_mode(VIDEO_SUBTITLE_EMBED_LABEL)
+        )
+        self.video_burn_mode_button.clicked.connect(
+            lambda _checked=False: self.set_video_subtitle_mode(VIDEO_SUBTITLE_BURN_LABEL)
+        )
+        mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(8)
+        mode_row.addWidget(self.video_embed_mode_button)
+        mode_row.addWidget(self.video_burn_mode_button)
+        mode_row.addStretch(1)
+        self.video_mode_note = QLabel(VIDEO_SUBTITLE_MODE_DESCRIPTIONS[VIDEO_SUBTITLE_EMBED_LABEL])
+        self.video_mode_note.setObjectName("Muted")
+        self.video_mode_note.setWordWrap(True)
+        self.video_quality_label = QLabel("Burn-in quality")
+        self.video_quality_combo = QComboBox()
+        self.video_quality_combo.addItems(BURN_QUALITY_LABELS)
+        self.video_quality_combo.setCurrentText(BURN_QUALITY_AUTO_LABEL)
+        self.video_quality_combo.currentTextChanged.connect(self.update_video_quality_description)
+        self.video_crf_note = QLabel(
+            "CRF is constant quality: lower number means higher quality and a larger output file."
+        )
+        self.video_crf_note.setObjectName("Muted")
+        self.video_crf_note.setWordWrap(True)
+        self.video_quality_description = QLabel(BURN_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
+        self.video_quality_description.setObjectName("Muted")
+        self.video_quality_description.setWordWrap(True)
+        self.video_style_panel = QWidget()
+        self.video_style_panel.setObjectName("InlinePanel")
+        style_layout = QGridLayout(self.video_style_panel)
+        style_layout.setContentsMargins(0, 4, 0, 0)
+        style_layout.setHorizontalSpacing(10)
+        style_layout.setVerticalSpacing(8)
+        self.video_font_size_spin = QSpinBox()
+        self.video_font_size_spin.setRange(14, 72)
+        self.video_font_size_spin.setValue(28)
+        self.video_outline_spin = QSpinBox()
+        self.video_outline_spin.setRange(0, 8)
+        self.video_outline_spin.setValue(2)
+        self.video_margin_spin = QSpinBox()
+        self.video_margin_spin.setRange(0, 160)
+        self.video_margin_spin.setValue(36)
+        self.video_position_combo = QComboBox()
+        self.video_position_combo.addItems(list(VIDEO_SUBTITLE_POSITION_LABELS))
+        for spinbox in (self.video_font_size_spin, self.video_outline_spin, self.video_margin_spin):
+            spinbox.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            spinbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            spinbox.setFixedWidth(82)
+        self.video_position_combo.setMinimumWidth(180)
+        self.video_font_size_spin.valueChanged.connect(lambda _value: self.save_user_settings())
+        self.video_outline_spin.valueChanged.connect(lambda _value: self.save_user_settings())
+        self.video_margin_spin.valueChanged.connect(lambda _value: self.save_user_settings())
+        self.video_position_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        style_layout.addWidget(QLabel("Font size"), 0, 0)
+        style_layout.addWidget(self.video_font_size_spin, 0, 1)
+        style_layout.addWidget(QLabel("Outline"), 0, 2)
+        style_layout.addWidget(self.video_outline_spin, 0, 3)
+        style_layout.addWidget(QLabel("Position"), 1, 0)
+        style_layout.addWidget(self.video_position_combo, 1, 1)
+        style_layout.addWidget(QLabel("Vertical margin"), 1, 2)
+        style_layout.addWidget(self.video_margin_spin, 1, 3)
+        settings_card.content_layout.addWidget(QLabel("Mode"))
+        settings_card.content_layout.addLayout(mode_row)
+        settings_card.content_layout.addWidget(self.video_mode_note)
+        settings_card.content_layout.addWidget(self.video_quality_label)
+        settings_card.content_layout.addWidget(self.video_quality_combo)
+        settings_card.content_layout.addWidget(self.video_crf_note)
+        settings_card.content_layout.addWidget(self.video_quality_description)
+        settings_card.content_layout.addWidget(self.video_style_panel)
+
+        grid.addWidget(files_card, 0, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(settings_card, 0, 1, Qt.AlignmentFlag.AlignTop)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+
+        action_card = Card()
+        action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        self.video_start_button = QPushButton("Create video")
+        self.video_start_button.setObjectName("PrimaryButton")
+        self.video_preview_button = QPushButton("Preview style")
+        self.video_cancel_button = QPushButton("Cancel")
+        self.video_open_output_button = QPushButton("Open output")
+        self.video_open_folder_button = QPushButton("Open folder")
+        self.video_details_button = QPushButton("Show details")
+        self.video_start_button.clicked.connect(self.start_video_subtitle_from_page)
+        self.video_preview_button.clicked.connect(self.preview_video_subtitle_style)
+        self.video_cancel_button.clicked.connect(self.cancel_video_subtitle_job)
+        self.video_open_output_button.clicked.connect(self.open_video_subtitle_output)
+        self.video_open_folder_button.clicked.connect(self.open_video_subtitle_output_folder)
+        self.video_details_button.clicked.connect(self.toggle_video_details)
+        actions.addWidget(self.video_start_button)
+        actions.addWidget(self.video_preview_button)
+        actions.addWidget(self.video_cancel_button)
+        actions.addStretch(1)
+        actions.addWidget(self.video_open_output_button)
+        actions.addWidget(self.video_open_folder_button)
+        actions.addWidget(self.video_details_button)
+        action_card.content_layout.addLayout(actions)
+        self.video_progress = QProgressBar()
+        self.video_progress.setRange(0, 0)
+        self.video_progress.hide()
+        self.video_status = QLabel("Ready.")
+        self.video_status.setObjectName("StatusText")
+        self.video_log = QPlainTextEdit()
+        self.video_log.setObjectName("LogBox")
+        self.video_log.setReadOnly(True)
+        self.video_log.setMinimumHeight(160)
+        self.video_log.hide()
+        action_card.content_layout.addWidget(self.video_progress)
+        action_card.content_layout.addWidget(self.video_status)
+        action_card.content_layout.addWidget(self.video_log)
+        layout.addWidget(action_card)
+        layout.addStretch(1)
+
+        self.video_subtitle_mode_changed()
+        self.update_video_subtitle_button_state()
+        return page
 

@@ -24,7 +24,7 @@ except ImportError:
     detect_langs = None
     LangDetectException = Exception
 
-from languages import normalize_language_code
+from voicebridge.languages import normalize_language_code
 
 SUPPORTED_FILETYPES = [
     ("Supported files", "*.docx *.doc *.txt *.pdf"),

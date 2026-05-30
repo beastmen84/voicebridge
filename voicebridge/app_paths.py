@@ -2,8 +2,12 @@ import sys
 from pathlib import Path
 
 
+def source_base_dir():
+    return Path(__file__).resolve().parents[1]
+
+
 def resource_path(relative_path):
-    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    base_path = Path(getattr(sys, "_MEIPASS", source_base_dir()))
     return base_path / relative_path
 
 
@@ -13,7 +17,7 @@ def external_base_dir():
         if exe_dir.name.lower() == "dist":
             return exe_dir.parent
         return exe_dir
-    return Path(__file__).resolve().parent
+    return source_base_dir()
 
 
 def stt_python_path():

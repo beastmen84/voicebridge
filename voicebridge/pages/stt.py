@@ -21,16 +21,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app_paths import external_base_dir, stt_python_path, stt_worker_path
-from languages import language_name
-from readers import read_input_file
-from stt_preflight import check_stt_preflight
+from voicebridge.app_paths import external_base_dir, stt_python_path, stt_worker_path
 from voicebridge.constants import (
     MISSING_ALIGNMENT_PREFIX,
     STT_MODE_LABELS,
     STT_MODEL,
     STT_SRT_MODES,
 )
+from voicebridge.languages import language_name
+from voicebridge.readers import read_input_file
+from voicebridge.stt_preflight import check_stt_preflight
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 

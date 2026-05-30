@@ -31,9 +31,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from languages import language_name
-from media_tools import concatenate_mp3_files
-from readers import (
+from voicebridge.constants import (
+    DEFAULT_RATE,
+    DEFAULT_VOICE_SHORT_NAME,
+    RATE_CHOICES,
+    TTS_SPLIT_LINES,
+    TTS_SPLIT_PARAGRAPHS,
+)
+from voicebridge.languages import language_name
+from voicebridge.media_tools import concatenate_mp3_files
+from voicebridge.models import TtsSegment
+from voicebridge.readers import (
     SUPPORTED_FILETYPES,
     TESSERACT_NOT_INSTALLED_TEXT,
     TESSERACT_WINDOWS_INSTALL_URL,
@@ -43,18 +51,10 @@ from readers import (
     read_input_file,
     read_txt,
 )
-from tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
-from voicebridge.constants import (
-    DEFAULT_RATE,
-    DEFAULT_VOICE_SHORT_NAME,
-    RATE_CHOICES,
-    TTS_SPLIT_LINES,
-    TTS_SPLIT_PARAGRAPHS,
-)
-from voicebridge.models import TtsSegment
+from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
-from voices import (
+from voicebridge.voices import (
     FALLBACK_VOICES,
     build_voice_options,
     filter_voices_by_language,

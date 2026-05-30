@@ -26,18 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from media_tools import (
-    STT_VIDEO_SUFFIXES,
-    BlackFrame,
-    black_frame_detect_command,
-    find_ffmpeg_exe,
-    isolated_black_frame_numbers,
-    parse_blackframe_line,
-    probe_video_info,
-    suggest_video_cleanup_output_path,
-    video_cleanup_repair_commands,
-    video_frame_preview_command,
-)
 from voicebridge.constants import (
     BURN_QUALITY_AUTO,
     BURN_QUALITY_AUTO_LABEL,
@@ -50,6 +38,18 @@ from voicebridge.constants import (
     VIDEO_CLEANUP_QUALITY_BY_LABEL,
     VIDEO_CLEANUP_QUALITY_DESCRIPTIONS,
     VIDEO_CLEANUP_QUALITY_LABELS,
+)
+from voicebridge.media_tools import (
+    STT_VIDEO_SUFFIXES,
+    BlackFrame,
+    black_frame_detect_command,
+    find_ffmpeg_exe,
+    isolated_black_frame_numbers,
+    parse_blackframe_line,
+    probe_video_info,
+    suggest_video_cleanup_output_path,
+    video_cleanup_repair_commands,
+    video_frame_preview_command,
 )
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker

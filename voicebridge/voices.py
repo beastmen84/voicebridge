@@ -1,13 +1,13 @@
 import re
 from typing import Any
 
-from app_settings import (
+from voicebridge.app_settings import (
     load_preferred_voice_short_names as _load_preferred_voice_short_names,
 )
-from app_settings import (
+from voicebridge.app_settings import (
     save_preferred_voice_short_names as _save_preferred_voice_short_names,
 )
-from languages import normalize_language_code
+from voicebridge.languages import normalize_language_code
 
 Voice = dict[str, Any]
 VoiceMap = dict[str, str]

@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from media_tools import STT_VIDEO_SUFFIXES
+from voicebridge.media_tools import STT_VIDEO_SUFFIXES
 
 
 def qt_file_filter(filetypes):

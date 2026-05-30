@@ -15,10 +15,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from media_tools import find_ffmpeg_exe
-from readers import load_ocr_dependencies
 from voicebridge.constants import STT_CPU_ONLY_STATUS
+from voicebridge.media_tools import find_ffmpeg_exe
 from voicebridge.models import JobHistoryEntry
+from voicebridge.readers import load_ocr_dependencies
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 

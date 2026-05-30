@@ -25,17 +25,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from media_tools import (
-    SubtitleStyle,
-    auto_burn_quality,
-    can_create_video_subtitles,
-    find_ffmpeg_exe,
-    first_srt_timestamp_seconds,
-    probe_video_info,
-    suggest_video_subtitle_output_path,
-    video_subtitle_commands,
-    video_subtitle_preview_command,
-)
 from voicebridge.constants import (
     BURN_QUALITY_AUTO,
     BURN_QUALITY_AUTO_LABEL,
@@ -50,6 +39,17 @@ from voicebridge.constants import (
     VIDEO_SUBTITLE_MODE_BY_LABEL,
     VIDEO_SUBTITLE_MODE_DESCRIPTIONS,
     VIDEO_SUBTITLE_POSITION_LABELS,
+)
+from voicebridge.media_tools import (
+    SubtitleStyle,
+    auto_burn_quality,
+    can_create_video_subtitles,
+    find_ffmpeg_exe,
+    first_srt_timestamp_seconds,
+    probe_video_info,
+    suggest_video_subtitle_output_path,
+    video_subtitle_commands,
+    video_subtitle_preview_command,
 )
 from voicebridge.ui.helpers import (
     normalize_video_subtitle_output_path,

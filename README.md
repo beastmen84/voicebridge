@@ -143,13 +143,14 @@ Struttura principale del codice:
 - `voicebridge/pages/`: builder delle pagine e workflow UI separati per TTS, STT, sottotitoli e cleanup video.
 - `voicebridge/ui/`: widget, helper UI e stylesheet Qt.
 - `voicebridge/constants.py`: label, opzioni e costanti condivise dell'app.
-- `app_paths.py`: percorsi runtime, bundle, modelli e risorse.
-- `tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
-- `media_tools.py`: ffmpeg, merge MP3 multi-voce, embed/burn-in sottotitoli e cleanup video.
-- `stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
-- `readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
-- `voices.py`: elenco, ricerca, preferiti e ordinamento voci.
-- `stt_worker.py`: worker offline WhisperX eseguito dal runtime STT.
+- `voicebridge/app_paths.py`: percorsi runtime, bundle, modelli e risorse.
+- `voicebridge/tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
+- `voicebridge/media_tools.py`: ffmpeg, merge MP3 multi-voce, embed/burn-in sottotitoli e cleanup video.
+- `voicebridge/stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
+- `voicebridge/readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
+- `voicebridge/voices.py`: elenco, ricerca, preferiti e ordinamento voci.
+- `stt_worker.py`: worker offline WhisperX eseguito dal runtime STT e copiato come file esterno nel bundle.
+- `prepare_stt_models.py`: script di preparazione/download dei modelli STT.
 
 OCR opzionale:
 

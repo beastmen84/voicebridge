@@ -1,7 +1,7 @@
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from app_paths import resource_path
+from voicebridge.app_paths import resource_path
 from voicebridge.constants import APP_ICON_PNG, APP_NAME
 from voicebridge.main_window import VoiceBridgeQt
 

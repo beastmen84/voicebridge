@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from languages import LANGUAGE_NAMES
-from media_tools import (
+from voicebridge.languages import LANGUAGE_NAMES
+from voicebridge.media_tools import (
     BURN_QUALITY_AUTO,
     BURN_QUALITY_HIGH,
     BURN_QUALITY_MAXIMUM,
@@ -10,7 +10,7 @@ from media_tools import (
     VIDEO_CLEANUP_METHOD_FREEZE,
     VIDEO_CLEANUP_METHOD_REMOVE,
 )
-from media_tools import BURN_QUALITY_CRF_VALUES as _BURN_QUALITY_CRF_VALUES
+from voicebridge.media_tools import BURN_QUALITY_CRF_VALUES as _BURN_QUALITY_CRF_VALUES
 
 APP_NAME = "VoiceBridge"
 APP_ATTRIBUTION = "© Davide Marchi"

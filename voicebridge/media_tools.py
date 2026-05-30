@@ -5,7 +5,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict
 
-from app_paths import external_base_dir
+from voicebridge.app_paths import external_base_dir
 
 STT_VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
 MP4_SUBTITLE_SUFFIXES = {".mp4", ".mov", ".m4v"}

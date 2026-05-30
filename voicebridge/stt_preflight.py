@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app_paths import (
+from voicebridge.app_paths import (
     stt_model_dir,
     stt_models_root,
     stt_python_path,

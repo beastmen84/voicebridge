@@ -25,12 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app_paths import resource_path
-from app_settings import load_app_settings, save_app_settings
-from languages import LANGUAGE_NAMES
-from media_tools import (
-    BlackFrame,
-)
+from voicebridge.app_paths import resource_path
+from voicebridge.app_settings import load_app_settings, save_app_settings
 from voicebridge.constants import (
     APP_ATTRIBUTION,
     APP_ICON,
@@ -49,6 +45,10 @@ from voicebridge.constants import (
     VIDEO_CLEANUP_QUALITY_LABELS,
     VIDEO_SUBTITLE_POSITION_LABELS,
 )
+from voicebridge.languages import LANGUAGE_NAMES
+from voicebridge.media_tools import (
+    BlackFrame,
+)
 from voicebridge.models import JobHistoryEntry, TtsSegment
 from voicebridge.pages.builders import PageBuilderMixin
 from voicebridge.pages.cleanup import VideoCleanupWorkflowMixin
@@ -57,7 +57,7 @@ from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.ui.styles import apply_app_style
 from voicebridge.ui.widgets import FilePicker
-from voices import (
+from voicebridge.voices import (
     load_preferred_voice_short_names,
 )
 

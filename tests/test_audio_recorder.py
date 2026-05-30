@@ -12,14 +12,30 @@ class FakeSoundDevice:
 
     @staticmethod
     def query_hostapis():
-        return [{"name": "MME"}, {"name": "WASAPI"}]
+        return [{"name": "MME"}, {"name": "Windows DirectSound"}, {"name": "Windows WASAPI"}]
 
     @staticmethod
     def query_devices():
         return [
             {"name": "Speakers", "max_input_channels": 0, "hostapi": 0, "default_samplerate": 48_000},
+            {
+                "name": "Microsoft Sound Mapper - Input",
+                "max_input_channels": 2,
+                "hostapi": 0,
+                "default_samplerate": 48_000,
+            },
+            {
+                "name": "Primary Sound Capture Driver",
+                "max_input_channels": 2,
+                "hostapi": 1,
+                "default_samplerate": 48_000,
+            },
             {"name": "USB Mic", "max_input_channels": 1, "hostapi": 0, "default_samplerate": 48_000},
+            {"name": "USB Mic", "max_input_channels": 1, "hostapi": 2, "default_samplerate": 48_000},
+            {"name": "Stereo Mix", "max_input_channels": 2, "hostapi": 2, "default_samplerate": 48_000},
+            {"name": "Studio Mic", "max_input_channels": 2, "hostapi": 0, "default_samplerate": 44_100},
             {"name": "Studio Mic", "max_input_channels": 2, "hostapi": 1, "default_samplerate": 44_100},
+            {"name": "Studio Mic", "index": 2, "max_input_channels": 2, "hostapi": 2, "default_samplerate": 48_000},
         ]
 
     def check_input_settings(self, *, device, channels, samplerate, dtype) -> None:
@@ -61,8 +77,9 @@ def test_list_input_devices_returns_inputs_with_default_first(monkeypatch) -> No
 
     assert [device.name for device in devices] == ["Studio Mic", "USB Mic"]
     assert devices[0].index == 2
-    assert devices[0].host_api == "WASAPI"
+    assert devices[0].host_api == "Windows WASAPI"
     assert devices[0].is_default is True
+    assert devices[1].host_api == "Windows WASAPI"
 
 
 def test_select_input_settings_falls_back_to_supported_sample_rate(monkeypatch) -> None:

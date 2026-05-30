@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -71,7 +72,7 @@ def list_input_devices() -> list[AudioInputDevice]:
             )
         )
 
-    return sorted(devices, key=lambda device: (not device.is_default, device.name.casefold(), device.index))
+    return _deduplicate_input_devices(devices)
 
 
 def select_input_settings(
@@ -173,6 +174,65 @@ def _candidate_sample_rates(preferred_sample_rate: int) -> tuple[int, ...]:
         if sample_rate > 0 and sample_rate not in unique_candidates:
             unique_candidates.append(sample_rate)
     return tuple(unique_candidates)
+
+
+def _deduplicate_input_devices(devices: list[AudioInputDevice]) -> list[AudioInputDevice]:
+    physical_devices: dict[str, list[AudioInputDevice]] = {}
+    for device in devices:
+        if _is_virtual_input_device(device.name):
+            continue
+        key = _physical_input_device_key(device.name)
+        physical_devices.setdefault(key, []).append(device)
+
+    deduplicated = [_preferred_input_device(group) for group in physical_devices.values()]
+    return sorted(deduplicated, key=lambda device: (not device.is_default, device.name.casefold(), device.index))
+
+
+def _preferred_input_device(devices: list[AudioInputDevice]) -> AudioInputDevice:
+    preferred = min(
+        devices,
+        key=lambda device: (_host_api_priority(device.host_api), not device.is_default, device.index),
+    )
+    if preferred.is_default == any(device.is_default for device in devices):
+        return preferred
+    return AudioInputDevice(
+        index=preferred.index,
+        name=preferred.name,
+        host_api=preferred.host_api,
+        max_input_channels=preferred.max_input_channels,
+        default_sample_rate=preferred.default_sample_rate,
+        is_default=True,
+    )
+
+
+def _physical_input_device_key(name: str) -> str:
+    name = re.sub(r"\s+", " ", name.strip().casefold())
+    name = re.sub(r"\s*\(.*$", "", name)
+    return re.sub(r"[^a-z0-9]+", " ", name).strip() or name
+
+
+def _is_virtual_input_device(name: str) -> bool:
+    normalized = name.casefold()
+    ignored_fragments = (
+        "microsoft sound mapper",
+        "primary sound capture",
+        "stereo mix",
+        "pc speaker",
+    )
+    return any(fragment in normalized for fragment in ignored_fragments)
+
+
+def _host_api_priority(host_api: str) -> int:
+    normalized = host_api.casefold()
+    if "wasapi" in normalized:
+        return 0
+    if "directsound" in normalized:
+        return 1
+    if "mme" in normalized:
+        return 2
+    if "wdm" in normalized:
+        return 3
+    return 4
 
 
 def _default_input_device_index(sd) -> int | None:

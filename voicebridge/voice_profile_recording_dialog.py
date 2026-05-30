@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
 )
 
@@ -63,10 +65,13 @@ class VoiceProfileRecordingDialog(QDialog):
             #RecordingCounter { font-size: 36pt; font-weight: 800; color: #2f6fed; }
             #RecordingStatus { color: #617083; }
             #RecordingScript {
-                font-size: 15pt;
-                padding: 14px;
                 border-radius: 8px;
                 border: 1px solid #ead8b8;
+                background: #fff8e8;
+            }
+            #RecordingScriptText {
+                font-size: 15pt;
+                padding: 14px;
                 background: #fff8e8;
             }
             #RecordingDetails {
@@ -116,15 +121,22 @@ class VoiceProfileRecordingDialog(QDialog):
         self.progress_bar.setFormat("%p%")
         layout.addWidget(self.progress_bar)
 
-        self.script_box = QPlainTextEdit()
+        self.script_box = QScrollArea()
         self.script_box.setObjectName("RecordingScript")
-        self.script_box.setReadOnly(True)
-        self.script_box.setFont(QFont("Segoe UI", 15))
-        self.script_box.setPlainText(voice_profile_recording_script_for_display(language_code))
+        self.script_box.setWidgetResizable(True)
+        self.script_box.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.script_box.setMinimumHeight(320)
+        self.script_text = QLabel(voice_profile_recording_script_for_display(language_code))
+        self.script_text.setObjectName("RecordingScriptText")
+        self.script_text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.script_text.setFont(QFont("Segoe UI", 15))
+        self.script_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.script_text.setTextFormat(Qt.TextFormat.PlainText)
+        self.script_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.script_text.setWordWrap(True)
+        self.script_box.setWidget(self.script_text)
         layout.addWidget(self.script_box, 1)
         self.script_scroll_animation = QPropertyAnimation(self.script_box.verticalScrollBar(), b"value", self)
-        self.script_scroll_animation.setDuration(VOICE_PROFILE_TICK_MS)
         self.script_scroll_animation.setEasingCurve(QEasingCurve.Type.Linear)
 
         self.details_box = QPlainTextEdit()
@@ -193,7 +205,6 @@ class VoiceProfileRecordingDialog(QDialog):
         elapsed = max(0.0, time.monotonic() - self._record_started_at)
         remaining = max(0.0, VOICE_PROFILE_RECORD_SECONDS - elapsed)
         self.progress_bar.setValue(min(self.progress_bar.maximum(), int(elapsed * 1000)))
-        self.scroll_script_to_percent(elapsed / VOICE_PROFILE_RECORD_SECONDS)
         if 0 < remaining <= VOICE_PROFILE_END_COUNTDOWN_SECONDS:
             self.counter_label.setText(str(max(1, math.ceil(remaining))))
             self.status_label.setText("Finishing recording.")
@@ -222,10 +233,13 @@ class VoiceProfileRecordingDialog(QDialog):
         self.counter_label.setText("REC")
         self.status_label.setText("Recording... 00:00 / 00:30")
         self.scroll_script_to_percent(0.0, animated=False)
+        self.start_script_scroll_animation()
         self.timer.start(VOICE_PROFILE_TICK_MS)
 
     def complete_recording(self, auto_stopped: bool = False) -> None:
         self.timer.stop()
+        self.script_scroll_animation.stop()
+        self.scroll_script_to_percent(1.0, animated=False)
         self._phase = "processing"
         recorder = self._recorder
         self._recorder = None
@@ -273,6 +287,7 @@ class VoiceProfileRecordingDialog(QDialog):
 
     def show_recording_error(self, message: str) -> None:
         self._phase = "error"
+        self.script_scroll_animation.stop()
         self.counter_label.setText("Error")
         self.status_label.setText(message)
         self.details_box.setPlainText(message)
@@ -322,6 +337,7 @@ class VoiceProfileRecordingDialog(QDialog):
 
     def stop_recording_if_needed(self) -> None:
         self.timer.stop()
+        self.script_scroll_animation.stop()
         recorder = self._recorder
         self._recorder = None
         if recorder is None:
@@ -349,8 +365,20 @@ class VoiceProfileRecordingDialog(QDialog):
         if not animated:
             scrollbar.setValue(target_value)
             return
+        self.script_scroll_animation.setDuration(VOICE_PROFILE_TICK_MS)
         self.script_scroll_animation.setStartValue(scrollbar.value())
         self.script_scroll_animation.setEndValue(target_value)
+        self.script_scroll_animation.start()
+
+    def start_script_scroll_animation(self) -> None:
+        scrollbar = self.script_box.verticalScrollBar()
+        scroll_range = scrollbar.maximum() - scrollbar.minimum()
+        self.script_scroll_animation.stop()
+        if scroll_range <= 0:
+            return
+        self.script_scroll_animation.setDuration(VOICE_PROFILE_RECORD_SECONDS * 1000)
+        self.script_scroll_animation.setStartValue(scrollbar.minimum())
+        self.script_scroll_animation.setEndValue(scrollbar.maximum())
         self.script_scroll_animation.start()
 
 

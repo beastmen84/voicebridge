@@ -1,0 +1,205 @@
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, TypedDict
+from uuid import uuid4
+
+from voicebridge.app_settings import app_config_dir
+from voicebridge.languages import LANGUAGE_NAMES
+
+VOICE_PROFILES_CONFIG = "voice_profiles.json"
+VOICE_PROFILE_REFERENCE = "reference"
+VOICE_PROFILE_MODELING = "modeling"
+VOICE_PROFILE_TYPES = {
+    "Reference clone": VOICE_PROFILE_REFERENCE,
+    "Modeling dataset": VOICE_PROFILE_MODELING,
+}
+VOICE_PROFILE_TYPE_LABELS = {value: key for key, value in VOICE_PROFILE_TYPES.items()}
+VOICE_PROFILE_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".wma"}
+VOICE_PROFILE_LANGUAGES = [
+    "it",
+    "en",
+    "es",
+    "fr",
+    "de",
+    "pt",
+    "pl",
+    "tr",
+    "ru",
+    "nl",
+    "cs",
+    "ar",
+    "zh-cn",
+    "ja",
+    "hu",
+    "ko",
+    "hi",
+]
+
+
+class VoiceProfile(TypedDict):
+    id: str
+    name: str
+    language_code: str
+    profile_type: str
+    reference_paths: list[str]
+    consent_confirmed: bool
+    notes: str
+    created_at: str
+    updated_at: str
+
+
+def voice_profiles_config_path() -> Path:
+    return app_config_dir() / VOICE_PROFILES_CONFIG
+
+
+def utc_timestamp() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def clean_profile_name(name: Any) -> str:
+    if not isinstance(name, str):
+        return ""
+    return " ".join(name.split()).strip()
+
+
+def normalize_profile_type(value: Any) -> str:
+    if isinstance(value, str) and value in VOICE_PROFILE_TYPES.values():
+        return value
+    if isinstance(value, str) and value in VOICE_PROFILE_TYPES:
+        return VOICE_PROFILE_TYPES[value]
+    return VOICE_PROFILE_REFERENCE
+
+
+def normalize_voice_profile_language(value: Any) -> str:
+    if not isinstance(value, str):
+        return "it"
+    language_code = value.strip().lower()
+    if language_code in VOICE_PROFILE_LANGUAGES:
+        return language_code
+    if language_code in LANGUAGE_NAMES:
+        return language_code
+    return "it"
+
+
+def normalized_reference_paths(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = []
+
+    paths = []
+    seen = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        path = str(Path(item).expanduser())
+        if not path or path in seen:
+            continue
+        paths.append(path)
+        seen.add(path)
+    return paths
+
+
+def voice_profile_status(profile: VoiceProfile) -> str:
+    if not profile.get("consent_confirmed"):
+        return "Consent required"
+    reference_paths = normalized_reference_paths(profile.get("reference_paths", []))
+    if not reference_paths:
+        return "Missing reference audio"
+    missing_paths = [path for path in reference_paths if not Path(path).is_file()]
+    if missing_paths:
+        return "Missing audio file"
+    unsupported = [
+        path for path in reference_paths
+        if Path(path).suffix.lower() not in VOICE_PROFILE_AUDIO_SUFFIXES
+    ]
+    if unsupported:
+        return "Unsupported audio format"
+    if profile.get("profile_type") == VOICE_PROFILE_MODELING:
+        return "Modeling dataset"
+    return "Ready"
+
+
+def validate_voice_profile(profile: VoiceProfile) -> None:
+    if not clean_profile_name(profile.get("name")):
+        raise ValueError("Profile name is required.")
+    if not profile.get("consent_confirmed"):
+        raise ValueError("Consent confirmation is required.")
+    status = voice_profile_status(profile)
+    if status in {"Missing reference audio", "Missing audio file", "Unsupported audio format"}:
+        raise ValueError(status + ".")
+
+
+def build_voice_profile(
+    name: str,
+    language_code: str,
+    profile_type: str,
+    reference_paths: list[str],
+    consent_confirmed: bool,
+    notes: str = "",
+    profile_id: str | None = None,
+    created_at: str | None = None,
+) -> VoiceProfile:
+    timestamp = utc_timestamp()
+    return {
+        "id": profile_id or uuid4().hex,
+        "name": clean_profile_name(name),
+        "language_code": normalize_voice_profile_language(language_code),
+        "profile_type": normalize_profile_type(profile_type),
+        "reference_paths": normalized_reference_paths(reference_paths),
+        "consent_confirmed": bool(consent_confirmed),
+        "notes": notes.strip() if isinstance(notes, str) else "",
+        "created_at": created_at or timestamp,
+        "updated_at": timestamp,
+    }
+
+
+def normalized_voice_profile(value: Any) -> VoiceProfile | None:
+    if not isinstance(value, dict):
+        return None
+    profile_id = value.get("id")
+    name = clean_profile_name(value.get("name"))
+    if not isinstance(profile_id, str) or not profile_id or not name:
+        return None
+    return build_voice_profile(
+        name=name,
+        language_code=normalize_voice_profile_language(value.get("language_code")),
+        profile_type=normalize_profile_type(value.get("profile_type")),
+        reference_paths=normalized_reference_paths(value.get("reference_paths")),
+        consent_confirmed=bool(value.get("consent_confirmed")),
+        notes=value.get("notes", "") if isinstance(value.get("notes"), str) else "",
+        profile_id=profile_id,
+        created_at=value.get("created_at") if isinstance(value.get("created_at"), str) else None,
+    ) | {
+        "updated_at": value.get("updated_at") if isinstance(value.get("updated_at"), str) else utc_timestamp(),
+    }
+
+
+def load_voice_profiles(path: Path | None = None) -> list[VoiceProfile]:
+    config_path = path or voice_profiles_config_path()
+    try:
+        with config_path.open("r", encoding="utf-8") as config_file:
+            data = json.load(config_file)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    raw_profiles = data.get("profiles", []) if isinstance(data, dict) else data
+    if not isinstance(raw_profiles, list):
+        return []
+    profiles = []
+    for item in raw_profiles:
+        profile = normalized_voice_profile(item)
+        if profile:
+            profiles.append(profile)
+    return profiles
+
+
+def save_voice_profiles(profiles: list[VoiceProfile], path: Path | None = None) -> None:
+    config_path = path or voice_profiles_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"profiles": profiles}
+    with config_path.open("w", encoding="utf-8") as config_file:
+        json.dump(data, config_file, indent=2, ensure_ascii=False)

@@ -49,6 +49,13 @@ class HomePageMixin:
             "Online TTS",
             "BadgeBlue",
         )
+        profiles_card = self.home_card(
+            "VOICE",
+            "Voice Profiles",
+            "Prepare authorized local voice references for Local TTS.",
+            "Reference voices",
+            "BadgeGreen",
+        )
         stt_card = self.home_card(
             "STT",
             "Transcription",
@@ -70,10 +77,10 @@ class HomePageMixin:
             "Frame repair/removal",
             "BadgeGreen",
         )
-        for card in (tts_card, stt_card, video_card, cleanup_card):
+        for card in (tts_card, profiles_card, stt_card, video_card, cleanup_card):
             modules_layout.addWidget(card)
 
-        note = QLabel("TTS requires internet. STT uses CPU by default and CUDA when supported.")
+        note = QLabel("TTS requires internet. Local voice profiles are prepared separately.")
         note.setObjectName("Muted")
         note.setWordWrap(True)
         modules_layout.addWidget(note)

@@ -671,7 +671,7 @@ class SttWorkflowMixin:
         self.stt_open_output_button.clicked.connect(self.open_stt_output)
         self.stt_open_folder_button.clicked.connect(self.open_stt_output_folder)
         self.stt_details_button.clicked.connect(self.toggle_stt_details)
-        self.stt_video_button.clicked.connect(lambda: self.show_page(3))
+        self.stt_video_button.clicked.connect(lambda: self.show_page(4))
         actions.addWidget(self.stt_generate_button)
         actions.addWidget(self.stt_cancel_button)
         actions.addStretch(1)

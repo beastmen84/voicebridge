@@ -55,8 +55,10 @@ from voicebridge.pages.cleanup import VideoCleanupWorkflowMixin
 from voicebridge.pages.stt import SttWorkflowMixin
 from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
+from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
 from voicebridge.ui.styles import apply_app_style
 from voicebridge.ui.widgets import FilePicker
+from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
     load_preferred_voice_short_names,
 )
@@ -67,12 +69,14 @@ class VoiceBridgeQt(
     SubtitlesWorkflowMixin,
     SttWorkflowMixin,
     TtsWorkflowMixin,
+    VoiceProfilesWorkflowMixin,
     PageBuilderMixin,
     QMainWindow,
 ):
     stack: QStackedWidget
     nav_home: QPushButton
     nav_tts: QPushButton
+    nav_profiles: QPushButton
     nav_stt: QPushButton
     nav_video: QPushButton
     nav_cleanup: QPushButton
@@ -185,6 +189,8 @@ class VoiceBridgeQt(
     is_restoring_settings: bool
     saved_tts_voice_short_name: str
     job_history: list[JobHistoryEntry]
+    voice_profiles: list[VoiceProfile]
+    selected_voice_profile_id: str
     cleanup_detected_frames: list[BlackFrame]
     cleanup_repairable_frame_map: dict[int, BlackFrame]
     cleanup_frame_checkboxes: dict[int, QCheckBox]
@@ -276,6 +282,7 @@ class VoiceBridgeQt(
         self.tts_segments: list[TtsSegment] = []
         self.selected_tts_segment_index = None
         self.status_tiles: dict[str, QLabel] = {}
+        self.load_voice_profile_store()
         self.job_history: list[JobHistoryEntry] = self.validated_job_history(
             self.app_settings.get("job_history", [])
         )
@@ -354,11 +361,13 @@ class VoiceBridgeQt(
 
         self.nav_home = self.nav_button("Dashboard", lambda: self.show_page(0))
         self.nav_tts = self.nav_button("Text to Speech", lambda: self.show_page(1))
-        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(2))
-        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(3))
-        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(4))
+        self.nav_profiles = self.nav_button("Voice Profiles", lambda: self.show_page(2))
+        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(3))
+        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(4))
+        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(5))
         side_layout.addWidget(self.nav_home)
         side_layout.addWidget(self.nav_tts)
+        side_layout.addWidget(self.nav_profiles)
         side_layout.addWidget(self.nav_stt)
         side_layout.addWidget(self.nav_video)
         side_layout.addWidget(self.nav_cleanup)
@@ -391,6 +400,7 @@ class VoiceBridgeQt(
         self.stack = QStackedWidget()
         self.stack.addWidget(self.build_home_page())
         self.stack.addWidget(self.build_tts_page())
+        self.stack.addWidget(self.build_voice_profiles_page())
         self.stack.addWidget(self.build_stt_page())
         self.stack.addWidget(self.build_video_subtitle_page())
         self.stack.addWidget(self.build_video_cleanup_page())

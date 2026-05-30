@@ -29,23 +29,31 @@ class PageBuilderMixin(HomePageMixin):
         for button, active in (
             (self.nav_home, index == 0),
             (self.nav_tts, index == 1),
-            (self.nav_stt, index == 2),
-            (self.nav_video, index == 3),
-            (self.nav_cleanup, index == 4),
+            (self.nav_profiles, index == 2),
+            (self.nav_stt, index == 3),
+            (self.nav_video, index == 4),
+            (self.nav_cleanup, index == 5),
         ):
             button.setProperty("active", active)
             button.style().unpolish(button)
             button.style().polish(button)
-        if index == 2:
-            self.refresh_stt_preflight_async()
         if index == 3:
+            self.refresh_stt_preflight_async()
+        if index == 4:
             self.sync_video_subtitle_inputs_from_stt()
 
     def update_navigation_state(self):
         if not hasattr(self, "nav_home"):
             return
         enabled = not (self.is_converting or self.is_stt_running or self.is_video_running or self.is_cleanup_running)
-        for button in (self.nav_home, self.nav_tts, self.nav_stt, self.nav_video, self.nav_cleanup):
+        for button in (
+            self.nav_home,
+            self.nav_tts,
+            self.nav_profiles,
+            self.nav_stt,
+            self.nav_video,
+            self.nav_cleanup,
+        ):
             button.setEnabled(enabled)
 
     @staticmethod

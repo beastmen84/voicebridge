@@ -78,7 +78,8 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 
 Questo workflow richiede connessione internet quando l'engine selezionato e' `Edge TTS`.
 Il pulsante `Cancel` annulla la generazione TTS in corso. L'app scrive su file temporanei e sostituisce l'MP3 finale solo a generazione completata, quindi un annullamento non lascia output finali parziali.
-La modalita' multi-voce genera parti temporanee e le unisce in un unico MP3 finale; per l'unione usa `ffmpeg` dal bundle completo.
+La modalita' multi-voce normalizza il testo, divide internamente i blocchi lunghi mantenendo la stessa voce/velocita'
+e unisce le parti temporanee in un unico MP3 finale; per l'unione usa `ffmpeg` dal bundle completo.
 Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani tecnici conviene preferire una voce nativa `it-IT`.
 
 ### Voice Profiles e Local TTS
@@ -94,7 +95,7 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
 dopo il download il modello resta disponibile localmente.
-Per ridurre artefatti su testi lunghi, Local TTS normalizza spazi/punteggiatura, divide il testo in chunk brevi
+Per ridurre artefatti su testi lunghi, Local TTS normalizza liste, spazi, file extension e punteggiatura, divide il testo in chunk brevi
 e concatena l'audio WAV prima della conversione MP3 finale.
 Il modello XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale. Vedere `THIRD_PARTY_LICENSES`.
 Le registrazioni create dall'app sono file utente nella cartella `voice_profiles` e non vengono tracciate da git.

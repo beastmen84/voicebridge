@@ -1,15 +1,22 @@
 import argparse
 import os
-import re
 import sys
 import wave
 from contextlib import suppress
 from pathlib import Path
 
+from voicebridge.tts_text import (
+    TTS_MAX_CHUNK_CHARS,
+    split_tts_text_for_tts,
+)
+from voicebridge.tts_text import (
+    normalize_tts_text as shared_normalize_tts_text,
+)
+
 DEFAULT_XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
-XTTS_MAX_CHUNK_CHARS = 240
+XTTS_MAX_CHUNK_CHARS = TTS_MAX_CHUNK_CHARS
 
 
 def status(message):
@@ -89,76 +96,11 @@ def read_text(path):
 
 
 def normalize_tts_text(text):
-    text = text.replace("\ufeff", "")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = text.replace("\u00a0", " ").replace("\u200b", "")
-    text = re.sub(r"[ \t\f\v]+", " ", text)
-    text = re.sub(r" *\n+ *", "\n", text)
-    text = re.sub(r"\n{2,}", "\n", text)
-    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
-    text = re.sub(r"([,.;:!?])([^\s,.;:!?])", r"\1 \2", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def split_words_for_xtts(text, max_chars=XTTS_MAX_CHUNK_CHARS):
-    chunks = []
-    current = []
-    current_length = 0
-    for word in text.split():
-        candidate_length = len(word) if not current else current_length + 1 + len(word)
-        if current and candidate_length > max_chars:
-            chunks.append(" ".join(current))
-            current = [word]
-            current_length = len(word)
-        else:
-            current.append(word)
-            current_length = candidate_length
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
-
-
-def pack_text_fragments_for_xtts(fragments, max_chars=XTTS_MAX_CHUNK_CHARS):
-    chunks = []
-    current = ""
-    for fragment in fragments:
-        clean_fragment = fragment.strip()
-        if not clean_fragment:
-            continue
-        if len(clean_fragment) <= max_chars:
-            candidates = [clean_fragment]
-        else:
-            candidates = split_words_for_xtts(clean_fragment, max_chars)
-        for candidate in candidates:
-            joined = candidate if not current else f"{current} {candidate}"
-            if current and len(joined) > max_chars:
-                chunks.append(current)
-                current = candidate
-            else:
-                current = joined
-    if current:
-        chunks.append(current)
-    return chunks
+    return shared_normalize_tts_text(text)
 
 
 def split_tts_text_for_xtts(text, max_chars=XTTS_MAX_CHUNK_CHARS):
-    text = normalize_tts_text(text)
-    if not text:
-        return []
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    chunks = []
-    for sentence in sentences:
-        clean_sentence = sentence.strip()
-        if not clean_sentence:
-            continue
-        if len(clean_sentence) <= max_chars:
-            chunks.append(clean_sentence)
-        else:
-            chunks.extend(
-                pack_text_fragments_for_xtts(re.split(r"(?<=[,;:])\s+", clean_sentence), max_chars)
-            )
-    return chunks
+    return split_tts_text_for_tts(text, max_chars)
 
 
 def wav_audio_signature(params):

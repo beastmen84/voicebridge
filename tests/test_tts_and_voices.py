@@ -1,3 +1,4 @@
+from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.tts_engine import ensure_mp3_suffix, suggested_output_path
 from voicebridge.voices import (
     VOICE_SECTION_OTHER,
@@ -47,3 +48,20 @@ def test_filter_voices_by_language_matches_locale_base_code() -> None:
     ]
 
     assert filter_voices_by_language(voices, "it") == [voices[1]]
+
+
+def test_expand_multi_voice_segments_keeps_voice_and_rate_on_internal_chunks() -> None:
+    segments = [
+        {
+            "text": "1. Introduzione. Seconda frase abbastanza lunga, con pausa morbida, da dividere.",
+            "voice_short_name": "it-IT-IsabellaNeural",
+            "rate": "+0%",
+        }
+    ]
+
+    expanded = TtsWorkflowMixin.expand_multi_voice_segments(segments)
+
+    assert len(expanded) > 1
+    assert all(segment["voice_short_name"] == "it-IT-IsabellaNeural" for segment in expanded)
+    assert all(segment["rate"] == "+0%" for segment in expanded)
+    assert expanded[0]["text"].startswith("1, Introduzione.")

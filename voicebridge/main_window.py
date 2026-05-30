@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QStackedWidget,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -665,25 +667,101 @@ class VoiceBridgeQt(
         buttons=QMessageBox.StandardButton.Ok,
         default_button=QMessageBox.StandardButton.Ok,
     ):
-        dialog = QMessageBox(self)
+        dialog = QDialog(self)
         dialog.setWindowTitle(title)
-        dialog.setIcon(icon)
-        dialog.setText(message)
-        dialog.setTextFormat(Qt.TextFormat.PlainText)
-        dialog.setStandardButtons(buttons)
-        dialog.setDefaultButton(default_button)
-        dialog.setMinimumSize(560, 220)
+        dialog.setModal(True)
+        dialog.setMinimumWidth(560)
+        dialog.setMaximumWidth(680)
         dialog.setStyleSheet(
             """
-            QMessageBox QLabel { min-width: 460px; }
-            QMessageBox QPushButton {
+            QDialog { background: #f8fafc; }
+            QLabel { background: transparent; color: #111827; }
+            QPushButton {
                 min-width: 88px;
                 min-height: 32px;
                 padding: 7px 14px;
+                border-radius: 6px;
+                border: 1px solid #cfd6e2;
+                background: #ffffff;
             }
+            QPushButton:hover { background: #f1f5fb; border-color: #aeb9c8; }
             """
         )
-        return dialog.exec()
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(18)
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(16)
+        icon_label = QLabel()
+        icon_label.setFixedSize(40, 40)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        standard_icon = self.message_box_standard_icon(icon)
+        if standard_icon is not None:
+            icon_label.setPixmap(self.style().standardIcon(standard_icon).pixmap(32, 32))
+        message_label = QLabel(str(message))
+        message_label.setTextFormat(Qt.TextFormat.PlainText)
+        message_label.setWordWrap(True)
+        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        message_label.setMinimumWidth(410)
+        message_label.setMaximumWidth(520)
+        content_row.addWidget(icon_label)
+        content_row.addWidget(message_label, 1)
+        layout.addLayout(content_row)
+
+        result = {"button": QMessageBox.StandardButton.No}
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        for standard_button in self.message_box_button_order(buttons):
+            button = QPushButton(self.message_box_button_text(standard_button))
+            button.setDefault(standard_button == default_button)
+            button.clicked.connect(
+                lambda _checked=False, clicked_button=standard_button: self.close_message_box(
+                    dialog,
+                    result,
+                    clicked_button,
+                )
+            )
+            button_row.addWidget(button)
+        layout.addLayout(button_row)
+
+        dialog.exec()
+        return result["button"]
+
+    @staticmethod
+    def close_message_box(dialog, result, button):
+        result["button"] = button
+        dialog.accept()
+
+    @staticmethod
+    def message_box_button_order(buttons):
+        order = (
+            QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Ok,
+        )
+        return [button for button in order if buttons & button]
+
+    @staticmethod
+    def message_box_button_text(button):
+        if button == QMessageBox.StandardButton.Yes:
+            return "Yes"
+        if button == QMessageBox.StandardButton.No:
+            return "No"
+        return "OK"
+
+    @staticmethod
+    def message_box_standard_icon(icon):
+        if icon == QMessageBox.Icon.Critical:
+            return QStyle.StandardPixmap.SP_MessageBoxCritical
+        if icon == QMessageBox.Icon.Warning:
+            return QStyle.StandardPixmap.SP_MessageBoxWarning
+        if icon == QMessageBox.Icon.Question:
+            return QStyle.StandardPixmap.SP_MessageBoxQuestion
+        if icon == QMessageBox.Icon.Information:
+            return QStyle.StandardPixmap.SP_MessageBoxInformation
+        return None
 
     def stt_alignment_language_ready(self, language_code):
         return (

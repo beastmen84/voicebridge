@@ -67,6 +67,7 @@ from voicebridge.readers import (
     read_txt,
 )
 from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
+from voicebridge.tts_text import split_tts_text_for_tts
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_profiles import (
@@ -747,6 +748,21 @@ class TtsWorkflowMixin:
         self.save_user_settings()
         return save_path, segments
 
+    @staticmethod
+    def expand_multi_voice_segments(segments):
+        expanded_segments = []
+        for segment in segments:
+            chunks = split_tts_text_for_tts(segment["text"])
+            if not chunks:
+                continue
+            for chunk in chunks:
+                expanded_segments.append({
+                    "text": chunk,
+                    "voice_short_name": segment["voice_short_name"],
+                    "rate": segment["rate"],
+                })
+        return expanded_segments
+
     def start_tts_conversion(self):
         if self.tts_engine_key() == "local":
             self.start_local_tts_conversion()
@@ -1053,12 +1069,15 @@ class TtsWorkflowMixin:
             ) as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 part_paths = []
-                total = max(1, len(segments))
-                for index, segment in enumerate(segments, start=1):
+                generation_segments = self.expand_multi_voice_segments(segments)
+                if not generation_segments:
+                    raise ValueError("No text blocks are ready for generation after cleanup.")
+                total = max(1, len(generation_segments))
+                for index, segment in enumerate(generation_segments, start=1):
                     if self.tts_cancel_requested:
                         raise TtsCancelled()
                     part_path = temp_dir / f"part-{index:04d}.mp3"
-                    self.post(self.tts_status.setText, f"Generating block {index}/{len(segments)}...")
+                    self.post(self.tts_status.setText, f"Generating chunk {index}/{len(generation_segments)}...")
                     self.post(self.update_tts_progress_percent, ((index - 1) / total) * 90)
                     asyncio.run(
                         generate_audio(

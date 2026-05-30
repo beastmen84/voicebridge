@@ -7,6 +7,7 @@ from pathlib import Path
 
 from voicebridge.tts_text import (
     TTS_MAX_CHUNK_CHARS,
+    prepare_tts_chunk_for_generation,
     split_tts_text_for_tts,
 )
 from voicebridge.tts_text import (
@@ -17,6 +18,7 @@ DEFAULT_XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
 XTTS_MAX_CHUNK_CHARS = TTS_MAX_CHUNK_CHARS
+XTTS_CHUNK_SILENCE_SECONDS = 0.25
 
 
 def status(message):
@@ -119,10 +121,16 @@ def merge_wav_files(input_paths, output_path):
             output.setparams(params)
             output.writeframes(first.readframes(first.getnframes()))
             for input_path in input_paths[1:]:
+                output.writeframes(silent_wav_frames(params, XTTS_CHUNK_SILENCE_SECONDS))
                 with wave.open(str(input_path), "rb") as part:
                     if wav_audio_signature(part.getparams()) != signature:
                         raise RuntimeError("Local TTS generated incompatible WAV chunks.")
                     output.writeframes(part.readframes(part.getnframes()))
+
+
+def silent_wav_frames(params, seconds):
+    frame_count = int(params.framerate * seconds)
+    return b"\x00" * frame_count * params.nchannels * params.sampwidth
 
 
 def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
@@ -134,7 +142,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
         if len(chunks) == 1:
             status("Generating local TTS audio chunk 1/1...")
             tts.tts_to_file(
-                text=chunks[0],
+                text=prepare_tts_chunk_for_generation(chunks[0]),
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(output_path),
@@ -149,7 +157,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
             chunk_path = output_path.with_name(f"{output_path.stem}.part-{index:03d}{output_path.suffix}")
             chunk_paths.append(chunk_path)
             tts.tts_to_file(
-                text=chunk,
+                text=prepare_tts_chunk_for_generation(chunk),
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(chunk_path),

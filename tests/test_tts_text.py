@@ -1,4 +1,9 @@
-from voicebridge.tts_text import normalize_tts_text, sentence_fragments_for_tts, split_tts_text_for_tts
+from voicebridge.tts_text import (
+    normalize_tts_text,
+    prepare_tts_chunk_for_generation,
+    sentence_fragments_for_tts,
+    split_tts_text_for_tts,
+)
 
 
 def test_normalize_tts_text_handles_numbered_lists_and_file_extensions() -> None:
@@ -29,3 +34,9 @@ def test_split_tts_text_for_tts_splits_long_sentences_on_soft_punctuation() -> N
 
     assert len(chunks) > 1
     assert all(len(chunk) <= 55 for chunk in chunks)
+
+
+def test_prepare_tts_chunk_for_generation_removes_terminal_full_stop_only() -> None:
+    assert prepare_tts_chunk_for_generation("Ciao mondo.") == "Ciao mondo"
+    assert prepare_tts_chunk_for_generation("Davvero?") == "Davvero?"
+    assert prepare_tts_chunk_for_generation("file txt") == "file txt"

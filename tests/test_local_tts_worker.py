@@ -1,9 +1,11 @@
+import wave
 from pathlib import Path
 
 import pytest
 
 from local_tts_worker import (
     XTTS_MODEL_REQUIRED_FILES,
+    merge_wav_files,
     normalize_tts_language,
     normalize_tts_text,
     read_text,
@@ -76,3 +78,21 @@ def test_xtts_terms_agreement_writes_marker(tmp_path: Path) -> None:
     write_xtts_terms_agreement(tmp_path)
 
     assert xtts_terms_agreed(tmp_path)
+
+
+def test_merge_wav_files_inserts_short_silence_between_chunks(tmp_path: Path) -> None:
+    first = tmp_path / "first.wav"
+    second = tmp_path / "second.wav"
+    output = tmp_path / "merged.wav"
+    for path, byte in ((first, b"\x01"), (second, b"\x02")):
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(1)
+            wav_file.setframerate(4)
+            wav_file.writeframes(byte * 2)
+
+    merge_wav_files([first, second], output)
+
+    with wave.open(str(output), "rb") as wav_file:
+        assert wav_file.getnframes() == 5
+        assert wav_file.readframes(5) == b"\x01\x01\x00\x02\x02"

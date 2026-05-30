@@ -637,10 +637,53 @@ class VoiceBridgeQt(
             pass
 
     def show_error(self, title, message):
-        QMessageBox.critical(self, title, message)
+        self.show_message_box(title, message, QMessageBox.Icon.Critical)
 
     def show_info(self, title, message):
-        QMessageBox.information(self, title, message)
+        self.show_message_box(title, message, QMessageBox.Icon.Information)
+
+    def ask_question(
+        self,
+        title,
+        message,
+        default_yes=False,
+    ):
+        default_button = QMessageBox.StandardButton.Yes if default_yes else QMessageBox.StandardButton.No
+        return self.show_message_box(
+            title,
+            message,
+            QMessageBox.Icon.Question,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            default_button,
+        ) == QMessageBox.StandardButton.Yes
+
+    def show_message_box(
+        self,
+        title,
+        message,
+        icon,
+        buttons=QMessageBox.StandardButton.Ok,
+        default_button=QMessageBox.StandardButton.Ok,
+    ):
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setIcon(icon)
+        dialog.setText(message)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setStandardButtons(buttons)
+        dialog.setDefaultButton(default_button)
+        dialog.setMinimumSize(560, 220)
+        dialog.setStyleSheet(
+            """
+            QMessageBox QLabel { min-width: 460px; }
+            QMessageBox QPushButton {
+                min-width: 88px;
+                min-height: 32px;
+                padding: 7px 14px;
+            }
+            """
+        )
+        return dialog.exec()
 
     def stt_alignment_language_ready(self, language_code):
         return (

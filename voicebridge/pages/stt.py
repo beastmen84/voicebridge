@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -426,18 +425,15 @@ class SttWorkflowMixin:
         language_label = f"{language_name(language_code)} ({language_code})"
         self.stt_status.setText("Alignment model required.")
         source_label = "Lingua selezionata" if source == "selected" else "Lingua rilevata"
-        answer = QMessageBox.question(
-            self,
+        if self.ask_question(
             "Alignment model missing",
             (
                 f"{source_label}: {language_label}.\n\n"
                 "Il modello di allineamento non è incluso. Vuoi scaricarlo ora?\n\n"
                 "Dopo il download questa lingua funzionerà offline su questo computer."
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer == QMessageBox.StandardButton.Yes:
+            default_yes=True,
+        ):
             self.start_alignment_model_download(language_code)
         else:
             self.append_stt_log(f"Alignment model download skipped for language: {language_code}")

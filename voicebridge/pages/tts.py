@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -781,8 +780,7 @@ class TtsWorkflowMixin:
         threading.Thread(target=self.multi_voice_conversion_worker, args=(save_path, segments), daemon=True).start()
 
     def confirm_xtts_model_license(self):
-        answer = QMessageBox.question(
-            self,
+        return self.ask_question(
             "Download XTTS-v2",
             (
                 "XTTS-v2 is a single multilingual model of about 1.8-2.3 GB.\n\n"
@@ -790,10 +788,7 @@ class TtsWorkflowMixin:
                 "including generated output.\n\n"
                 "Download the model now?"
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
-        return answer == QMessageBox.StandardButton.Yes
 
     def start_local_tts_model_download(self):
         if local_tts_model_ready():

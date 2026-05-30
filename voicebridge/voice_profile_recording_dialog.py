@@ -66,8 +66,8 @@ class VoiceProfileRecordingDialog(QDialog):
                 font-size: 15pt;
                 padding: 14px;
                 border-radius: 8px;
-                border: 1px solid #cfd6e2;
-                background: #ffffff;
+                border: 1px solid #ead8b8;
+                background: #fff8e8;
             }
             #RecordingDetails {
                 font-size: 10pt;

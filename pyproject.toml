@@ -4,7 +4,6 @@ target-version = "py313"
 exclude = [
     ".venv",
     ".venv-ml",
-    ".venv-stt",
     "build",
     "dist",
     "models",

@@ -1,6 +1,5 @@
 # Optional offline speech-to-text and subtitle alignment support.
 # Uses the shared Python 3.13 ML virtual environment: .venv-ml
-# Legacy CPU-only setups may still use .venv-stt.
 #
 # WhisperX provides faster-whisper transcription plus word-level forced alignment.
 # imageio-ffmpeg provides a bundled ffmpeg executable for audio/video decoding.

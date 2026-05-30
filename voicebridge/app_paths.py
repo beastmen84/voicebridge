@@ -25,13 +25,10 @@ def ml_python_path():
     bundled_ml_python = base_dir / "python-ml" / "python.exe"
     if bundled_ml_python.is_file():
         return bundled_ml_python
-    bundled_python = base_dir / "python-stt" / "python.exe"
-    if bundled_python.is_file():
-        return bundled_python
     ml_venv_python = base_dir / ".venv-ml" / "Scripts" / "python.exe"
     if ml_venv_python.is_file():
         return ml_venv_python
-    return base_dir / ".venv-stt" / "Scripts" / "python.exe"
+    return ml_venv_python
 
 
 def stt_python_path():
@@ -75,8 +72,4 @@ def stt_runtime_site_packages():
     base_dir = external_base_dir()
     if (base_dir / "python-ml").is_dir():
         return base_dir / "python-ml" / "Lib" / "site-packages"
-    if (base_dir / "python-stt").is_dir():
-        return base_dir / "python-stt" / "Lib" / "site-packages"
-    if (base_dir / ".venv-ml").is_dir():
-        return base_dir / ".venv-ml" / "Lib" / "site-packages"
-    return base_dir / ".venv-stt" / "Lib" / "site-packages"
+    return base_dir / ".venv-ml" / "Lib" / "site-packages"

@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $bundleDir = Join-Path $PSScriptRoot "dist\VoiceBridge"
 $preserveRoot = Join-Path $PSScriptRoot "dist\.preserve-stt-$PID"
-$preserveNames = @("python-ml", "python-stt", "models", ".stt-bin")
+$preserveNames = @("python-ml", "models", ".stt-bin")
 
 if ($Clean) {
     $buildDir = Join-Path $PSScriptRoot "build"

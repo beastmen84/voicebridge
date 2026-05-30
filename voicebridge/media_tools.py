@@ -57,9 +57,7 @@ def ffmpeg_candidates():
 
     search_dirs = [
         base_dir / "python-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
-        base_dir / "python-stt" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
         base_dir / ".venv-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
-        base_dir / ".venv-stt" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
     ]
     for search_dir in search_dirs:
         if search_dir.is_dir():

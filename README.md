@@ -37,7 +37,7 @@ Distribuire sempre tutta la cartella `VoiceBridge`, non solo l'eseguibile.
 
 Il pacchetto ML offline include:
 
-- runtime Python ML in `python-ml` oppure runtime legacy STT in `python-stt`
+- runtime Python ML condiviso in `python-ml`
 - Whisper `large-v3`
 - allineamento inglese
 - allineamento italiano

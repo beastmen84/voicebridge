@@ -37,17 +37,12 @@ if (-not $ModelsOnly) {
     Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 
     $mlVenv = Join-Path $PSScriptRoot ".venv-ml"
-    $sttVenv = Join-Path $PSScriptRoot ".venv-stt"
     if (Test-Path $mlVenv) {
         $runtimeVenv = $mlVenv
         $runtimeName = "python-ml"
     }
-    elseif (Test-Path $sttVenv) {
-        $runtimeVenv = $sttVenv
-        $runtimeName = "python-stt"
-    }
     else {
-        throw ".venv-ml or .venv-stt not found. Offline ML runtime cannot be bundled."
+        throw ".venv-ml not found. Offline ML runtime cannot be bundled."
     }
 
     $venvConfig = Join-Path $runtimeVenv "pyvenv.cfg"

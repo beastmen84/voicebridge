@@ -53,7 +53,12 @@ def test_filter_voices_by_language_matches_locale_base_code() -> None:
 def test_expand_multi_voice_segments_keeps_voice_and_rate_on_internal_chunks() -> None:
     segments = [
         {
-            "text": "1. Introduzione. Seconda frase abbastanza lunga, con pausa morbida, da dividere.",
+            "text": (
+                "1. Introduzione. "
+                "Questa frase è volutamente molto lunga, con diverse pause morbide, con altro contenuto descrittivo, "
+                "con ulteriori parole per superare il limite del chunk, e con una chiusura che obbliga il backend "
+                "a dividere internamente il blocco senza cambiare voce o velocità."
+            ),
             "voice_short_name": "it-IT-IsabellaNeural",
             "rate": "+0%",
         }

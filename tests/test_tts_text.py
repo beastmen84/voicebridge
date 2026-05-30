@@ -21,7 +21,7 @@ def test_sentence_fragments_keep_common_abbreviations_together() -> None:
 def test_split_tts_text_for_tts_preserves_short_sentences() -> None:
     text = "Ciao mondo. Questa frase resta intera."
 
-    assert split_tts_text_for_tts(text, max_chars=80) == ["Ciao mondo.", "Questa frase resta intera."]
+    assert split_tts_text_for_tts(text, max_chars=80) == ["Ciao mondo. Questa frase resta intera."]
 
 
 def test_split_tts_text_for_tts_splits_long_sentences_on_soft_punctuation() -> None:
@@ -38,6 +38,10 @@ def test_split_tts_text_for_tts_splits_long_sentences_on_soft_punctuation() -> N
 
 def test_prepare_tts_chunk_for_generation_softens_terminal_punctuation() -> None:
     assert prepare_tts_chunk_for_generation("Ciao mondo.") == "Ciao mondo,"
-    assert prepare_tts_chunk_for_generation("Attenzione!") == "Attenzione!\n"
+    assert prepare_tts_chunk_for_generation("Attenzione!") == "Attenzione!"
     assert prepare_tts_chunk_for_generation("Davvero?") == "Davvero?"
     assert prepare_tts_chunk_for_generation("file txt") == "file txt"
+
+
+def test_split_tts_text_for_tts_merges_short_exclamation_chunks() -> None:
+    assert split_tts_text_for_tts("Bro!\nFra!\nVenite qui!") == ["Bro! Fra! Venite qui!"]

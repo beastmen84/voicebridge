@@ -1,8 +1,8 @@
 import re
 
 TTS_MAX_CHUNK_CHARS = 240
+TTS_MIN_STANDALONE_CHARS = 40
 TTS_TERMINAL_FULL_STOP = "."
-TTS_TERMINAL_EXCLAMATION = "!"
 
 NON_SENTENCE_ABBREVIATIONS = {
     "arch.",
@@ -125,6 +125,28 @@ def pack_text_fragments_for_tts(fragments: list[str], max_chars: int = TTS_MAX_C
     return chunks
 
 
+def merge_short_tts_chunks(
+    chunks: list[str],
+    min_chars: int = TTS_MIN_STANDALONE_CHARS,
+    max_chars: int = TTS_MAX_CHUNK_CHARS,
+) -> list[str]:
+    merged_chunks = []
+    current = ""
+    for chunk in chunks:
+        if not current:
+            current = chunk
+            continue
+        joined = f"{current} {chunk}"
+        if len(joined) <= max_chars and (len(current) < min_chars or len(chunk) < min_chars):
+            current = joined
+            continue
+        merged_chunks.append(current)
+        current = chunk
+    if current:
+        merged_chunks.append(current)
+    return merged_chunks
+
+
 def split_tts_text_for_tts(text: str, max_chars: int = TTS_MAX_CHUNK_CHARS) -> list[str]:
     text = normalize_tts_text(text)
     if not text:
@@ -135,13 +157,11 @@ def split_tts_text_for_tts(text: str, max_chars: int = TTS_MAX_CHUNK_CHARS) -> l
             chunks.append(sentence)
         else:
             chunks.extend(pack_text_fragments_for_tts(re.split(r"(?<=[,;:])\s+", sentence), max_chars))
-    return chunks
+    return merge_short_tts_chunks(chunks, max_chars=max_chars)
 
 
 def prepare_tts_chunk_for_generation(text: str) -> str:
     text = text.strip()
     if text.endswith(TTS_TERMINAL_FULL_STOP):
         return f"{text[:-1].rstrip()},"
-    if text.endswith(TTS_TERMINAL_EXCLAMATION):
-        return f"{text}\n"
     return text

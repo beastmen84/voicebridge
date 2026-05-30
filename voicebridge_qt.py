@@ -13,7 +13,7 @@ def main():
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
     window = VoiceBridgeQt()
-    window.show()
+    window.showMaximized()
     app.exec()
 
 

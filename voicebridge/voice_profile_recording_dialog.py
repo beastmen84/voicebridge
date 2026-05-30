@@ -5,7 +5,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PySide6.QtGui import QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -123,6 +123,9 @@ class VoiceProfileRecordingDialog(QDialog):
         self.script_box.setPlainText(voice_profile_recording_script_for_display(language_code))
         self.script_box.setMinimumHeight(320)
         layout.addWidget(self.script_box, 1)
+        self.script_scroll_animation = QPropertyAnimation(self.script_box.verticalScrollBar(), b"value", self)
+        self.script_scroll_animation.setDuration(VOICE_PROFILE_TICK_MS)
+        self.script_scroll_animation.setEasingCurve(QEasingCurve.Type.Linear)
 
         self.details_box = QPlainTextEdit()
         self.details_box.setObjectName("RecordingDetails")
@@ -168,7 +171,7 @@ class VoiceProfileRecordingDialog(QDialog):
         self.counter_label.setText(str(self._countdown_remaining))
         self.status_label.setText("Prepare to read at a natural pace.")
         self.progress_bar.setValue(0)
-        self.scroll_script_to_percent(0.0)
+        self.scroll_script_to_percent(0.0, animated=False)
         self.details_box.setVisible(False)
         self.listen_button.setEnabled(False)
         self.keep_button.setEnabled(False)
@@ -218,7 +221,7 @@ class VoiceProfileRecordingDialog(QDialog):
         self._record_started_at = time.monotonic()
         self.counter_label.setText("REC")
         self.status_label.setText("Recording... 00:00 / 00:30")
-        self.scroll_script_to_percent(0.0)
+        self.scroll_script_to_percent(0.0, animated=False)
         self.timer.start(VOICE_PROFILE_TICK_MS)
 
     def complete_recording(self, auto_stopped: bool = False) -> None:
@@ -333,13 +336,22 @@ class VoiceProfileRecordingDialog(QDialog):
             self._preview_path.unlink(missing_ok=True)
         self._preview_path = None
 
-    def scroll_script_to_percent(self, percent: float) -> None:
+    def scroll_script_to_percent(self, percent: float, *, animated: bool = True) -> None:
         scrollbar = self.script_box.verticalScrollBar()
         scroll_range = scrollbar.maximum() - scrollbar.minimum()
         if scroll_range <= 0:
             return
         clamped_percent = max(0.0, min(1.0, percent))
-        scrollbar.setValue(scrollbar.minimum() + round(scroll_range * clamped_percent))
+        target_value = scrollbar.minimum() + round(scroll_range * clamped_percent)
+        if target_value == scrollbar.value():
+            return
+        self.script_scroll_animation.stop()
+        if not animated:
+            scrollbar.setValue(target_value)
+            return
+        self.script_scroll_animation.setStartValue(scrollbar.value())
+        self.script_scroll_animation.setEndValue(target_value)
+        self.script_scroll_animation.start()
 
 
 def build_recording_status_message(

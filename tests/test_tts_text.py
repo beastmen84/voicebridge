@@ -36,7 +36,8 @@ def test_split_tts_text_for_tts_splits_long_sentences_on_soft_punctuation() -> N
     assert all(len(chunk) <= 55 for chunk in chunks)
 
 
-def test_prepare_tts_chunk_for_generation_softens_terminal_full_stop_only() -> None:
+def test_prepare_tts_chunk_for_generation_softens_terminal_punctuation() -> None:
     assert prepare_tts_chunk_for_generation("Ciao mondo.") == "Ciao mondo,"
+    assert prepare_tts_chunk_for_generation("Attenzione!") == "Attenzione,"
     assert prepare_tts_chunk_for_generation("Davvero?") == "Davvero?"
     assert prepare_tts_chunk_for_generation("file txt") == "file txt"

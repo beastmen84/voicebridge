@@ -116,6 +116,7 @@ class VoiceBridgeQt(
     tts_open_folder_button: QPushButton
     tts_progress: QProgressBar
     tts_status: QLabel
+    tts_process: Any
     tts_mode_stack: QStackedWidget
     tts_single_mode_button: QPushButton
     tts_multi_mode_button: QPushButton
@@ -287,6 +288,7 @@ class VoiceBridgeQt(
         self.is_detecting_language = False
         self.is_converting = False
         self.tts_cancel_requested = False
+        self.tts_process = None
         self.tts_last_output_path = ""
         self.last_auto_save_path = ""
         self.tts_segments: list[TtsSegment] = []

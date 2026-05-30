@@ -31,24 +31,36 @@ if (!(Test-Path $bundleDir)) {
 
 if (-not $ModelsOnly) {
     Copy-Item -Path (Join-Path $PSScriptRoot "stt_worker.py") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "local_tts_worker.py") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 
+    $mlVenv = Join-Path $PSScriptRoot ".venv-ml"
     $sttVenv = Join-Path $PSScriptRoot ".venv-stt"
-    if (!(Test-Path $sttVenv)) {
-        throw ".venv-stt not found. STT runtime cannot be bundled."
+    if (Test-Path $mlVenv) {
+        $runtimeVenv = $mlVenv
+        $runtimeName = "python-ml"
+    }
+    elseif (Test-Path $sttVenv) {
+        $runtimeVenv = $sttVenv
+        $runtimeName = "python-stt"
+    }
+    else {
+        throw ".venv-ml or .venv-stt not found. Offline ML runtime cannot be bundled."
     }
 
-    $venvConfig = Join-Path $sttVenv "pyvenv.cfg"
+    $venvConfig = Join-Path $runtimeVenv "pyvenv.cfg"
     $pythonHome = ((Get-Content $venvConfig | Where-Object { $_ -match "^home\s*=" } | Select-Object -First 1) -replace "^home\s*=\s*", "").Trim()
     if (!(Test-Path (Join-Path $pythonHome "python.exe"))) {
-        throw "Could not find the base Python runtime for .venv-stt: $pythonHome"
+        throw "Could not find the base Python runtime for ${runtimeVenv}: $pythonHome"
     }
 
-    $portablePython = Join-Path $bundleDir "python-stt"
+    $portablePython = Join-Path $bundleDir $runtimeName
     Invoke-RobocopyChecked -Source $pythonHome -Destination $portablePython -ExtraArgs @("/XD", "__pycache__", "/XF", "*.pyc")
-    Invoke-RobocopyChecked -Source (Join-Path $sttVenv "Lib\site-packages") -Destination (Join-Path $portablePython "Lib\site-packages") -ExtraArgs @("/XD", "__pycache__", "/XF", "*.pyc")
+    Invoke-RobocopyChecked -Source (Join-Path $runtimeVenv "Lib\site-packages") -Destination (Join-Path $portablePython "Lib\site-packages") -ExtraArgs @("/XD", "__pycache__", "/XF", "*.pyc")
 
-    $sttShare = Join-Path $sttVenv "share"
+    $sttShare = Join-Path $runtimeVenv "share"
     if (Test-Path $sttShare) {
         Invoke-RobocopyChecked -Source $sttShare -Destination (Join-Path $portablePython "share") -ExtraArgs @("/XD", "__pycache__", "/XF", "*.pyc")
     }

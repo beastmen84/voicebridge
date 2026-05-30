@@ -1,4 +1,5 @@
 .venv/
+.venv-ml/
 .venv-stt/
 .ruff_cache/
 __pycache__/

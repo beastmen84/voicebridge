@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $bundleDir = Join-Path $PSScriptRoot "dist\VoiceBridge"
 $preserveRoot = Join-Path $PSScriptRoot "dist\.preserve-stt-$PID"
-$preserveNames = @("python-stt", "models", ".stt-bin")
+$preserveNames = @("python-ml", "python-stt", "models", ".stt-bin")
 
 if ($Clean) {
     $buildDir = Join-Path $PSScriptRoot "build"
@@ -67,8 +67,11 @@ if (!(Test-Path $bundleDir)) {
 }
 
 Copy-Item -Path (Join-Path $PSScriptRoot "stt_worker.py") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "local_tts_worker.py") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 
 Write-Host "App bundle updated: $bundleDir"

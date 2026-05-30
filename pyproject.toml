@@ -3,6 +3,7 @@ line-length = 120
 target-version = "py313"
 exclude = [
     ".venv",
+    ".venv-ml",
     ".venv-stt",
     "build",
     "dist",

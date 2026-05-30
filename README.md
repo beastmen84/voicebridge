@@ -5,6 +5,7 @@ Desktop app Windows per convertire documenti in audio MP3, creare transcript/sot
 ## Funzioni
 
 - Text to Speech con voci Microsoft Edge TTS, richiede connessione internet.
+- Local TTS opzionale con profili vocali autorizzati e Coqui XTTS nel runtime ML.
 - Generazione TTS a voce singola oppure multi-voce per blocchi di testo, con un solo MP3 finale.
 - Ricerca voci, voci preferite e ordinamento delle voci consigliate per lingua rilevata.
 - Pulsanti TTS per annullare la generazione, aprire l'MP3 generato o aprire la cartella di output.
@@ -34,16 +35,17 @@ dist\VoiceBridge\VoiceBridge.exe
 
 Distribuire sempre tutta la cartella `VoiceBridge`, non solo l'eseguibile.
 
-Il pacchetto STT offline include:
+Il pacchetto ML offline include:
 
-- runtime Python STT in `python-stt`
+- runtime Python ML in `python-ml` oppure runtime legacy STT in `python-stt`
 - Whisper `large-v3`
 - allineamento inglese
 - allineamento italiano
 - Silero VAD
 - ffmpeg tramite `imageio-ffmpeg`
 
-Il pacchetto attuale include un runtime STT CPU-only, scelto per contenere dimensione e complessita' della distribuzione.
+Il runtime ML puo' essere CPU-only o CUDA. Nell'app le sezioni STT e Local TTS espongono `Auto`, `CPU` e `CUDA`;
+`CUDA` viene abilitato solo quando il precheck rileva un runtime PyTorch compatibile e una GPU NVIDIA disponibile.
 Per le modalita' SRT, se viene rilevata o selezionata una lingua con modello di allineamento non incluso, l'app chiede conferma prima di scaricarlo. Dopo il download, quel modello resta disponibile offline sul computer.
 
 ## Requisiti utente
@@ -52,8 +54,8 @@ Per l'uso normale del pacchetto onefolder non serve installare Python.
 
 Connessione:
 
-- `Text to Speech` richiede internet per usare Microsoft Edge TTS.
-- `Transcription`, `Subtitles` e `Video Cleanup` funzionano offline con runtime, modelli e ffmpeg inclusi nella cartella distribuita.
+- `Text to Speech` richiede internet solo usando Microsoft Edge TTS.
+- `Local TTS`, `Transcription`, `Subtitles` e `Video Cleanup` funzionano offline dopo aver incluso runtime, modelli e ffmpeg nella cartella distribuita.
 
 Prerequisiti opzionali:
 
@@ -73,10 +75,23 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 5. Salvare come `.mp3`.
 6. Premere `Generate MP3`; a fine generazione usare `Open output` o `Open folder`.
 
-Questo workflow richiede connessione internet.
+Questo workflow richiede connessione internet quando l'engine selezionato e' `Edge TTS`.
 Il pulsante `Cancel` annulla la generazione TTS in corso. L'app scrive su file temporanei e sostituisce l'MP3 finale solo a generazione completata, quindi un annullamento non lascia output finali parziali.
 La modalita' multi-voce genera parti temporanee e le unisce in un unico MP3 finale; per l'unione usa `ffmpeg` dal bundle completo.
 Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani tecnici conviene preferire una voce nativa `it-IT`.
+
+### Voice Profiles e Local TTS
+
+1. Aprire `Voice Profiles`.
+2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
+3. Aprire `Text to Speech`.
+4. Selezionare engine `Local TTS`.
+5. Scegliere profilo vocale e device `Auto`, `CPU` o `CUDA`.
+6. Generare l'MP3.
+
+Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
+dopo il download il modello resta disponibile localmente.
+Il modello XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale. Vedere `THIRD_PARTY_LICENSES`.
 
 ### Transcription
 
@@ -87,7 +102,7 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
    - `Auto subtitles (.srt)`
    - `Subtitles from provided text (.srt)`
 4. Scegliere lingua. `Auto detect` va bene nella maggior parte dei casi; nel menu le lingue gia' incluse sono marcate `offline ready`, mentre le altre sono marcate `download for SRT`.
-5. Il runtime STT incluso lavora su CPU.
+5. Scegliere device `Auto`, `CPU` o `CUDA`.
 6. Generare il file.
 7. Per aggiungere un `.srt` a un video, usare la sezione `Subtitles`.
 
@@ -149,7 +164,8 @@ Struttura principale del codice:
 - `voicebridge/stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
 - `voicebridge/readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
 - `voicebridge/voices.py`: elenco, ricerca, preferiti e ordinamento voci.
-- `stt_worker.py`: worker offline WhisperX eseguito dal runtime STT e copiato come file esterno nel bundle.
+- `stt_worker.py`: worker offline WhisperX eseguito dal runtime ML e copiato come file esterno nel bundle.
+- `local_tts_worker.py`: worker Coqui XTTS eseguito dal runtime ML e copiato come file esterno nel bundle.
 - `prepare_stt_models.py`: script di preparazione/download dei modelli STT.
 
 OCR opzionale:
@@ -158,28 +174,29 @@ OCR opzionale:
 .\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
 ```
 
-STT usa una venv separata Python 3.13:
+STT e Local TTS possono usare una venv ML condivisa Python 3.13:
 
 ```powershell
-py -3.13 -m venv .venv-stt
-.\.venv-stt\Scripts\python.exe -m pip install -r requirements-stt.txt
+py -3.13 -m venv .venv-ml
+.\.venv-ml\Scripts\python.exe -m pip install -r requirements-stt.txt
+.\.venv-ml\Scripts\python.exe -m pip install -r requirements-local-tts.txt
 ```
 
 Preparazione modelli STT:
 
 ```powershell
-.\.venv-stt\Scripts\python.exe .\prepare_stt_models.py
+.\.venv-ml\Scripts\python.exe .\prepare_stt_models.py
 ```
 
 ## Build
 
-Build veloce app/exe, preservando runtime STT e modelli gia' presenti in `dist`:
+Build veloce app/exe, preservando runtime ML e modelli gia' presenti in `dist`:
 
 ```powershell
 .\build_app.ps1
 ```
 
-Sincronizzare solo runtime STT:
+Sincronizzare solo runtime ML:
 
 ```powershell
 .\sync_stt_bundle.ps1 -RuntimeOnly
@@ -205,13 +222,14 @@ Build completo pulito:
 
 ## Note
 
-- `requirements-stt.txt` non serve al programma a runtime, ma documenta come ricreare il runtime STT.
+- `requirements-stt.txt` e `requirements-local-tts.txt` non servono al programma a runtime, ma documentano come ricreare il runtime ML.
 - Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
+- Il primo avvio Local TTS puo' scaricare XTTS-v2 e richiede spazio aggiuntivo in `models\coqui`.
 - Il supporto offline di allineamento incluso e' per inglese e italiano. Altri modelli di allineamento possono essere scaricati su richiesta dalle funzioni SRT.
-- La generazione MP3 resta online perche' usa Microsoft Edge TTS.
-- Il README e la licenza vengono copiati nella cartella `dist\VoiceBridge` durante la build.
+- La generazione Edge TTS resta online; Local TTS usa il runtime ML locale.
+- Il README, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.
 
 ## Licenza
 
 Il codice di VoiceBridge e' distribuito con licenza MIT. Vedere `LICENSE`.
-Le librerie e i runtime di terze parti inclusi o usati dall'app mantengono le rispettive licenze.
+Le librerie, i runtime e i modelli di terze parti inclusi o usati dall'app mantengono le rispettive licenze. Vedere `THIRD_PARTY_LICENSES`.

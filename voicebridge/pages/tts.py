@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from voicebridge.app_paths import external_base_dir, local_tts_model_dir, local_tts_worker_path, ml_python_path
 from voicebridge.constants import (
     DEFAULT_RATE,
     DEFAULT_VOICE_SHORT_NAME,
@@ -45,7 +47,7 @@ from voicebridge.constants import (
     TTS_SPLIT_PARAGRAPHS,
 )
 from voicebridge.languages import language_name
-from voicebridge.media_tools import concatenate_mp3_files
+from voicebridge.media_tools import concatenate_mp3_files, convert_audio_to_mp3
 from voicebridge.models import TtsSegment
 from voicebridge.readers import (
     SUPPORTED_FILETYPES,
@@ -199,7 +201,7 @@ class TtsWorkflowMixin:
             self.refresh_local_voice_profile_combo()
             self.update_tts_local_device_options()
             self.refresh_stt_preflight_async()
-            self.tts_status.setText("Local TTS profile selection ready; generation worker not installed yet.")
+            self.tts_status.setText("Local TTS ready. Coqui XTTS must be installed in the ML runtime.")
         elif hasattr(self, "tts_status"):
             self.tts_status.setText("Ready.")
         self.update_tts_button_state()
@@ -751,16 +753,121 @@ class TtsWorkflowMixin:
 
     def start_local_tts_conversion(self):
         try:
-            self.collect_local_tts_options()
+            input_path, save_path, profile, device = self.collect_local_tts_options()
         except ValueError as exc:
             self.tts_status.setText("Error.")
             self.show_error("Local TTS", str(exc))
             return
-        self.tts_status.setText("Local TTS engine not installed.")
-        self.show_info(
-            "Local TTS",
-            "Voice profile selection is ready. The next step will add the local XTTS worker.",
-        )
+        python_path = ml_python_path()
+        worker_path = local_tts_worker_path()
+        if not python_path.is_file():
+            self.tts_status.setText("Local TTS environment missing.")
+            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            return
+        if not worker_path.is_file():
+            self.tts_status.setText("Local TTS worker missing.")
+            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            return
+        signature = file_signature(input_path)
+        cached_text = self.cached_input_text if signature == self.cached_input_signature else None
+        self.start_tts_busy("Starting local TTS...", percent=True)
+        threading.Thread(
+            target=self.local_tts_conversion_worker,
+            args=(python_path, worker_path, input_path, save_path, profile, device, cached_text),
+            daemon=True,
+        ).start()
+
+    def local_tts_conversion_worker(
+        self,
+        python_path,
+        worker_path,
+        input_path,
+        save_path,
+        profile,
+        device,
+        cached_text,
+    ):
+        recent_output = []
+        try:
+            text = cached_text if cached_text is not None else read_input_file(input_path)
+            if self.tts_cancel_requested:
+                raise TtsCancelled()
+            if not text.strip():
+                raise ValueError("The selected file appears to contain no readable text.")
+            with tempfile.TemporaryDirectory(prefix="voicebridge-local-tts-") as temp_dir_name:
+                temp_dir = Path(temp_dir_name)
+                text_path = temp_dir / "input.txt"
+                wav_path = temp_dir / "local-tts.wav"
+                temp_mp3_path = temp_dir / Path(save_path).name
+                text_path.write_text(text.strip(), encoding="utf-8")
+                command = [
+                    str(python_path),
+                    "-u",
+                    str(worker_path),
+                    "--text-file",
+                    str(text_path),
+                    "--output",
+                    str(wav_path),
+                    "--language",
+                    profile["language_code"],
+                    "--device",
+                    device,
+                    "--model-dir",
+                    str(local_tts_model_dir()),
+                ]
+                for reference_path in profile["reference_paths"]:
+                    command.extend(["--speaker-wav", reference_path])
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(external_base_dir()),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=creationflags,
+                )
+                self.tts_process = process
+                assert process.stdout is not None
+                for raw_line in process.stdout:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("PROGRESS: "):
+                        try:
+                            progress_percent = float(line.removeprefix("PROGRESS: ").strip())
+                        except ValueError:
+                            continue
+                        self.post(self.update_tts_progress_percent, progress_percent)
+                        continue
+                    recent_output.append(line)
+                    recent_output = recent_output[-12:]
+                    if line.startswith("STATUS: "):
+                        self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
+                    if self.tts_cancel_requested and process.poll() is None:
+                        process.terminate()
+                return_code = process.wait()
+                if self.tts_cancel_requested:
+                    raise TtsCancelled()
+                if return_code != 0:
+                    raise RuntimeError("\n".join(recent_output[-8:]) or f"Local TTS exited with code {return_code}.")
+                self.post(self.tts_status.setText, "Converting local TTS audio to MP3...")
+                self.post(self.update_tts_progress_percent, 96)
+                convert_audio_to_mp3(wav_path, temp_mp3_path)
+                if self.tts_cancel_requested:
+                    raise TtsCancelled()
+                os.replace(temp_mp3_path, save_path)
+                self.post(self.update_tts_progress_percent, 100)
+            self.post(self.conversion_succeeded, save_path)
+        except TtsCancelled:
+            self.post(self.conversion_cancelled)
+        except (OSError, RuntimeError, TimeoutError, ValueError, AssertionError) as exc:
+            self.post(self.conversion_failed, str(exc))
+        finally:
+            self.tts_process = None
+            self.post(self.finish_tts_conversion)
 
     def start_tts_busy(self, status, percent=False):
         self.is_converting = True
@@ -875,6 +982,9 @@ class TtsWorkflowMixin:
         if not self.is_converting:
             return
         self.tts_cancel_requested = True
+        process = getattr(self, "tts_process", None)
+        if process is not None and process.poll() is None:
+            process.terminate()
         self.tts_status.setText("Cancelling TTS job...")
         self.update_tts_button_state()
 
@@ -959,6 +1069,7 @@ class TtsWorkflowMixin:
         voice_card.content_layout.addWidget(self.tts_engine_combo)
 
         self.edge_voice_panel = QWidget()
+        self.edge_voice_panel.setObjectName("InlinePanel")
         edge_voice_layout = QVBoxLayout(self.edge_voice_panel)
         edge_voice_layout.setContentsMargins(0, 0, 0, 0)
         edge_voice_layout.setSpacing(10)
@@ -989,6 +1100,7 @@ class TtsWorkflowMixin:
         edge_voice_layout.addLayout(voice_row)
 
         self.local_voice_panel = QWidget()
+        self.local_voice_panel.setObjectName("InlinePanel")
         local_voice_layout = QVBoxLayout(self.local_voice_panel)
         local_voice_layout.setContentsMargins(0, 0, 0, 0)
         local_voice_layout.setSpacing(10)

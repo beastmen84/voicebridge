@@ -1,0 +1,67 @@
+VoiceBridge third-party notices
+Last updated: 2026-05-30
+
+This file summarizes third-party software and model licenses used by VoiceBridge.
+It is a notice file, not legal advice. When dependencies are bundled, their
+installed *.dist-info license and metadata files should remain available in the
+distributed runtime folders.
+
+Main application dependencies
+
+Package                 License / notice                         Source
+aiohttp                 Apache-2.0 AND MIT                       https://github.com/aio-libs/aiohttp
+edge-tts                LGPL-3.0                                 https://github.com/rany2/edge-tts
+langdetect              MIT                                      https://github.com/Mimino666/langdetect
+PySide6 / shiboken6     LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+                                                                 https://pyside.org
+python-docx             MIT                                      https://github.com/python-openxml/python-docx
+pypdf                   BSD-3-Clause                             https://github.com/py-pdf/pypdf
+pywin32                 PSF                                      https://github.com/mhammond/pywin32
+
+Optional OCR dependencies
+
+Package                 License / notice                         Source
+PyMuPDF                 AGPL-3.0 or Artifex commercial license   https://pymupdf.readthedocs.io
+pytesseract             Apache-2.0                               https://github.com/madmaze/pytesseract
+Pillow                  MIT-CMU                                  https://python-pillow.org
+Tesseract OCR app       Apache-2.0                               https://github.com/tesseract-ocr/tesseract
+
+Offline ML runtime dependencies
+
+Package                 License / notice                         Source
+whisperx                BSD-2-Clause                             https://github.com/m-bain/whisperX
+imageio-ffmpeg          BSD-2-Clause                             https://github.com/imageio/imageio-ffmpeg
+hf_transfer             Apache-2.0                               https://github.com/huggingface/hf_transfer
+hf_xet                  Apache-2.0                               https://github.com/huggingface/xet-core
+coqui-tts               MPL-2.0                                  https://github.com/idiap/coqui-ai-TTS
+torch                   BSD-3-Clause                             https://pytorch.org
+torchaudio              BSD                                     https://github.com/pytorch/audio
+torchvision             BSD-3-Clause                             https://github.com/pytorch/vision
+torchcodec              BSD-3-Clause; may include FFmpeg/CUDA components under their own licenses
+                                                                 https://github.com/pytorch/torchcodec
+faster-whisper          MIT                                      https://github.com/SYSTRAN/faster-whisper
+transformers            Apache-2.0                               https://github.com/huggingface/transformers
+huggingface_hub         Apache                                   https://github.com/huggingface/huggingface_hub
+
+Bundled/downloaded model assets
+
+Asset / model                            License / notice                         Source
+openai/whisper-large-v3                  Apache-2.0                               https://huggingface.co/openai/whisper-large-v3
+facebook/wav2vec2-xls-r-300m             Apache-2.0                               https://huggingface.co/facebook/wav2vec2-xls-r-300m
+coqui/XTTS-v2                            Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2
+Silero VAD                               Check bundled model/source license        https://github.com/snakers4/silero-vad
+
+Important XTTS-v2 notice
+
+The Coqui XTTS-v2 model is under the Coqui Public Model License. The model card
+identifies the license as coqui-public-model-license, and the license text states
+that it allows only non-commercial use of the model and its outputs. Review the
+license before publishing or monetizing generated audio:
+
+https://huggingface.co/coqui/XTTS-v2/raw/main/LICENSE.txt
+
+Microsoft Edge TTS service notice
+
+edge-tts is an unofficial client for Microsoft Edge text-to-speech voices. Use of
+Microsoft services may be subject to Microsoft's own service terms in addition to
+the open-source license of the client library.

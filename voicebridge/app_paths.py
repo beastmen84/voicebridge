@@ -20,7 +20,7 @@ def external_base_dir():
     return source_base_dir()
 
 
-def stt_python_path():
+def ml_python_path():
     base_dir = external_base_dir()
     bundled_ml_python = base_dir / "python-ml" / "python.exe"
     if bundled_ml_python.is_file():
@@ -34,8 +34,16 @@ def stt_python_path():
     return base_dir / ".venv-stt" / "Scripts" / "python.exe"
 
 
+def stt_python_path():
+    return ml_python_path()
+
+
 def stt_worker_path():
     return external_base_dir() / "stt_worker.py"
+
+
+def local_tts_worker_path():
+    return external_base_dir() / "local_tts_worker.py"
 
 
 def stt_models_root():
@@ -44,6 +52,10 @@ def stt_models_root():
 
 def stt_model_dir():
     return stt_models_root() / "whisperx"
+
+
+def local_tts_model_dir():
+    return stt_models_root() / "coqui"
 
 
 def stt_runtime_site_packages():

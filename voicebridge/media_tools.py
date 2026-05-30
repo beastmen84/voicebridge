@@ -56,7 +56,9 @@ def ffmpeg_candidates():
     ]
 
     search_dirs = [
+        base_dir / "python-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
         base_dir / "python-stt" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
+        base_dir / ".venv-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
         base_dir / ".venv-stt" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries",
     ]
     for search_dir in search_dirs:
@@ -203,6 +205,37 @@ def concatenate_mp3_files(parts, output_path):
     finally:
         with suppress(OSError):
             list_path.unlink(missing_ok=True)
+
+
+def convert_audio_to_mp3(input_path, output_path):
+    ffmpeg = find_ffmpeg_exe()
+    if not ffmpeg:
+        raise RuntimeError(
+            "Could not find ffmpeg to convert local TTS audio to MP3. "
+            "Use the full VoiceBridge bundle with the offline ML package included."
+        )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(ffmpeg),
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(input_path),
+        "-vn",
+        "-codec:a",
+        "libmp3lame",
+        "-q:a",
+        "4",
+        str(output_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, errors="replace", check=False)
+    if result.returncode != 0:
+        error_text = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(error_text or f"ffmpeg exited with code {result.returncode}.")
 
 
 def can_create_video_subtitles(srt_path, media_path):

@@ -1,0 +1,7 @@
+# Optional offline voice cloning support.
+# Install in the shared ML runtime used by STT:
+# .venv-ml\Scripts\python.exe -m pip install -r requirements-local-tts.txt
+coqui-tts
+imageio-ffmpeg
+hf_transfer
+hf_xet

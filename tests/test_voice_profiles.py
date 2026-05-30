@@ -7,12 +7,14 @@ from voicebridge.voice_profiles import (
     VOICE_PROFILE_REFERENCE,
     build_voice_profile,
     clean_profile_name,
+    delete_voice_profile_audio_files,
     load_voice_profiles,
     ready_voice_profiles,
     safe_voice_profile_audio_stem,
     save_voice_profiles,
     validate_voice_profile,
     voice_profile_display_label,
+    voice_profile_owned_audio_paths,
     voice_profile_recording_path,
     voice_profile_status,
 )
@@ -116,3 +118,46 @@ def test_ready_voice_profiles_only_returns_reference_profiles(tmp_path: Path) ->
 
     assert ready_voice_profiles([modeling, ready]) == [ready]
     assert voice_profile_display_label(ready) == "Ready (Italian)"
+
+
+def test_voice_profile_owned_audio_paths_only_returns_recorded_wavs(tmp_path: Path) -> None:
+    audio_dir = tmp_path / "voice_profiles"
+    audio_dir.mkdir()
+    recorded_wav = audio_dir / "recorded.wav"
+    recorded_wav.write_bytes(b"RIFF")
+    external_wav = tmp_path / "external.wav"
+    external_wav.write_bytes(b"RIFF")
+    recorded_mp3 = audio_dir / "recorded.mp3"
+    recorded_mp3.write_bytes(b"ID3")
+    profile = build_voice_profile(
+        name="Reference",
+        language_code="it",
+        profile_type=VOICE_PROFILE_REFERENCE,
+        reference_paths=[str(recorded_wav), str(external_wav), str(recorded_mp3)],
+        consent_confirmed=True,
+    )
+
+    assert voice_profile_owned_audio_paths(profile, audio_dir) == [recorded_wav.resolve()]
+
+
+def test_delete_voice_profile_audio_files_removes_only_owned_wavs(tmp_path: Path) -> None:
+    audio_dir = tmp_path / "voice_profiles"
+    audio_dir.mkdir()
+    recorded_wav = audio_dir / "recorded.wav"
+    recorded_wav.write_bytes(b"RIFF")
+    external_wav = tmp_path / "external.wav"
+    external_wav.write_bytes(b"RIFF")
+    profile = build_voice_profile(
+        name="Reference",
+        language_code="it",
+        profile_type=VOICE_PROFILE_REFERENCE,
+        reference_paths=[str(recorded_wav), str(external_wav)],
+        consent_confirmed=True,
+    )
+
+    deleted_paths, failed_paths = delete_voice_profile_audio_files(profile, audio_dir)
+
+    assert deleted_paths == [recorded_wav.resolve()]
+    assert failed_paths == []
+    assert not recorded_wav.exists()
+    assert external_wav.exists()

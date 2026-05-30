@@ -33,6 +33,7 @@ from voicebridge.voice_profiles import (
     VOICE_PROFILE_TYPES,
     VoiceProfile,
     build_voice_profile,
+    delete_voice_profile_audio_files,
     load_voice_profiles,
     save_voice_profiles,
     validate_voice_profile,
@@ -249,9 +250,18 @@ class VoiceProfilesWorkflowMixin:
             return
         self.voice_profiles = [entry for entry in self.voice_profiles if entry["id"] != profile["id"]]
         save_voice_profiles(self.voice_profiles)
+        deleted_paths, failed_paths = delete_voice_profile_audio_files(profile)
         self.new_voice_profile()
         self.refresh_voice_profiles_list()
         self.refresh_local_voice_profile_combo()
+        if failed_paths:
+            self.profile_status_label.setText(
+                f"Deleted profile. Could not delete {len(failed_paths)} linked audio file(s)."
+            )
+        elif deleted_paths:
+            self.profile_status_label.setText(f"Deleted profile and {len(deleted_paths)} linked audio file(s).")
+        else:
+            self.profile_status_label.setText("Deleted profile.")
 
     def open_voice_profile_reference(self) -> None:
         path = self.profile_reference_picker.text()

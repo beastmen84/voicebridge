@@ -86,6 +86,42 @@ def voice_profile_recording_path(name: Any, timestamp: str | None = None, audio_
     return directory / f"{safe_voice_profile_audio_stem(name)}-{timestamp or file_timestamp()}.wav"
 
 
+def voice_profile_owned_audio_paths(profile: VoiceProfile, audio_dir: Path | None = None) -> list[Path]:
+    audio_root = (audio_dir or voice_profiles_audio_dir()).resolve()
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for reference_path in normalized_reference_paths(profile.get("reference_paths", [])):
+        path = Path(reference_path).expanduser()
+        if path.suffix.lower() != ".wav":
+            continue
+        resolved_path = path.resolve()
+        try:
+            resolved_path.relative_to(audio_root)
+        except ValueError:
+            continue
+        if resolved_path in seen or not resolved_path.is_file():
+            continue
+        paths.append(resolved_path)
+        seen.add(resolved_path)
+    return paths
+
+
+def delete_voice_profile_audio_files(
+    profile: VoiceProfile,
+    audio_dir: Path | None = None,
+) -> tuple[list[Path], list[Path]]:
+    deleted_paths: list[Path] = []
+    failed_paths: list[Path] = []
+    for path in voice_profile_owned_audio_paths(profile, audio_dir):
+        try:
+            path.unlink()
+        except OSError:
+            failed_paths.append(path)
+        else:
+            deleted_paths.append(path)
+    return deleted_paths, failed_paths
+
+
 def normalize_profile_type(value: Any) -> str:
     if isinstance(value, str) and value in VOICE_PROFILE_TYPES.values():
         return value

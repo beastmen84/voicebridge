@@ -138,7 +138,11 @@ py -3.14 -m venv .venv
 
 Struttura principale del codice:
 
-- `voicebridge_qt.py`: UI principale Qt/PySide6 e coordinamento dei workflow.
+- `voicebridge_qt.py`: entrypoint Qt/PySide6 usato anche da PyInstaller.
+- `voicebridge/main_window.py`: finestra principale, stato applicativo, settings e wiring dei workflow.
+- `voicebridge/pages/`: builder delle pagine e workflow UI separati per TTS, STT, sottotitoli e cleanup video.
+- `voicebridge/ui/`: widget, helper UI e stylesheet Qt.
+- `voicebridge/constants.py`: label, opzioni e costanti condivise dell'app.
 - `app_paths.py`: percorsi runtime, bundle, modelli e risorse.
 - `tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
 - `media_tools.py`: ffmpeg, merge MP3 multi-voce, embed/burn-in sottotitoli e cleanup video.

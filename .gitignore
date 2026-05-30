@@ -11,6 +11,8 @@ dist/
 models/
 voice_profiles/
 .stt-bin/
+ffmpeg.exe
+ffprobe.exe
 *.log
 
 .idea/

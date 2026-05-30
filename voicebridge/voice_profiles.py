@@ -123,6 +123,18 @@ def voice_profile_status(profile: VoiceProfile) -> str:
     return "Ready"
 
 
+def ready_voice_profiles(profiles: list[VoiceProfile]) -> list[VoiceProfile]:
+    return [
+        profile for profile in profiles
+        if profile.get("profile_type") == VOICE_PROFILE_REFERENCE and voice_profile_status(profile) == "Ready"
+    ]
+
+
+def voice_profile_display_label(profile: VoiceProfile) -> str:
+    language = LANGUAGE_NAMES.get(profile["language_code"], profile["language_code"].upper())
+    return f"{profile['name']} ({language})"
+
+
 def validate_voice_profile(profile: VoiceProfile) -> None:
     if not clean_profile_name(profile.get("name")):
         raise ValueError("Profile name is required.")

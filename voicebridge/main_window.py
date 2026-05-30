@@ -34,10 +34,12 @@ from voicebridge.constants import (
     BURN_QUALITY_LABELS,
     RATE_CHOICES,
     STT_ALIGNMENT_READY_LANGUAGES,
+    STT_DEVICE_LABEL_BY_KEY,
     STT_LANGUAGE_AUTO_LABEL,
     STT_LANGUAGE_CODES,
     STT_LANGUAGE_LEGACY_LABELS,
     STT_MODE_LABELS,
+    TTS_ENGINE_LABEL_BY_KEY,
     TTS_SPLIT_LINES,
     TTS_SPLIT_PARAGRAPHS,
     UI_QUEUE_POLL_MS,
@@ -93,6 +95,9 @@ class VoiceBridgeQt(
     warning_message: QLabel
     warning_action: QPushButton
     warning_callback: Callable[[], None]
+    tts_engine_combo: QComboBox
+    edge_voice_panel: QWidget
+    local_voice_panel: QWidget
     all_voices: list[dict[str, Any]]
     current_voice_candidates: list[dict[str, Any]]
     current_voice_map: dict[str, str]
@@ -101,6 +106,9 @@ class VoiceBridgeQt(
     voice_combo: QComboBox
     voice_search: QLineEdit
     voice_preferred: QCheckBox
+    local_voice_profile_combo: QComboBox
+    local_voice_profile_status: QLabel
+    tts_local_device_combo: QComboBox
     rate_combo: QComboBox
     tts_generate_button: QPushButton
     tts_cancel_button: QPushButton
@@ -188,6 +196,7 @@ class VoiceBridgeQt(
     app_settings: dict[str, Any]
     is_restoring_settings: bool
     saved_tts_voice_short_name: str
+    saved_tts_voice_profile_id: str
     job_history: list[JobHistoryEntry]
     voice_profiles: list[VoiceProfile]
     selected_voice_profile_id: str
@@ -267,6 +276,7 @@ class VoiceBridgeQt(
         self.voice_load_error_message = ""
         self.preferred_voice_short_names: set[str] = load_preferred_voice_short_names()
         self.saved_tts_voice_short_name = self.setting_str(self.setting_section("tts").get("voice_short_name"))
+        self.saved_tts_voice_profile_id = self.setting_str(self.setting_section("tts").get("voice_profile_id"))
         self.last_valid_voice_label = ""
         self.cached_input_signature = None
         self.cached_input_text = ""
@@ -446,6 +456,16 @@ class VoiceBridgeQt(
             self.set_picker_text(self.tts_input_picker, tts_settings.get("input_path"))
             self.set_picker_text(self.tts_output_picker, tts_settings.get("output_path"))
             self.set_combo_text(self.rate_combo, tts_settings.get("rate"), RATE_CHOICES)
+            tts_engine = self.setting_str(tts_settings.get("engine"), "edge")
+            if tts_engine not in TTS_ENGINE_LABEL_BY_KEY:
+                tts_engine = "edge"
+            self.set_tts_engine_key(tts_engine)
+            local_device = self.setting_str(tts_settings.get("local_device"), "auto")
+            if local_device not in STT_DEVICE_LABEL_BY_KEY:
+                local_device = "auto"
+            self.set_tts_local_device_key(local_device)
+            self.saved_tts_voice_profile_id = self.setting_str(tts_settings.get("voice_profile_id"))
+            self.refresh_local_voice_profile_combo(self.saved_tts_voice_profile_id)
             self.set_combo_text(
                 self.tts_split_combo,
                 tts_settings.get("split_mode"),
@@ -520,10 +540,16 @@ class VoiceBridgeQt(
             selected_voice = self.current_voice_map.get(self.voice_combo.currentText(), self.saved_tts_voice_short_name)
             if selected_voice:
                 self.saved_tts_voice_short_name = selected_voice
+            selected_profile = self.selected_tts_voice_profile()
+            if selected_profile:
+                self.saved_tts_voice_profile_id = selected_profile["id"]
             settings["tts"] = {
                 "input_path": self.tts_input_picker.text(),
                 "output_path": self.tts_output_picker.text(),
+                "engine": self.tts_engine_key(),
                 "voice_short_name": self.saved_tts_voice_short_name,
+                "voice_profile_id": self.saved_tts_voice_profile_id,
+                "local_device": self.tts_local_device_key(),
                 "rate": self.rate_combo.currentText(),
                 "tab_index": self.tts_mode_index(),
                 "split_mode": self.tts_split_combo.currentText(),

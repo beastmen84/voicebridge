@@ -35,6 +35,12 @@ from voicebridge.constants import (
     DEFAULT_RATE,
     DEFAULT_VOICE_SHORT_NAME,
     RATE_CHOICES,
+    STT_DEVICE_BY_LABEL,
+    STT_DEVICE_LABEL_BY_KEY,
+    STT_DEVICE_LABELS,
+    TTS_ENGINE_BY_LABEL,
+    TTS_ENGINE_LABEL_BY_KEY,
+    TTS_ENGINE_LABELS,
     TTS_SPLIT_LINES,
     TTS_SPLIT_PARAGRAPHS,
 )
@@ -54,6 +60,12 @@ from voicebridge.readers import (
 from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
+from voicebridge.voice_profiles import (
+    VoiceProfile,
+    ready_voice_profiles,
+    voice_profile_display_label,
+    voice_profile_status,
+)
 from voicebridge.voices import (
     FALLBACK_VOICES,
     build_voice_options,
@@ -65,6 +77,133 @@ from voicebridge.voices import (
 
 
 class TtsWorkflowMixin:
+    def tts_engine_key(self):
+        engine = self.tts_engine_combo.currentData()
+        return engine if isinstance(engine, str) and engine in TTS_ENGINE_LABEL_BY_KEY else "edge"
+
+    def set_tts_engine_key(self, engine):
+        engine = engine if isinstance(engine, str) and engine in TTS_ENGINE_LABEL_BY_KEY else "edge"
+        for index in range(self.tts_engine_combo.count()):
+            if self.tts_engine_combo.itemData(index) == engine:
+                self.tts_engine_combo.setCurrentIndex(index)
+                return
+
+    def tts_engine_changed(self):
+        self.update_tts_engine_ui()
+        self.save_user_settings()
+
+    def tts_local_device_key(self):
+        device = self.tts_local_device_combo.currentData()
+        return device if isinstance(device, str) and device in STT_DEVICE_LABEL_BY_KEY else "auto"
+
+    def set_tts_local_device_key(self, device):
+        device = device if isinstance(device, str) and device in STT_DEVICE_LABEL_BY_KEY else "auto"
+        for index in range(self.tts_local_device_combo.count()):
+            if self.tts_local_device_combo.itemData(index) == device:
+                self.tts_local_device_combo.setCurrentIndex(index)
+                return
+
+    def tts_local_device_changed(self):
+        if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
+            self.set_tts_local_device_key("auto")
+        self.save_user_settings()
+
+    def update_tts_local_device_options(self):
+        if not hasattr(self, "tts_local_device_combo"):
+            return
+        selected_device = self.tts_local_device_key()
+        if selected_device == "cuda" and not self.stt_cuda_available:
+            selected_device = "auto"
+        self.tts_local_device_combo.blockSignals(True)
+        try:
+            for index in range(self.tts_local_device_combo.count()):
+                device = self.tts_local_device_combo.itemData(index)
+                item = self.tts_local_device_combo.model().item(index)
+                enabled = device != "cuda" or self.stt_cuda_available
+                if item is not None:
+                    item.setEnabled(enabled)
+                if device == "auto":
+                    tooltip = "Uses CUDA when available; otherwise falls back to CPU."
+                elif device == "cpu":
+                    tooltip = "Forces CPU execution."
+                elif enabled:
+                    tooltip = "Uses the detected CUDA GPU."
+                else:
+                    tooltip = "CUDA is not available in the current ML runtime on this machine."
+                self.tts_local_device_combo.setItemData(index, tooltip)
+            self.set_tts_local_device_key(selected_device)
+        finally:
+            self.tts_local_device_combo.blockSignals(False)
+
+    def selected_tts_voice_profile(self) -> VoiceProfile | None:
+        profile_id = self.local_voice_profile_combo.currentData()
+        if not isinstance(profile_id, str) or not profile_id:
+            return None
+        return next((profile for profile in self.voice_profiles if profile["id"] == profile_id), None)
+
+    def refresh_local_voice_profile_combo(self, preferred_profile_id=None):
+        if not hasattr(self, "local_voice_profile_combo"):
+            return
+        previous_profile_id = self.local_voice_profile_combo.currentData()
+        target_profile_id = preferred_profile_id or previous_profile_id or self.saved_tts_voice_profile_id
+        profiles = ready_voice_profiles(self.voice_profiles)
+
+        self.local_voice_profile_combo.blockSignals(True)
+        try:
+            self.local_voice_profile_combo.clear()
+            if not profiles:
+                self.local_voice_profile_combo.addItem("No ready voice profiles", "")
+                self.local_voice_profile_combo.setEnabled(False)
+            else:
+                for profile in profiles:
+                    self.local_voice_profile_combo.addItem(voice_profile_display_label(profile), profile["id"])
+                self.local_voice_profile_combo.setEnabled(True)
+                if target_profile_id:
+                    for index in range(self.local_voice_profile_combo.count()):
+                        if self.local_voice_profile_combo.itemData(index) == target_profile_id:
+                            self.local_voice_profile_combo.setCurrentIndex(index)
+                            break
+        finally:
+            self.local_voice_profile_combo.blockSignals(False)
+        self.update_local_voice_profile_status()
+
+    def local_voice_profile_changed(self):
+        profile = self.selected_tts_voice_profile()
+        self.saved_tts_voice_profile_id = profile["id"] if profile else ""
+        self.update_local_voice_profile_status()
+        self.save_user_settings()
+
+    def update_local_voice_profile_status(self):
+        if not hasattr(self, "local_voice_profile_status"):
+            return
+        profile = self.selected_tts_voice_profile()
+        if profile:
+            self.local_voice_profile_status.setText(
+                f"{voice_profile_status(profile)} | {Path(profile['reference_paths'][0]).name}"
+            )
+        else:
+            self.local_voice_profile_status.setText("Create a ready reference profile in Voice Profiles.")
+        self.update_tts_button_state()
+
+    def update_tts_engine_ui(self):
+        if not hasattr(self, "tts_engine_combo"):
+            return
+        local = self.tts_engine_key() == "local"
+        self.edge_voice_panel.setVisible(not local)
+        self.local_voice_panel.setVisible(local)
+        if hasattr(self, "tts_multi_mode_button"):
+            self.tts_multi_mode_button.setEnabled(not local)
+            if local and self.tts_mode_index() == 1:
+                self.set_tts_mode(0)
+        if local:
+            self.refresh_local_voice_profile_combo()
+            self.update_tts_local_device_options()
+            self.refresh_stt_preflight_async()
+            self.tts_status.setText("Local TTS profile selection ready; generation worker not installed yet.")
+        elif hasattr(self, "tts_status"):
+            self.tts_status.setText("Ready.")
+        self.update_tts_button_state()
+
     def start_voice_loading(self):
         self.is_loading_voices = True
         self.voice_combo.setEnabled(False)
@@ -301,16 +440,18 @@ class TtsWorkflowMixin:
         self.warning_callback()
 
     def update_tts_button_state(self):
-        ready = (
-            not self.is_loading_voices
-            and not self.is_detecting_language
+        common_ready = (
+            not self.is_detecting_language
             and not self.is_converting
             and not self.is_stt_running
             and not self.is_video_running
             and not self.is_cleanup_running
             and not self.input_file_error_message
-            and bool(self.current_voice_map)
         )
+        if self.tts_engine_key() == "local":
+            ready = common_ready and bool(self.selected_tts_voice_profile())
+        else:
+            ready = common_ready and not self.is_loading_voices and bool(self.current_voice_map)
         self.tts_generate_button.setEnabled(ready)
         self.tts_cancel_button.setEnabled(self.is_converting and not self.tts_cancel_requested)
         output_ready = bool(self.tts_last_output_path and Path(self.tts_last_output_path).is_file())
@@ -524,6 +665,31 @@ class TtsWorkflowMixin:
         self.save_user_settings()
         return input_path, save_path, voice, rate
 
+    def collect_local_tts_options(self):
+        input_path = self.tts_input_picker.text()
+        save_path = self.tts_output_picker.text()
+        profile = self.selected_tts_voice_profile()
+        if not input_path:
+            raise ValueError("Please select an input file.")
+        if not os.path.isfile(input_path):
+            raise ValueError("The selected input file does not exist.")
+        if not save_path:
+            raise ValueError("Please choose where to save the MP3.")
+        save_path = ensure_mp3_suffix(save_path)
+        if not os.path.isdir(os.path.dirname(os.path.abspath(save_path))):
+            raise ValueError("The output folder does not exist.")
+        if self.is_detecting_language:
+            raise ValueError("Language detection is still running. Please wait a moment.")
+        if self.input_file_error_message:
+            raise ValueError(self.input_file_error_message)
+        if not profile:
+            raise ValueError("Please create and select a ready voice profile.")
+        if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
+            raise ValueError("CUDA is not available in the current ML runtime on this machine.")
+        self.tts_output_picker.set_text(save_path)
+        self.save_user_settings()
+        return input_path, save_path, profile, self.tts_local_device_key()
+
     def collect_multi_tts_options(self):
         save_path = self.tts_output_picker.text()
         if not save_path:
@@ -552,6 +718,9 @@ class TtsWorkflowMixin:
         return save_path, segments
 
     def start_tts_conversion(self):
+        if self.tts_engine_key() == "local":
+            self.start_local_tts_conversion()
+            return
         if self.tts_mode_index() == 1:
             self.start_multi_voice_conversion()
             return
@@ -579,6 +748,19 @@ class TtsWorkflowMixin:
             return
         self.start_tts_busy("Generating multi-voice audio...", percent=True)
         threading.Thread(target=self.multi_voice_conversion_worker, args=(save_path, segments), daemon=True).start()
+
+    def start_local_tts_conversion(self):
+        try:
+            self.collect_local_tts_options()
+        except ValueError as exc:
+            self.tts_status.setText("Error.")
+            self.show_error("Local TTS", str(exc))
+            return
+        self.tts_status.setText("Local TTS engine not installed.")
+        self.show_info(
+            "Local TTS",
+            "Voice profile selection is ready. The next step will add the local XTTS worker.",
+        )
 
     def start_tts_busy(self, status, percent=False):
         self.is_converting = True
@@ -709,7 +891,7 @@ class TtsWorkflowMixin:
             layout,
             "TTS",
             "Text to Speech",
-            "Uses Microsoft Edge TTS voices. Internet connection is required.",
+            "Generate MP3 with online Edge voices or prepared local voice profiles.",
             "BadgeBlue",
         )
 
@@ -769,6 +951,17 @@ class TtsWorkflowMixin:
 
         voice_card = Card("Voice")
         voice_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.tts_engine_combo = QComboBox()
+        for label in TTS_ENGINE_LABELS:
+            self.tts_engine_combo.addItem(label, TTS_ENGINE_BY_LABEL[label])
+        self.tts_engine_combo.currentTextChanged.connect(lambda _text: self.tts_engine_changed())
+        voice_card.content_layout.addWidget(QLabel("Engine"))
+        voice_card.content_layout.addWidget(self.tts_engine_combo)
+
+        self.edge_voice_panel = QWidget()
+        edge_voice_layout = QVBoxLayout(self.edge_voice_panel)
+        edge_voice_layout.setContentsMargins(0, 0, 0, 0)
+        edge_voice_layout.setSpacing(10)
         self.voice_status = QLabel("Loading complete voice list...")
         self.voice_status.setObjectName("Muted")
         self.voice_combo = QComboBox()
@@ -783,17 +976,49 @@ class TtsWorkflowMixin:
         self.rate_combo.addItems(RATE_CHOICES)
         self.rate_combo.setCurrentText(DEFAULT_RATE)
         self.rate_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
-        voice_card.content_layout.addWidget(self.voice_status)
-        voice_card.content_layout.addWidget(QLabel("Voice"))
-        voice_card.content_layout.addWidget(self.voice_combo)
-        voice_card.content_layout.addWidget(QLabel("Search"))
-        voice_card.content_layout.addWidget(self.voice_search)
+        edge_voice_layout.addWidget(self.voice_status)
+        edge_voice_layout.addWidget(QLabel("Voice"))
+        edge_voice_layout.addWidget(self.voice_combo)
+        edge_voice_layout.addWidget(QLabel("Search"))
+        edge_voice_layout.addWidget(self.voice_search)
         voice_row = QHBoxLayout()
         voice_row.addWidget(self.voice_preferred)
         voice_row.addStretch(1)
         voice_row.addWidget(QLabel("Speed"))
         voice_row.addWidget(self.rate_combo)
-        voice_card.content_layout.addLayout(voice_row)
+        edge_voice_layout.addLayout(voice_row)
+
+        self.local_voice_panel = QWidget()
+        local_voice_layout = QVBoxLayout(self.local_voice_panel)
+        local_voice_layout.setContentsMargins(0, 0, 0, 0)
+        local_voice_layout.setSpacing(10)
+        self.local_voice_profile_combo = QComboBox()
+        self.local_voice_profile_combo.currentTextChanged.connect(lambda _text: self.local_voice_profile_changed())
+        manage_profiles_button = QPushButton("Manage profiles")
+        manage_profiles_button.clicked.connect(lambda _checked=False: self.show_page(2))
+        profile_row = QHBoxLayout()
+        profile_row.setContentsMargins(0, 0, 0, 0)
+        profile_row.addWidget(self.local_voice_profile_combo, 1)
+        profile_row.addWidget(manage_profiles_button)
+        self.local_voice_profile_status = QLabel("Create a ready reference profile in Voice Profiles.")
+        self.local_voice_profile_status.setObjectName("Muted")
+        self.local_voice_profile_status.setWordWrap(True)
+        self.tts_local_device_combo = QComboBox()
+        for label in STT_DEVICE_LABELS:
+            self.tts_local_device_combo.addItem(label, STT_DEVICE_BY_LABEL[label])
+        self.tts_local_device_combo.currentTextChanged.connect(lambda _text: self.tts_local_device_changed())
+        local_device_row = QHBoxLayout()
+        local_device_row.setContentsMargins(0, 0, 0, 0)
+        local_device_row.addWidget(QLabel("Device"))
+        local_device_row.addWidget(self.tts_local_device_combo)
+        local_device_row.addStretch(1)
+        local_voice_layout.addWidget(QLabel("Voice profile"))
+        local_voice_layout.addLayout(profile_row)
+        local_voice_layout.addWidget(self.local_voice_profile_status)
+        local_voice_layout.addLayout(local_device_row)
+
+        voice_card.content_layout.addWidget(self.edge_voice_panel)
+        voice_card.content_layout.addWidget(self.local_voice_panel)
 
         main_grid.addWidget(files_card, 0, 0)
         main_grid.addWidget(voice_card, 0, 1)
@@ -838,6 +1063,10 @@ class TtsWorkflowMixin:
         layout.addStretch(1)
 
         self.set_tts_mode(0)
+        self.refresh_local_voice_profile_combo()
+        self.update_tts_local_device_options()
+        self.set_tts_engine_key("edge")
+        self.update_tts_engine_ui()
         return page
 
     @staticmethod

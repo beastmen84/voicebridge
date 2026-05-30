@@ -167,6 +167,7 @@ class SttWorkflowMixin:
         self.stt_cuda_available = bool(runtime_info.get("cuda_available"))
         self.stt_runtime_detail = runtime_info.get("detail", "STT runtime inspected.")
         self.update_stt_device_options()
+        self.update_tts_local_device_options()
         self.stt_preflight_label.setText(summary)
         self.update_stt_button_state()
         self.refresh_home_diagnostics()

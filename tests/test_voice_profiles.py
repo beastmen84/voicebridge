@@ -8,8 +8,10 @@ from voicebridge.voice_profiles import (
     build_voice_profile,
     clean_profile_name,
     load_voice_profiles,
+    ready_voice_profiles,
     save_voice_profiles,
     validate_voice_profile,
+    voice_profile_display_label,
     voice_profile_status,
 )
 
@@ -81,3 +83,25 @@ def test_save_and_load_voice_profiles(tmp_path: Path) -> None:
     loaded = load_voice_profiles(config_path)
 
     assert loaded == [profile]
+
+
+def test_ready_voice_profiles_only_returns_reference_profiles(tmp_path: Path) -> None:
+    reference = tmp_path / "voice.wav"
+    reference.write_bytes(b"RIFF")
+    ready = build_voice_profile(
+        name="Ready",
+        language_code="it",
+        profile_type=VOICE_PROFILE_REFERENCE,
+        reference_paths=[str(reference)],
+        consent_confirmed=True,
+    )
+    modeling = build_voice_profile(
+        name="Dataset",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[str(reference)],
+        consent_confirmed=True,
+    )
+
+    assert ready_voice_profiles([modeling, ready]) == [ready]
+    assert voice_profile_display_label(ready) == "Ready (Italian)"

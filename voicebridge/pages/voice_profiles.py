@@ -161,6 +161,7 @@ class VoiceProfilesWorkflowMixin:
         self.selected_voice_profile_id = profile["id"]
         self.profile_status_label.setText(voice_profile_status(profile))
         self.refresh_voice_profiles_list()
+        self.refresh_local_voice_profile_combo(profile["id"])
         self.show_info("Voice Profiles", f"Profile saved:\n{profile['name']}")
 
     def delete_selected_voice_profile(self) -> None:
@@ -171,6 +172,7 @@ class VoiceProfilesWorkflowMixin:
         save_voice_profiles(self.voice_profiles)
         self.new_voice_profile()
         self.refresh_voice_profiles_list()
+        self.refresh_local_voice_profile_combo()
 
     def open_voice_profile_reference(self) -> None:
         path = self.profile_reference_picker.text()

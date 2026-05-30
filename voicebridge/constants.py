@@ -19,6 +19,17 @@ APP_ICON_PNG = Path("images") / "file_to_mp3.png"
 DEFAULT_VOICE_SHORT_NAME = "en-US-AriaNeural"
 DEFAULT_RATE = "-5%"
 RATE_CHOICES = ["-20%", "-15%", "-10%", "-5%", "+0%", "+5%", "+10%"]
+TTS_ENGINE_EDGE_LABEL = "Edge TTS"
+TTS_ENGINE_LOCAL_LABEL = "Local TTS"
+TTS_ENGINE_LABELS = [
+    TTS_ENGINE_EDGE_LABEL,
+    TTS_ENGINE_LOCAL_LABEL,
+]
+TTS_ENGINE_BY_LABEL = {
+    TTS_ENGINE_EDGE_LABEL: "edge",
+    TTS_ENGINE_LOCAL_LABEL: "local",
+}
+TTS_ENGINE_LABEL_BY_KEY = {value: key for key, value in TTS_ENGINE_BY_LABEL.items()}
 TTS_SPLIT_PARAGRAPHS = "Paragraphs"
 TTS_SPLIT_LINES = "Lines"
 STT_MODEL = "large-v3"

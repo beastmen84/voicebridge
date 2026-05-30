@@ -168,6 +168,7 @@ class VoiceProfileRecordingDialog(QDialog):
         self.counter_label.setText(str(self._countdown_remaining))
         self.status_label.setText("Prepare to read at a natural pace.")
         self.progress_bar.setValue(0)
+        self.scroll_script_to_percent(0.0)
         self.details_box.setVisible(False)
         self.listen_button.setEnabled(False)
         self.keep_button.setEnabled(False)
@@ -189,6 +190,7 @@ class VoiceProfileRecordingDialog(QDialog):
         elapsed = max(0.0, time.monotonic() - self._record_started_at)
         remaining = max(0.0, VOICE_PROFILE_RECORD_SECONDS - elapsed)
         self.progress_bar.setValue(min(self.progress_bar.maximum(), int(elapsed * 1000)))
+        self.scroll_script_to_percent(elapsed / VOICE_PROFILE_RECORD_SECONDS)
         if 0 < remaining <= VOICE_PROFILE_END_COUNTDOWN_SECONDS:
             self.counter_label.setText(str(max(1, math.ceil(remaining))))
             self.status_label.setText("Finishing recording.")
@@ -216,6 +218,7 @@ class VoiceProfileRecordingDialog(QDialog):
         self._record_started_at = time.monotonic()
         self.counter_label.setText("REC")
         self.status_label.setText("Recording... 00:00 / 00:30")
+        self.scroll_script_to_percent(0.0)
         self.timer.start(VOICE_PROFILE_TICK_MS)
 
     def complete_recording(self, auto_stopped: bool = False) -> None:
@@ -329,6 +332,14 @@ class VoiceProfileRecordingDialog(QDialog):
         with suppress(OSError):
             self._preview_path.unlink(missing_ok=True)
         self._preview_path = None
+
+    def scroll_script_to_percent(self, percent: float) -> None:
+        scrollbar = self.script_box.verticalScrollBar()
+        scroll_range = scrollbar.maximum() - scrollbar.minimum()
+        if scroll_range <= 0:
+            return
+        clamped_percent = max(0.0, min(1.0, percent))
+        scrollbar.setValue(scrollbar.minimum() + round(scroll_range * clamped_percent))
 
 
 def build_recording_status_message(

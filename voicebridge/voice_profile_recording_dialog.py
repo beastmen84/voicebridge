@@ -6,6 +6,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QFont
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QDialog,
@@ -61,6 +62,20 @@ class VoiceProfileRecordingDialog(QDialog):
             QLabel { background: transparent; color: #111827; }
             #RecordingCounter { font-size: 36pt; font-weight: 800; color: #2f6fed; }
             #RecordingStatus { color: #617083; }
+            #RecordingScript {
+                font-size: 15pt;
+                padding: 14px;
+                border-radius: 8px;
+                border: 1px solid #cfd6e2;
+                background: #ffffff;
+            }
+            #RecordingDetails {
+                font-size: 10pt;
+                padding: 10px;
+                border-radius: 8px;
+                border: 1px solid #cfd6e2;
+                background: #ffffff;
+            }
             QPushButton {
                 min-width: 92px;
                 min-height: 34px;
@@ -102,14 +117,19 @@ class VoiceProfileRecordingDialog(QDialog):
         layout.addWidget(self.progress_bar)
 
         self.script_box = QPlainTextEdit()
+        self.script_box.setObjectName("RecordingScript")
         self.script_box.setReadOnly(True)
+        self.script_box.setFont(QFont("Segoe UI", 15))
         self.script_box.setPlainText(voice_profile_recording_script(language_code))
-        self.script_box.setMinimumHeight(220)
+        self.script_box.setMinimumHeight(320)
         layout.addWidget(self.script_box, 1)
 
         self.details_box = QPlainTextEdit()
+        self.details_box.setObjectName("RecordingDetails")
         self.details_box.setReadOnly(True)
-        self.details_box.setMinimumHeight(130)
+        self.details_box.setFont(QFont("Segoe UI", 10))
+        self.details_box.setMinimumHeight(110)
+        self.details_box.setMaximumHeight(150)
         self.details_box.setVisible(False)
         layout.addWidget(self.details_box)
 

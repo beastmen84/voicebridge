@@ -1,0 +1,7 @@
+# Optional OCR support for scanned/image-based PDF pages.
+# Also install the Tesseract OCR application:
+# https://github.com/UB-Mannheim/tesseract/wiki
+# The app checks PATH and the default C:\Program Files\Tesseract-OCR location.
+pymupdf
+pytesseract
+pillow

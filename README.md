@@ -1,0 +1,212 @@
+# VoiceBridge
+
+Desktop app Windows per convertire documenti in audio MP3, creare transcript/sottotitoli da file audio o video e gestire piccoli interventi video.
+
+## Funzioni
+
+- Text to Speech con voci Microsoft Edge TTS, richiede connessione internet.
+- Generazione TTS a voce singola oppure multi-voce per blocchi di testo, con un solo MP3 finale.
+- Ricerca voci, voci preferite e ordinamento delle voci consigliate per lingua rilevata.
+- Pulsanti TTS per annullare la generazione, aprire l'MP3 generato o aprire la cartella di output.
+- Lettura file `.txt`, `.docx`, `.doc`, `.pdf`.
+- OCR opzionale per PDF scansionati o basati su immagini.
+- Speech to text offline da audio/video con WhisperX e modelli inclusi.
+- Creazione transcript `.md`.
+- Creazione sottotitoli `.srt` automatici.
+- Creazione `.srt` da transcript fornito, con allineamento al video/audio.
+- Aggiunta sottotitoli `.srt` al video come traccia selezionabile oppure impressi nel video.
+- Rilevamento di frame neri isolati nei video, con riparazione conservativa o rimozione dei frame selezionati.
+- Transcript fornito per allineamento da `.txt`, `.md`, `.docx` o `.doc`.
+
+## Pacchetto distribuito
+
+La cartella da distribuire e avviare e':
+
+```powershell
+dist\VoiceBridge
+```
+
+Avvio:
+
+```powershell
+dist\VoiceBridge\VoiceBridge.exe
+```
+
+Distribuire sempre tutta la cartella `VoiceBridge`, non solo l'eseguibile.
+
+Il pacchetto STT offline include:
+
+- runtime Python STT in `python-stt`
+- Whisper `large-v3`
+- allineamento inglese
+- allineamento italiano
+- Silero VAD
+- ffmpeg tramite `imageio-ffmpeg`
+
+Il pacchetto attuale include un runtime STT CPU-only, scelto per contenere dimensione e complessita' della distribuzione.
+Per le modalita' SRT, se viene rilevata o selezionata una lingua con modello di allineamento non incluso, l'app chiede conferma prima di scaricarlo. Dopo il download, quel modello resta disponibile offline sul computer.
+
+## Requisiti utente
+
+Per l'uso normale del pacchetto onefolder non serve installare Python.
+
+Connessione:
+
+- `Text to Speech` richiede internet per usare Microsoft Edge TTS.
+- `Transcription`, `Subtitles` e `Video Cleanup` funzionano offline con runtime, modelli e ffmpeg inclusi nella cartella distribuita.
+
+Prerequisiti opzionali:
+
+- Microsoft Word: richiesto per leggere vecchi file `.doc`.
+- Tesseract OCR: richiesto solo per OCR su PDF scansionati. Installer Windows consigliato: <https://github.com/UB-Mannheim/tesseract/wiki>
+
+I file `.docx`, `.txt` e PDF testuali non richiedono Word.
+
+## Workflow
+
+### Text to Speech
+
+1. Aprire `Text to Speech`.
+2. Scegliere un file supportato.
+3. Selezionare voce, preferiti e velocita'.
+4. In alternativa, scegliere `Multi-voice blocks`, dividere il documento in blocchi e assegnare voce/velocita' ai singoli blocchi.
+5. Salvare come `.mp3`.
+6. Premere `Generate MP3`; a fine generazione usare `Open output` o `Open folder`.
+
+Questo workflow richiede connessione internet.
+Il pulsante `Cancel` annulla la generazione TTS in corso. L'app scrive su file temporanei e sostituisce l'MP3 finale solo a generazione completata, quindi un annullamento non lascia output finali parziali.
+La modalita' multi-voce genera parti temporanee e le unisce in un unico MP3 finale; per l'unione usa `ffmpeg` dal bundle completo.
+Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani tecnici conviene preferire una voce nativa `it-IT`.
+
+### Transcription
+
+1. Aprire `Transcription`.
+2. Scegliere un file audio o video.
+3. Scegliere la modalita':
+   - `Transcript Markdown (.md)`
+   - `Auto subtitles (.srt)`
+   - `Subtitles from provided text (.srt)`
+4. Scegliere lingua. `Auto detect` va bene nella maggior parte dei casi; nel menu le lingue gia' incluse sono marcate `offline ready`, mentre le altre sono marcate `download for SRT`.
+5. Il runtime STT incluso lavora su CPU.
+6. Generare il file.
+7. Per aggiungere un `.srt` a un video, usare la sezione `Subtitles`.
+
+La modalita' `Transcript Markdown (.md)` non richiede modelli di allineamento: Whisper `large-v3` puo' trascrivere anche lingue non incluse nel pacchetto alignment.
+Le due modalita' `.srt` richiedono invece il modello di allineamento della lingua parlata. Inglese e italiano sono inclusi; per altre lingue l'app mostra un prompt e scarica il modello solo se l'utente conferma.
+Nel modo `Subtitles from provided text (.srt)`, il transcript fornito puo' essere `.txt`, `.md`, `.docx` o `.doc`; i vecchi `.doc` richiedono Microsoft Word installato.
+`Subtitles` usa `ffmpeg` incluso nel bundle completo ed e' indipendente dall'ultimo job STT: si puo' usare anche con un `.srt` creato da un audio estratto dal video.
+`Embed SRT track` crea un file `_subtitled`, mentre `Burn in SRT` crea un file `_burned`.
+Nel burn-in si puo' scegliere la qualita' di ricodifica:
+
+- `Auto (recommended)`: sceglie CRF 20 per la maggior parte dei 1080p, CRF 18 per 4K o 1080p ad alto bitrate.
+- `Standard (CRF 20)`: qualita' alta per 1080p, file normalmente piu' piccoli.
+- `High quality (CRF 18)`: piu' vicino alla sorgente, file piu' grandi.
+- `Maximum quality (CRF 16)`: qualita' molto alta, file molto piu' grandi.
+- `Original bitrate`: ricodifica puntando al bitrate video sorgente; non e' lossless.
+
+CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file piu' grandi.
+
+### Video Cleanup
+
+1. Aprire `Video Cleanup`.
+2. Scegliere il video sorgente.
+3. Usare `Detect black frames` per analizzare il video senza modificarlo.
+4. Controllare i frame marcati come riparabili. Ogni candidato ha un checkbox e un pulsante `Details`.
+5. In `Details` si vedono frame precedente, frame problematico e frame successivo.
+6. Selezionare solo i frame da correggere, scegliere metodo/qualita' e usare `Clean selected frames`.
+
+Il metodo `Freeze previous frame` e' conservativo: corregge solo frame neri isolati di un singolo frame, sostituendoli con il frame precedente. Il video mantiene la durata originale e l'audio viene copiato quando possibile.
+Il metodo `Remove selected frames` elimina i frame selezionati e le micro-porzioni audio corrispondenti. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
+Le sequenze nere piu' lunghe, incluse parti nere all'inizio o alla fine del video, vengono segnalate e lasciate intatte, per evitare di alterare dissolvenze, fade o parti nere intenzionali.
+La qualita' di output puo' essere scelta nella sezione `Output quality`:
+
+- `Auto (recommended)`: usa la stessa logica del burn-in, cioe' CRF 20 per la maggior parte dei 1080p e CRF 18 per 4K o 1080p ad alto bitrate.
+- `Standard (CRF 20)`: qualita' alta per 1080p, file normalmente piu' piccoli.
+- `High quality (CRF 18)`: piu' vicino alla sorgente, file piu' grandi.
+- `Maximum quality (CRF 16)`: qualita' molto alta, file molto piu' grandi.
+- `Original bitrate`: punta sempre al bitrate video sorgente; se non e' rilevabile, scegliere una modalita' CRF.
+
+## Ambiente sviluppo
+
+L'app principale usa la venv `.venv`.
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install pyinstaller
+```
+
+Struttura principale del codice:
+
+- `voicebridge_qt.py`: UI principale Qt/PySide6 e coordinamento dei workflow.
+- `app_paths.py`: percorsi runtime, bundle, modelli e risorse.
+- `tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
+- `media_tools.py`: ffmpeg, merge MP3 multi-voce, embed/burn-in sottotitoli e cleanup video.
+- `stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
+- `readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
+- `voices.py`: elenco, ricerca, preferiti e ordinamento voci.
+- `stt_worker.py`: worker offline WhisperX eseguito dal runtime STT.
+
+OCR opzionale:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
+```
+
+STT usa una venv separata Python 3.13:
+
+```powershell
+py -3.13 -m venv .venv-stt
+.\.venv-stt\Scripts\python.exe -m pip install -r requirements-stt.txt
+```
+
+Preparazione modelli STT:
+
+```powershell
+.\.venv-stt\Scripts\python.exe .\prepare_stt_models.py
+```
+
+## Build
+
+Build veloce app/exe, preservando runtime STT e modelli gia' presenti in `dist`:
+
+```powershell
+.\build_app.ps1
+```
+
+Sincronizzare solo runtime STT:
+
+```powershell
+.\sync_stt_bundle.ps1 -RuntimeOnly
+```
+
+Sincronizzare solo modelli:
+
+```powershell
+.\sync_stt_bundle.ps1 -ModelsOnly
+```
+
+Build completo:
+
+```powershell
+.\build_exe.ps1
+```
+
+Build completo pulito:
+
+```powershell
+.\build_exe.ps1 -Clean
+```
+
+## Note
+
+- `requirements-stt.txt` non serve al programma a runtime, ma documenta come ricreare il runtime STT.
+- Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
+- Il supporto offline di allineamento incluso e' per inglese e italiano. Altri modelli di allineamento possono essere scaricati su richiesta dalle funzioni SRT.
+- La generazione MP3 resta online perche' usa Microsoft Edge TTS.
+- Il README e la licenza vengono copiati nella cartella `dist\VoiceBridge` durante la build.
+
+## Licenza
+
+Il codice di VoiceBridge e' distribuito con licenza MIT. Vedere `LICENSE`.
+Le librerie e i runtime di terze parti inclusi o usati dall'app mantengono le rispettive licenze.

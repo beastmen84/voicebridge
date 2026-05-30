@@ -1,0 +1,9 @@
+# Optional offline speech-to-text and subtitle alignment support.
+# Uses a separate Python 3.13 virtual environment: .venv-stt
+#
+# WhisperX provides faster-whisper transcription plus word-level forced alignment.
+# imageio-ffmpeg provides a bundled ffmpeg executable for audio/video decoding.
+whisperx
+imageio-ffmpeg
+hf_transfer
+hf_xet

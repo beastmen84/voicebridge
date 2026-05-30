@@ -1,0 +1,15 @@
+.venv/
+.venv-stt/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+*.spec
+models/
+.stt-bin/
+*.log
+
+.idea/
+.vscode/

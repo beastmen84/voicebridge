@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+exclude = [
+    ".venv",
+    ".venv-stt",
+    "build",
+    "dist",
+    "models",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PLE", "PLW", "PLC"]
+ignore = [
+    # Optional/heavy dependencies are imported lazily in OCR/STT helpers.
+    "PLC0415",
+]

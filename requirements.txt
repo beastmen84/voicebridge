@@ -1,0 +1,7 @@
+aiohttp
+edge-tts
+langdetect
+PySide6
+python-docx
+pypdf
+pywin32; platform_system == "Windows"

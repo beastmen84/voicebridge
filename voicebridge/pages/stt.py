@@ -24,6 +24,9 @@ from PySide6.QtWidgets import (
 from voicebridge.app_paths import external_base_dir, stt_python_path, stt_worker_path
 from voicebridge.constants import (
     MISSING_ALIGNMENT_PREFIX,
+    STT_DEVICE_BY_LABEL,
+    STT_DEVICE_LABEL_BY_KEY,
+    STT_DEVICE_LABELS,
     STT_MODE_LABELS,
     STT_MODEL,
     STT_SRT_MODES,
@@ -42,6 +45,53 @@ class SttWorkflowMixin:
     def stt_language_key(self):
         language_code = self.stt_language_combo.currentData(Qt.ItemDataRole.UserRole)
         return language_code if isinstance(language_code, str) else "auto"
+
+    def stt_device_key(self):
+        device = self.stt_device_combo.currentData(Qt.ItemDataRole.UserRole)
+        return device if isinstance(device, str) and device in STT_DEVICE_LABEL_BY_KEY else "auto"
+
+    def set_stt_device_key(self, device):
+        device = device if isinstance(device, str) and device in STT_DEVICE_LABEL_BY_KEY else "auto"
+        for index in range(self.stt_device_combo.count()):
+            if self.stt_device_combo.itemData(index, Qt.ItemDataRole.UserRole) == device:
+                self.stt_device_combo.setCurrentIndex(index)
+                return
+
+    def stt_device_changed(self):
+        device = self.stt_device_key()
+        if device == "cuda" and not self.stt_cuda_available:
+            self.set_stt_device_key("auto")
+            device = "auto"
+        self.preferred_stt_device_key = device
+        self.save_user_settings()
+
+    def update_stt_device_options(self):
+        if not hasattr(self, "stt_device_combo"):
+            return
+        selected_device = self.preferred_stt_device_key
+        if selected_device == "cuda" and not self.stt_cuda_available:
+            selected_device = "auto"
+
+        self.stt_device_combo.blockSignals(True)
+        try:
+            for index in range(self.stt_device_combo.count()):
+                device = self.stt_device_combo.itemData(index, Qt.ItemDataRole.UserRole)
+                item = self.stt_device_combo.model().item(index)
+                enabled = device != "cuda" or self.stt_cuda_available
+                if item is not None:
+                    item.setEnabled(enabled)
+                if device == "auto":
+                    tooltip = "Uses CUDA when available; otherwise falls back to CPU."
+                elif device == "cpu":
+                    tooltip = "Forces CPU execution."
+                elif enabled:
+                    tooltip = "Uses the detected CUDA GPU."
+                else:
+                    tooltip = "CUDA is not available in the current STT runtime on this machine."
+                self.stt_device_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
+            self.set_stt_device_key(selected_device)
+        finally:
+            self.stt_device_combo.blockSignals(False)
 
     def stt_mode_changed(self):
         align = self.stt_mode_key() == "align_text"
@@ -107,13 +157,16 @@ class SttWorkflowMixin:
         threading.Thread(target=self.refresh_stt_preflight_worker, daemon=True).start()
 
     def refresh_stt_preflight_worker(self):
-        ok, summary, details = check_stt_preflight()
-        self.post(self.stt_preflight_finished, ok, summary, details)
+        ok, summary, details, runtime_info = check_stt_preflight()
+        self.post(self.stt_preflight_finished, ok, summary, details, runtime_info)
 
-    def stt_preflight_finished(self, ok, summary, details):
+    def stt_preflight_finished(self, ok, summary, details, runtime_info):
         self._stt_preflight_refreshing = False
         self.stt_preflight_ok = ok
         self.stt_preflight_details = details
+        self.stt_cuda_available = bool(runtime_info.get("cuda_available"))
+        self.stt_runtime_detail = runtime_info.get("detail", "STT runtime inspected.")
+        self.update_stt_device_options()
         self.stt_preflight_label.setText(summary)
         self.update_stt_button_state()
         self.refresh_home_diagnostics()
@@ -182,13 +235,15 @@ class SttWorkflowMixin:
         text_path = self.stt_text_picker.text()
         mode = self.stt_mode_key()
         language = self.stt_language_key()
-        device = "cpu"
         if not media_path:
             raise ValueError("Please select an audio or video file.")
         if not os.path.isfile(media_path):
             raise ValueError("The selected media file does not exist.")
         if not output_path:
             raise ValueError("Please choose where to save the output file.")
+        device = self.stt_device_key()
+        if device == "cuda" and not self.stt_cuda_available:
+            raise ValueError("CUDA is not available in the current STT runtime on this machine.")
         if mode == "align_text" and (not text_path or not os.path.isfile(text_path)):
             raise ValueError("Please select the transcript text file to align.")
         output_path = str(Path(output_path).with_suffix(self.stt_output_suffix()))
@@ -571,15 +626,20 @@ class SttWorkflowMixin:
         self.stt_language_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.populate_stt_language_combo()
         self.stt_language_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.stt_device_combo = QComboBox()
+        self.stt_device_combo.addItems(STT_DEVICE_LABELS)
+        for index in range(self.stt_device_combo.count()):
+            label = self.stt_device_combo.itemText(index)
+            self.stt_device_combo.setItemData(index, STT_DEVICE_BY_LABEL[label], Qt.ItemDataRole.UserRole)
+        self.stt_device_combo.currentTextChanged.connect(lambda _text: self.stt_device_changed())
+        self.update_stt_device_options()
         settings_card.content_layout.addWidget(QLabel("Mode"))
         settings_card.content_layout.addWidget(self.stt_mode_combo)
         settings_row = QHBoxLayout()
         settings_row.addWidget(QLabel("Language"))
         settings_row.addWidget(self.stt_language_combo, 1)
-        settings_row.addWidget(QLabel("Runtime"))
-        runtime_label = QLabel("CPU-only")
-        runtime_label.setObjectName("Muted")
-        settings_row.addWidget(runtime_label)
+        settings_row.addWidget(QLabel("Device"))
+        settings_row.addWidget(self.stt_device_combo)
         settings_card.content_layout.addLayout(settings_row)
         self.stt_preflight_label = QLabel("Checking STT offline package...")
         self.stt_preflight_label.setWordWrap(True)

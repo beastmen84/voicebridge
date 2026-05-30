@@ -29,6 +29,20 @@ STT_MODE_LABELS = {
     "Auto subtitles (.srt)": "auto_srt",
     "Subtitles from provided text (.srt)": "align_text",
 }
+STT_DEVICE_AUTO_LABEL = "Auto"
+STT_DEVICE_CPU_LABEL = "CPU"
+STT_DEVICE_CUDA_LABEL = "CUDA"
+STT_DEVICE_LABELS = [
+    STT_DEVICE_AUTO_LABEL,
+    STT_DEVICE_CPU_LABEL,
+    STT_DEVICE_CUDA_LABEL,
+]
+STT_DEVICE_BY_LABEL = {
+    STT_DEVICE_AUTO_LABEL: "auto",
+    STT_DEVICE_CPU_LABEL: "cpu",
+    STT_DEVICE_CUDA_LABEL: "cuda",
+}
+STT_DEVICE_LABEL_BY_KEY = {value: key for key, value in STT_DEVICE_BY_LABEL.items()}
 STT_SRT_MODES = {"auto_srt", "align_text"}
 STT_ALIGNMENT_READY_LANGUAGES = {"en", "it"}
 STT_LANGUAGE_AUTO_LABEL = "Auto detect"
@@ -44,7 +58,8 @@ STT_LANGUAGE_CODES = [
 STT_LANGUAGE_LEGACY_LABELS = {STT_LANGUAGE_AUTO_LABEL: "auto"} | {
     LANGUAGE_NAMES[code]: code for code in LANGUAGE_NAMES
 }
-STT_CPU_ONLY_STATUS = "CPU-only STT runtime included."
+STT_CPU_STATUS = "STT runtime will use CPU."
+STT_CUDA_STATUS = "STT runtime can use CUDA acceleration."
 MISSING_ALIGNMENT_PREFIX = "MISSING_ALIGNMENT_MODEL:"
 
 BURN_QUALITY_AUTO_LABEL = "Auto (recommended)"

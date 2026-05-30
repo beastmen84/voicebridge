@@ -121,6 +121,7 @@ class VoiceBridgeQt(
     stt_output_picker: FilePicker
     stt_mode_combo: QComboBox
     stt_language_combo: QComboBox
+    stt_device_combo: QComboBox
     stt_preflight_box: QFrame
     stt_preflight_label: QLabel
     stt_generate_button: QPushButton
@@ -287,6 +288,9 @@ class VoiceBridgeQt(
         self.stt_process = None
         self.stt_preflight_ok = False
         self.stt_preflight_details = []
+        self.stt_cuda_available = False
+        self.stt_runtime_detail = "Checking STT runtime."
+        self.preferred_stt_device_key = self.setting_str(self.setting_section("stt").get("device"), "auto")
         self.stt_last_output_path = ""
         self.stt_last_srt_path = ""
         self.stt_last_media_path = ""
@@ -446,6 +450,8 @@ class VoiceBridgeQt(
             self.set_picker_text(self.stt_output_picker, stt_settings.get("output_path"))
             self.set_combo_text(self.stt_mode_combo, stt_settings.get("mode_label"), list(STT_MODE_LABELS))
             self.restore_stt_language_selection(stt_settings)
+            self.preferred_stt_device_key = self.setting_str(stt_settings.get("device"), "auto")
+            self.set_stt_device_key(self.preferred_stt_device_key)
 
             video_settings = self.setting_section("video_subtitles")
             self.set_picker_text(self.video_media_picker, video_settings.get("media_path"))
@@ -521,6 +527,7 @@ class VoiceBridgeQt(
                 "mode_label": self.stt_mode_combo.currentText(),
                 "language_label": self.stt_language_combo.currentText(),
                 "language_code": self.stt_language_key(),
+                "device": self.stt_device_key(),
             }
 
         if hasattr(self, "video_embed_mode_button"):

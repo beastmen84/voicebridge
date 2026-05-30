@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from voicebridge.constants import STT_CPU_ONLY_STATUS
+from voicebridge.constants import STT_CPU_STATUS, STT_CUDA_STATUS
 from voicebridge.media_tools import find_ffmpeg_exe
 from voicebridge.models import JobHistoryEntry
 from voicebridge.readers import load_ocr_dependencies
@@ -73,7 +73,7 @@ class HomePageMixin:
         for card in (tts_card, stt_card, video_card, cleanup_card):
             modules_layout.addWidget(card)
 
-        note = QLabel("TTS requires internet. STT is CPU-only; SRT can add alignment languages on request.")
+        note = QLabel("TTS requires internet. STT uses CPU by default and CUDA when supported.")
         note.setObjectName("Muted")
         note.setWordWrap(True)
         modules_layout.addWidget(note)
@@ -178,11 +178,11 @@ class HomePageMixin:
             "info": "INFO",
         }.get(state, "INFO")
 
-    def set_status_tile(self, key: str, state: str, detail: str) -> None:
+    def set_status_tile(self, key: str, state: str, detail: str, display_label: str | None = None) -> None:
         tile = self.status_tiles.get(key)
         if tile is None:
             return
-        tile.setText(f"{key}\n{self.diagnostic_state_label(state)}")
+        tile.setText(f"{display_label or key}\n{self.diagnostic_state_label(state)}")
         tile.setToolTip(detail)
         tile.setProperty("state", state)
         tile.style().unpolish(tile)
@@ -215,7 +215,11 @@ class HomePageMixin:
         ocr_ok, ocr_detail = self.ocr_diagnostic_detail()
         self.set_status_tile("OCR", "ok" if ocr_ok else "warn", ocr_detail)
 
-        self.set_status_tile("CPU", "ok", STT_CPU_ONLY_STATUS)
+        runtime_label = "CUDA" if self.stt_cuda_available else "CPU"
+        runtime_detail = self.stt_runtime_detail or (
+            STT_CUDA_STATUS if self.stt_cuda_available else STT_CPU_STATUS
+        )
+        self.set_status_tile("CPU", "ok", runtime_detail, display_label=runtime_label)
 
     def record_job(self, kind: str, title: str, input_path: str, output_path: str, detail: str = "") -> None:
         self.job_history.insert(

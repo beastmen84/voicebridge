@@ -1,4 +1,6 @@
+import subprocess
 from pathlib import Path
+from typing import TypedDict
 
 from voicebridge.app_paths import (
     stt_model_dir,
@@ -14,6 +16,96 @@ STT_ALIGNMENT_MODELS = {
 }
 
 
+class SttRuntimeInfo(TypedDict):
+    torch_ok: bool
+    torch_version: str
+    cuda_build: str
+    cuda_available: bool
+    cuda_device_count: int
+    cuda_device_name: str
+    detail: str
+
+
+def inspect_stt_runtime(python_path: Path) -> SttRuntimeInfo:
+    default_info: SttRuntimeInfo = {
+        "torch_ok": False,
+        "torch_version": "",
+        "cuda_build": "",
+        "cuda_available": False,
+        "cuda_device_count": 0,
+        "cuda_device_name": "",
+        "detail": "Torch runtime was not inspected.",
+    }
+    if not python_path.is_file():
+        default_info["detail"] = f"Python runtime not found: {python_path}"
+        return default_info
+
+    script = (
+        "import torch\n"
+        "print('torch_ok=1')\n"
+        "print('torch_version=' + str(torch.__version__))\n"
+        "print('cuda_build=' + str(torch.version.cuda or ''))\n"
+        "available = torch.cuda.is_available()\n"
+        "print('cuda_available=' + ('1' if available else '0'))\n"
+        "print('cuda_device_count=' + str(torch.cuda.device_count()))\n"
+        "print('cuda_device_name=' + (torch.cuda.get_device_name(0) if available else ''))\n"
+    )
+
+    try:
+        result = subprocess.run(
+            [str(python_path), "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=45,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        default_info["detail"] = f"Could not inspect Torch runtime: {exc}"
+        return default_info
+
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    if result.returncode != 0:
+        default_info["detail"] = output or f"Torch runtime inspection failed with code {result.returncode}."
+        return default_info
+
+    values = {}
+    for line in output.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+
+    cuda_device_count = 0
+    try:
+        cuda_device_count = int(values.get("cuda_device_count", "0"))
+    except ValueError:
+        cuda_device_count = 0
+
+    cuda_available = values.get("cuda_available") == "1"
+    cuda_build = values.get("cuda_build", "")
+    cuda_device_name = values.get("cuda_device_name", "")
+    torch_version = values.get("torch_version", "")
+    if cuda_available:
+        detail = f"Torch {torch_version}; CUDA {cuda_build}; {cuda_device_name or 'CUDA device available'}."
+    elif cuda_build:
+        detail = f"Torch {torch_version}; CUDA build {cuda_build}, but no CUDA device is available."
+    else:
+        detail = f"Torch {torch_version}; CPU runtime."
+
+    return {
+        "torch_ok": values.get("torch_ok") == "1",
+        "torch_version": torch_version,
+        "cuda_build": cuda_build,
+        "cuda_available": cuda_available,
+        "cuda_device_count": cuda_device_count,
+        "cuda_device_name": cuda_device_name,
+        "detail": detail,
+    }
+
+
 def check_stt_preflight():
     checks = []
 
@@ -26,8 +118,10 @@ def check_stt_preflight():
     worker_path = stt_worker_path()
     model_dir = stt_model_dir()
     models_root = stt_models_root()
+    runtime_info = inspect_stt_runtime(python_path)
 
     add_check("STT Python runtime", python_path, python_path.is_file())
+    add_check("Torch runtime", python_path, runtime_info["torch_ok"])
     add_check("STT worker", worker_path, worker_path.is_file())
     add_check("Whisper large-v3 model", model_dir / "model.bin")
     add_check("Whisper config", model_dir / "config.json")
@@ -55,6 +149,12 @@ def check_stt_preflight():
     missing = [(label, path) for label, exists, path in checks if not exists]
     if missing:
         summary = f"STT offline package incomplete: {len(missing)} missing item(s). Open details for paths."
+    elif runtime_info["cuda_available"]:
+        device_name = runtime_info["cuda_device_name"] or "CUDA device"
+        summary = (
+            "Offline STT ready: large-v3, English/Italian alignment, VAD, ffmpeg and CUDA runtime found. "
+            f"GPU: {device_name}. Other SRT alignment languages can be downloaded on request."
+        )
     else:
         summary = (
             "Offline STT ready: large-v3, English/Italian alignment, VAD, ffmpeg and CPU runtime found. "
@@ -65,5 +165,5 @@ def check_stt_preflight():
     for label, exists, path in checks:
         marker = "OK" if exists else "MISSING"
         details.append(f"{marker}: {label} - {path}")
-    details.append("INFO: CPU-only STT runtime included.")
-    return not missing, summary, details
+    details.append(f"INFO: {runtime_info['detail']}")
+    return not missing, summary, details, runtime_info

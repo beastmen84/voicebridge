@@ -5,12 +5,14 @@ import pytest
 
 from local_tts_worker import (
     XTTS_MODEL_REQUIRED_FILES,
+    XTTS_STABLE_INFERENCE_SETTINGS,
     merge_wav_files,
     normalize_tts_language,
     normalize_tts_text,
     read_text,
     reference_audio_paths,
     split_tts_text_for_xtts,
+    synthesize_text_chunks,
     write_xtts_terms_agreement,
     xtts_model_cache_dir,
     xtts_model_ready,
@@ -96,3 +98,20 @@ def test_merge_wav_files_inserts_short_silence_between_chunks(tmp_path: Path) ->
     with wave.open(str(output), "rb") as wav_file:
         assert wav_file.getnframes() == 5
         assert wav_file.readframes(5) == b"\x01\x01\x00\x02\x02"
+
+
+def test_synthesize_text_chunks_passes_stable_xtts_settings(tmp_path: Path) -> None:
+    class FakeTts:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def tts_to_file(self, **kwargs) -> None:
+            self.calls.append(kwargs)
+
+    tts = FakeTts()
+
+    synthesize_text_chunks(tts, ["Ciao mondo."], ["voice.wav"], "it", tmp_path / "output.wav")
+
+    assert tts.calls[0]["text"] == "Ciao mondo;"
+    for key, value in XTTS_STABLE_INFERENCE_SETTINGS.items():
+        assert tts.calls[0][key] == value

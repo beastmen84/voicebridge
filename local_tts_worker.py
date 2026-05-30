@@ -19,6 +19,12 @@ XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
 XTTS_MAX_CHUNK_CHARS = TTS_MAX_CHUNK_CHARS
 XTTS_CHUNK_SILENCE_SECONDS = 0.25
+XTTS_STABLE_INFERENCE_SETTINGS = {
+    "temperature": 0.65,
+    "top_k": 30,
+    "top_p": 0.75,
+    "repetition_penalty": 8.0,
+}
 
 
 def status(message):
@@ -146,6 +152,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(output_path),
+                **XTTS_STABLE_INFERENCE_SETTINGS,
             )
             progress(92)
             return
@@ -161,6 +168,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(chunk_path),
+                **XTTS_STABLE_INFERENCE_SETTINGS,
             )
             progress(generation_start + ((generation_end - generation_start) * index / len(chunks)))
         status("Merging local TTS audio chunks...")

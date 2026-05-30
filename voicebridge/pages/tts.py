@@ -925,7 +925,10 @@ class TtsWorkflowMixin:
                 raise TtsCancelled()
             if not text.strip():
                 raise ValueError("The selected file appears to contain no readable text.")
-            with tempfile.TemporaryDirectory(prefix="voicebridge-local-tts-") as temp_dir_name:
+            with tempfile.TemporaryDirectory(
+                prefix="voicebridge-local-tts-",
+                dir=Path(save_path).resolve().parent,
+            ) as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 text_path = temp_dir / "input.txt"
                 wav_path = temp_dir / "local-tts.wav"
@@ -1022,7 +1025,10 @@ class TtsWorkflowMixin:
             if not text.strip():
                 raise ValueError("The selected file appears to contain no readable text.")
             self.post(self.tts_status.setText, "Generating audio... please wait.")
-            with tempfile.TemporaryDirectory(prefix="voicebridge-tts-") as temp_dir:
+            with tempfile.TemporaryDirectory(
+                prefix="voicebridge-tts-",
+                dir=Path(save_path).resolve().parent,
+            ) as temp_dir:
                 temp_output = Path(temp_dir) / Path(save_path).name
                 asyncio.run(
                     generate_audio(
@@ -1046,7 +1052,10 @@ class TtsWorkflowMixin:
 
     def multi_voice_conversion_worker(self, save_path, segments):
         try:
-            with tempfile.TemporaryDirectory(prefix="voicebridge-tts-") as temp_dir_name:
+            with tempfile.TemporaryDirectory(
+                prefix="voicebridge-tts-",
+                dir=Path(save_path).resolve().parent,
+            ) as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 part_paths = []
                 total = max(1, len(segments))

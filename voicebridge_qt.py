@@ -12,7 +12,7 @@ from contextlib import suppress
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import aiohttp
 import edge_tts
@@ -51,15 +51,7 @@ from app_paths import external_base_dir, resource_path, stt_python_path, stt_wor
 from app_settings import load_app_settings, save_app_settings
 from languages import LANGUAGE_NAMES, language_name
 from media_tools import (
-    BURN_QUALITY_AUTO,
-    BURN_QUALITY_CRF_VALUES,
-    BURN_QUALITY_HIGH,
-    BURN_QUALITY_MAXIMUM,
-    BURN_QUALITY_ORIGINAL_BITRATE,
-    BURN_QUALITY_STANDARD,
     STT_VIDEO_SUFFIXES,
-    VIDEO_CLEANUP_METHOD_FREEZE,
-    VIDEO_CLEANUP_METHOD_REMOVE,
     BlackFrame,
     SubtitleStyle,
     auto_burn_quality,
@@ -91,6 +83,57 @@ from readers import (
 )
 from stt_preflight import check_stt_preflight
 from tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
+from voicebridge.constants import (
+    APP_ATTRIBUTION,
+    APP_ICON,
+    APP_ICON_PNG,
+    APP_NAME,
+    BURN_QUALITY_AUTO,
+    BURN_QUALITY_AUTO_LABEL,
+    BURN_QUALITY_BY_LABEL,
+    BURN_QUALITY_CRF_VALUES,
+    BURN_QUALITY_DESCRIPTIONS,
+    BURN_QUALITY_LABELS,
+    BURN_QUALITY_ORIGINAL_BITRATE,
+    BURN_QUALITY_STANDARD,
+    DEFAULT_RATE,
+    DEFAULT_VOICE_SHORT_NAME,
+    MISSING_ALIGNMENT_PREFIX,
+    RATE_CHOICES,
+    STT_ALIGNMENT_READY_LANGUAGES,
+    STT_CPU_ONLY_STATUS,
+    STT_LANGUAGE_AUTO_LABEL,
+    STT_LANGUAGE_CODES,
+    STT_LANGUAGE_LEGACY_LABELS,
+    STT_MODE_LABELS,
+    STT_MODEL,
+    STT_SRT_MODES,
+    TTS_SPLIT_LINES,
+    TTS_SPLIT_PARAGRAPHS,
+    UI_QUEUE_POLL_MS,
+    VIDEO_CLEANUP_FREEZE_LABEL,
+    VIDEO_CLEANUP_METHOD_BY_LABEL,
+    VIDEO_CLEANUP_METHOD_DESCRIPTIONS,
+    VIDEO_CLEANUP_METHOD_FREEZE,
+    VIDEO_CLEANUP_METHOD_LABELS,
+    VIDEO_CLEANUP_METHOD_REMOVE,
+    VIDEO_CLEANUP_QUALITY_BY_LABEL,
+    VIDEO_CLEANUP_QUALITY_DESCRIPTIONS,
+    VIDEO_CLEANUP_QUALITY_LABELS,
+    VIDEO_SUBTITLE_BURN_LABEL,
+    VIDEO_SUBTITLE_EMBED_LABEL,
+    VIDEO_SUBTITLE_MODE_BY_LABEL,
+    VIDEO_SUBTITLE_MODE_DESCRIPTIONS,
+    VIDEO_SUBTITLE_POSITION_LABELS,
+)
+from voicebridge.models import JobHistoryEntry, TtsSegment
+from voicebridge.ui.helpers import (
+    normalize_video_subtitle_output_path,
+    open_path,
+    qt_file_filter,
+    validate_video_subtitle_inputs,
+)
+from voicebridge.ui.widgets import Card, FilePicker
 from voices import (
     FALLBACK_VOICES,
     build_voice_options,
@@ -100,234 +143,6 @@ from voices import (
     load_preferred_voice_short_names,
     save_preferred_voice_short_names,
 )
-
-APP_NAME = "VoiceBridge"
-APP_ATTRIBUTION = "© Davide Marchi"
-APP_ICON = Path("images") / "file_to_mp3.ico"
-APP_ICON_PNG = Path("images") / "file_to_mp3.png"
-DEFAULT_VOICE_SHORT_NAME = "en-US-AriaNeural"
-DEFAULT_RATE = "-5%"
-RATE_CHOICES = ["-20%", "-15%", "-10%", "-5%", "+0%", "+5%", "+10%"]
-TTS_SPLIT_PARAGRAPHS = "Paragraphs"
-TTS_SPLIT_LINES = "Lines"
-STT_MODEL = "large-v3"
-UI_QUEUE_POLL_MS = 50
-
-STT_MODE_LABELS = {
-    "Transcript Markdown (.md)": "transcript",
-    "Auto subtitles (.srt)": "auto_srt",
-    "Subtitles from provided text (.srt)": "align_text",
-}
-STT_SRT_MODES = {"auto_srt", "align_text"}
-STT_ALIGNMENT_READY_LANGUAGES = {"en", "it"}
-STT_LANGUAGE_AUTO_LABEL = "Auto detect"
-STT_LANGUAGE_CODES = [
-    "auto",
-    "en",
-    "it",
-    *[
-        code for code in sorted(LANGUAGE_NAMES, key=lambda language_code: LANGUAGE_NAMES[language_code])
-        if code not in STT_ALIGNMENT_READY_LANGUAGES
-    ],
-]
-STT_LANGUAGE_LEGACY_LABELS = {STT_LANGUAGE_AUTO_LABEL: "auto"} | {
-    LANGUAGE_NAMES[code]: code for code in LANGUAGE_NAMES
-}
-STT_CPU_ONLY_STATUS = "CPU-only STT runtime included."
-MISSING_ALIGNMENT_PREFIX = "MISSING_ALIGNMENT_MODEL:"
-
-BURN_QUALITY_AUTO_LABEL = "Auto (recommended)"
-BURN_QUALITY_STANDARD_LABEL = "Standard (CRF 20)"
-BURN_QUALITY_HIGH_LABEL = "High quality (CRF 18)"
-BURN_QUALITY_MAXIMUM_LABEL = "Maximum quality (CRF 16)"
-BURN_QUALITY_ORIGINAL_LABEL = "Original bitrate"
-BURN_QUALITY_LABELS = [
-    BURN_QUALITY_AUTO_LABEL,
-    BURN_QUALITY_STANDARD_LABEL,
-    BURN_QUALITY_HIGH_LABEL,
-    BURN_QUALITY_MAXIMUM_LABEL,
-    BURN_QUALITY_ORIGINAL_LABEL,
-]
-BURN_QUALITY_BY_LABEL = {
-    BURN_QUALITY_AUTO_LABEL: BURN_QUALITY_AUTO,
-    BURN_QUALITY_STANDARD_LABEL: BURN_QUALITY_STANDARD,
-    BURN_QUALITY_HIGH_LABEL: BURN_QUALITY_HIGH,
-    BURN_QUALITY_MAXIMUM_LABEL: BURN_QUALITY_MAXIMUM,
-    BURN_QUALITY_ORIGINAL_LABEL: BURN_QUALITY_ORIGINAL_BITRATE,
-}
-BURN_QUALITY_DESCRIPTIONS = {
-    BURN_QUALITY_AUTO_LABEL: (
-        "Chooses CRF 20 for most 1080p videos, CRF 18 for 4K "
-        "or high-bitrate 1080p sources."
-    ),
-    BURN_QUALITY_STANDARD_LABEL: "CRF 20: high quality for 1080p, usually smaller files.",
-    BURN_QUALITY_HIGH_LABEL: "CRF 18: closer to the source, larger files.",
-    BURN_QUALITY_MAXIMUM_LABEL: "CRF 16: very high quality, much larger files.",
-    BURN_QUALITY_ORIGINAL_LABEL: (
-        "Targets the source video bitrate; still re-encodes, so it is not lossless."
-    ),
-}
-VIDEO_SUBTITLE_EMBED_LABEL = "Embed SRT track"
-VIDEO_SUBTITLE_BURN_LABEL = "Burn in SRT"
-VIDEO_SUBTITLE_MODE_LABELS = [VIDEO_SUBTITLE_EMBED_LABEL, VIDEO_SUBTITLE_BURN_LABEL]
-VIDEO_SUBTITLE_MODE_BY_LABEL = {
-    VIDEO_SUBTITLE_EMBED_LABEL: "embed",
-    VIDEO_SUBTITLE_BURN_LABEL: "burn",
-}
-VIDEO_SUBTITLE_MODE_DESCRIPTIONS = {
-    VIDEO_SUBTITLE_EMBED_LABEL: "Adds the SRT as a subtitle track. Video and audio streams are copied when possible.",
-    VIDEO_SUBTITLE_BURN_LABEL: "Draws subtitles into the video frames. The video must be re-encoded.",
-}
-VIDEO_SUBTITLE_POSITION_LABELS = {
-    "Bottom center": 2,
-    "Middle center": 5,
-    "Top center": 8,
-}
-VIDEO_CLEANUP_QUALITY_LABELS = [
-    BURN_QUALITY_AUTO_LABEL,
-    BURN_QUALITY_STANDARD_LABEL,
-    BURN_QUALITY_HIGH_LABEL,
-    BURN_QUALITY_MAXIMUM_LABEL,
-    BURN_QUALITY_ORIGINAL_LABEL,
-]
-VIDEO_CLEANUP_QUALITY_BY_LABEL = {
-    BURN_QUALITY_AUTO_LABEL: BURN_QUALITY_AUTO,
-    BURN_QUALITY_ORIGINAL_LABEL: BURN_QUALITY_ORIGINAL_BITRATE,
-    BURN_QUALITY_HIGH_LABEL: BURN_QUALITY_HIGH,
-    BURN_QUALITY_MAXIMUM_LABEL: BURN_QUALITY_MAXIMUM,
-    BURN_QUALITY_STANDARD_LABEL: BURN_QUALITY_STANDARD,
-}
-VIDEO_CLEANUP_QUALITY_DESCRIPTIONS = {
-    BURN_QUALITY_AUTO_LABEL: BURN_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL],
-    BURN_QUALITY_ORIGINAL_LABEL: "Targets the source video bitrate; still re-encodes, so it is not lossless.",
-    BURN_QUALITY_HIGH_LABEL: "CRF 18: high visual quality, bitrate may differ from the source.",
-    BURN_QUALITY_MAXIMUM_LABEL: "CRF 16: very high quality, larger output files.",
-    BURN_QUALITY_STANDARD_LABEL: "CRF 20: good quality and smaller files, but less conservative.",
-}
-VIDEO_CLEANUP_FREEZE_LABEL = "Freeze previous frame"
-VIDEO_CLEANUP_REMOVE_LABEL = "Remove selected frames"
-VIDEO_CLEANUP_METHOD_LABELS = [
-    VIDEO_CLEANUP_FREEZE_LABEL,
-    VIDEO_CLEANUP_REMOVE_LABEL,
-]
-VIDEO_CLEANUP_METHOD_BY_LABEL = {
-    VIDEO_CLEANUP_FREEZE_LABEL: VIDEO_CLEANUP_METHOD_FREEZE,
-    VIDEO_CLEANUP_REMOVE_LABEL: VIDEO_CLEANUP_METHOD_REMOVE,
-}
-VIDEO_CLEANUP_METHOD_DESCRIPTIONS = {
-    VIDEO_CLEANUP_FREEZE_LABEL: (
-        "Replaces each selected black frame with the previous frame. Keeps video duration and timing unchanged."
-    ),
-    VIDEO_CLEANUP_REMOVE_LABEL: (
-        "Deletes selected black frames and the matching audio slices. Useful before creating subtitles, "
-        "but it shortens the timeline."
-    ),
-}
-
-
-class TtsSegment(TypedDict):
-    text: str
-    voice_label: str
-    voice_short_name: str
-    rate: str
-
-
-class JobHistoryEntry(TypedDict):
-    timestamp: str
-    kind: str
-    title: str
-    detail: str
-    input_path: str
-    output_path: str
-
-
-def qt_file_filter(filetypes):
-    parts = []
-    for label, patterns in filetypes:
-        parts.append(f"{label} ({patterns})")
-    return ";;".join(parts)
-
-
-def open_path(path):
-    if path and Path(path).exists():
-        os.startfile(str(path))
-
-
-def normalize_video_subtitle_output_path(output_path, mode, default_suffix=""):
-    path = Path(output_path)
-    if path.suffix:
-        return str(path)
-    fallback = default_suffix or (".mp4" if mode == "burn" else ".mkv")
-    return str(path.with_suffix(fallback))
-
-
-def validate_video_subtitle_inputs(mode, media_path, srt_path, output_path):
-    media = Path(media_path) if media_path else None
-    srt = Path(srt_path) if srt_path else None
-    output = Path(output_path) if output_path else None
-    if mode not in {"embed", "burn"}:
-        raise ValueError("Choose a valid video subtitle mode.")
-    if not media or not media.is_file():
-        raise ValueError("Select an existing video file.")
-    if media.suffix.lower() not in STT_VIDEO_SUFFIXES:
-        raise ValueError("The selected media file must be a video.")
-    if not srt or not srt.is_file() or srt.suffix.lower() != ".srt":
-        raise ValueError("Select an existing .srt subtitle file.")
-    if not output:
-        raise ValueError("Choose where to save the subtitled video.")
-    if mode == "embed" and output.suffix.lower() not in {".mp4", ".mkv"}:
-        raise ValueError("Embedded subtitles can be saved as .mp4 or .mkv.")
-    if mode == "burn" and output.suffix.lower() != ".mp4":
-        raise ValueError("Burned subtitles are saved as .mp4.")
-    try:
-        if output.resolve() == media.resolve():
-            raise ValueError("Choose an output path different from the source video.")
-    except OSError:
-        pass
-
-
-class Card(QFrame):
-    def __init__(self, title=None, parent=None):
-        super().__init__(parent)
-        self.setObjectName("Card")
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.content_layout: QVBoxLayout = QVBoxLayout(self)
-        self.content_layout.setContentsMargins(18, 14, 18, 14)
-        self.content_layout.setSpacing(10)
-        if title:
-            label = QLabel(title)
-            label.setObjectName("CardTitle")
-            self.content_layout.addWidget(label)
-
-
-class FilePicker(QWidget):
-    def __init__(self, label, button_text="Browse...", parent=None):
-        super().__init__(parent)
-        self.setObjectName("FilePicker")
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        layout = QGridLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setColumnStretch(0, 1)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(5)
-
-        self.label = QLabel(label)
-        self.label.setObjectName("FieldLabel")
-        self.edit = QLineEdit()
-        self.button = QPushButton(button_text)
-        self.button.setObjectName("SecondaryButton")
-        self.edit.setMinimumHeight(34)
-        self.button.setMinimumHeight(34)
-
-        layout.addWidget(self.label, 0, 0, 1, 2)
-        layout.addWidget(self.edit, 1, 0)
-        layout.addWidget(self.button, 1, 1)
-
-    def text(self):
-        return self.edit.text().strip()
-
-    def set_text(self, value):
-        self.edit.setText(value or "")
 
 
 class VoiceBridgeQt(QMainWindow):

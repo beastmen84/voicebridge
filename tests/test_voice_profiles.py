@@ -9,9 +9,11 @@ from voicebridge.voice_profiles import (
     clean_profile_name,
     load_voice_profiles,
     ready_voice_profiles,
+    safe_voice_profile_audio_stem,
     save_voice_profiles,
     validate_voice_profile,
     voice_profile_display_label,
+    voice_profile_recording_path,
     voice_profile_status,
 )
 
@@ -19,6 +21,15 @@ from voicebridge.voice_profiles import (
 def test_clean_profile_name_collapses_whitespace() -> None:
     assert clean_profile_name("  Marco   IT  ") == "Marco IT"
     assert clean_profile_name(None) == ""
+
+
+def test_voice_profile_recording_path_uses_safe_stem(tmp_path: Path) -> None:
+    assert safe_voice_profile_audio_stem("  Marco Rossi!  ") == "marco-rossi"
+    assert safe_voice_profile_audio_stem("!!!") == "voice-profile"
+
+    path = voice_profile_recording_path("Marco Rossi!", timestamp="20260530-120000", audio_dir=tmp_path)
+
+    assert path == tmp_path / "marco-rossi-20260530-120000.wav"
 
 
 def test_reference_profile_ready_status(tmp_path: Path) -> None:

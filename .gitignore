@@ -9,6 +9,7 @@ build/
 dist/
 *.spec
 models/
+voice_profiles/
 .stt-bin/
 *.log
 

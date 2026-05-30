@@ -1,13 +1,16 @@
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
 
+from voicebridge.app_paths import external_base_dir
 from voicebridge.app_settings import app_config_dir
 from voicebridge.languages import LANGUAGE_NAMES
 
 VOICE_PROFILES_CONFIG = "voice_profiles.json"
+VOICE_PROFILES_AUDIO_DIR = "voice_profiles"
 VOICE_PROFILE_REFERENCE = "reference"
 VOICE_PROFILE_MODELING = "modeling"
 VOICE_PROFILE_TYPES = {
@@ -53,14 +56,34 @@ def voice_profiles_config_path() -> Path:
     return app_config_dir() / VOICE_PROFILES_CONFIG
 
 
+def voice_profiles_audio_dir() -> Path:
+    return external_base_dir() / VOICE_PROFILES_AUDIO_DIR
+
+
 def utc_timestamp() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def file_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
 
 def clean_profile_name(name: Any) -> str:
     if not isinstance(name, str):
         return ""
     return " ".join(name.split()).strip()
+
+
+def safe_voice_profile_audio_stem(name: Any) -> str:
+    cleaned = clean_profile_name(name).lower()
+    cleaned = re.sub(r"[^a-z0-9]+", "-", cleaned)
+    cleaned = cleaned.strip("-")
+    return cleaned or "voice-profile"
+
+
+def voice_profile_recording_path(name: Any, timestamp: str | None = None, audio_dir: Path | None = None) -> Path:
+    directory = audio_dir or voice_profiles_audio_dir()
+    return directory / f"{safe_voice_profile_audio_stem(name)}-{timestamp or file_timestamp()}.wav"
 
 
 def normalize_profile_type(value: Any) -> str:

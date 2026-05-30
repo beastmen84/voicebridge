@@ -1,6 +1,8 @@
+import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtMultimedia import QAudioFormat, QAudioOutput, QAudioSource, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -29,8 +31,16 @@ from voicebridge.voice_profiles import (
     load_voice_profiles,
     save_voice_profiles,
     validate_voice_profile,
+    voice_profile_recording_path,
     voice_profile_status,
 )
+from voicebridge.wav_writer import pcm16_duration_seconds, trim_pcm16_to_frames, write_pcm16_wav
+
+VOICE_PROFILE_RECORD_SAMPLE_RATE = 24_000
+VOICE_PROFILE_RECORD_CHANNELS = 1
+VOICE_PROFILE_RECORD_MIN_SECONDS = 6
+VOICE_PROFILE_RECORD_TARGET_SECONDS = 10
+VOICE_PROFILE_RECORD_MAX_SECONDS = 30
 
 
 class VoiceProfilesWorkflowMixin:
@@ -103,6 +113,8 @@ class VoiceProfilesWorkflowMixin:
         self.update_voice_profile_buttons()
 
     def new_voice_profile(self) -> None:
+        if self.voice_profile_is_recording():
+            return
         self.selected_voice_profile_id = ""
         self.voice_profiles_list.clearSelection()
         self.profile_name_edit.clear()
@@ -112,6 +124,7 @@ class VoiceProfilesWorkflowMixin:
         self.profile_consent_check.setChecked(False)
         self.profile_notes_edit.clear()
         self.profile_status_label.setText("New profile.")
+        self.profile_record_status_label.setText("Record 10-30s of clean speech for the selected profile.")
         self.update_voice_profile_buttons()
 
     def select_voice_profile_reference(self) -> None:
@@ -125,6 +138,150 @@ class VoiceProfilesWorkflowMixin:
         if path:
             self.profile_reference_picker.set_text(path)
             self.update_voice_profile_buttons()
+
+    def refresh_voice_profile_microphones(self) -> None:
+        if not hasattr(self, "profile_microphone_combo"):
+            return
+        current_description = self.profile_microphone_combo.currentText()
+        devices = QMediaDevices.audioInputs()
+        self.profile_microphone_combo.blockSignals(True)
+        try:
+            self.profile_microphone_combo.clear()
+            for index, device in enumerate(devices):
+                self.profile_microphone_combo.addItem(device.description(), index)
+            if current_description:
+                self.profile_microphone_combo.setCurrentText(current_description)
+        finally:
+            self.profile_microphone_combo.blockSignals(False)
+        self.update_voice_profile_buttons()
+
+    def selected_voice_profile_audio_device(self):
+        devices = QMediaDevices.audioInputs()
+        device_index = self.profile_microphone_combo.currentData(Qt.ItemDataRole.UserRole)
+        if isinstance(device_index, int) and 0 <= device_index < len(devices):
+            return devices[device_index]
+        if devices:
+            return devices[0]
+        return None
+
+    @staticmethod
+    def voice_profile_recording_format(device) -> QAudioFormat:
+        for sample_rate in (VOICE_PROFILE_RECORD_SAMPLE_RATE, 48_000, 44_100, 22_050, 16_000):
+            audio_format = QAudioFormat()
+            audio_format.setSampleRate(sample_rate)
+            audio_format.setChannelCount(VOICE_PROFILE_RECORD_CHANNELS)
+            audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+            if device.isFormatSupported(audio_format):
+                return audio_format
+        raise ValueError("The selected microphone does not support PCM WAV recording.")
+
+    def start_voice_profile_recording(self) -> None:
+        if self.voice_profile_is_recording():
+            return
+        if not self.profile_name_edit.text().strip():
+            self.show_error("Voice Profiles", "Enter a profile name before recording.")
+            return
+        device = self.selected_voice_profile_audio_device()
+        if device is None:
+            self.show_error("Voice Profiles", "No microphone input was detected.")
+            return
+        try:
+            audio_format = self.voice_profile_recording_format(device)
+        except ValueError as exc:
+            self.show_error("Voice Profiles", str(exc))
+            return
+
+        self.profile_record_buffer = bytearray()
+        self.profile_record_format = audio_format
+        self.profile_record_path = voice_profile_recording_path(self.profile_name_edit.text())
+        self.profile_record_started_at = time.monotonic()
+        self.profile_record_source = QAudioSource(device, audio_format, self)
+        self.profile_record_io = self.profile_record_source.start()
+        if self.profile_record_io is None:
+            self.profile_record_source = None
+            self.show_error("Voice Profiles", "Could not start microphone recording.")
+            self.update_voice_profile_buttons()
+            return
+        self.profile_record_io.readyRead.connect(self.read_voice_profile_recording_data)
+        self.profile_record_timer.start(200)
+        self.profile_record_status_label.setText("Recording... 00:00 / 00:30")
+        self.update_voice_profile_buttons()
+
+    def read_voice_profile_recording_data(self) -> None:
+        record_io = getattr(self, "profile_record_io", None)
+        if record_io is None:
+            return
+        data = record_io.readAll()
+        if data:
+            self.profile_record_buffer.extend(bytes(data))
+
+    def voice_profile_is_recording(self) -> bool:
+        return getattr(self, "profile_record_source", None) is not None
+
+    def voice_profile_recording_seconds(self) -> float:
+        if not self.voice_profile_is_recording():
+            return 0.0
+        return max(0.0, time.monotonic() - getattr(self, "profile_record_started_at", time.monotonic()))
+
+    @staticmethod
+    def voice_profile_duration_label(seconds: float) -> str:
+        seconds = max(0, int(seconds))
+        return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+    def update_voice_profile_recording_timer(self) -> None:
+        elapsed = self.voice_profile_recording_seconds()
+        self.profile_record_status_label.setText(
+            f"Recording... {self.voice_profile_duration_label(elapsed)} / 00:30"
+        )
+        if elapsed >= VOICE_PROFILE_RECORD_MAX_SECONDS:
+            self.stop_voice_profile_recording(auto_stopped=True)
+
+    def stop_voice_profile_recording(self, auto_stopped: bool = False) -> None:
+        if not self.voice_profile_is_recording():
+            return
+        self.read_voice_profile_recording_data()
+        source = self.profile_record_source
+        self.profile_record_timer.stop()
+        self.profile_record_source = None
+        self.profile_record_io = None
+        source.stop()
+
+        audio_format = self.profile_record_format
+        sample_rate = audio_format.sampleRate()
+        channel_count = audio_format.channelCount()
+        pcm_data = trim_pcm16_to_frames(bytes(self.profile_record_buffer), channel_count)
+        duration = pcm16_duration_seconds(len(pcm_data), sample_rate, channel_count)
+        try:
+            if duration < 1:
+                raise ValueError("Recording is too short.")
+            write_pcm16_wav(self.profile_record_path, pcm_data, sample_rate, channel_count)
+        except (OSError, ValueError) as exc:
+            self.profile_record_status_label.setText("Recording failed.")
+            self.show_error("Voice Profiles", str(exc))
+            self.update_voice_profile_buttons()
+            return
+
+        self.profile_reference_picker.set_text(str(self.profile_record_path))
+        if duration < VOICE_PROFILE_RECORD_MIN_SECONDS:
+            message = f"Recorded {duration:.1f}s. Use at least 10s for better cloning."
+        elif duration < VOICE_PROFILE_RECORD_TARGET_SECONDS:
+            message = f"Recorded {duration:.1f}s. 10-30s is recommended."
+        elif auto_stopped:
+            message = "Recorded 30.0s. Maximum reference length reached."
+        else:
+            message = f"Recorded {duration:.1f}s."
+        self.profile_record_status_label.setText(message)
+        self.update_voice_profile_buttons()
+
+    def play_voice_profile_reference(self) -> None:
+        path = self.profile_reference_picker.text()
+        if not path or not Path(path).is_file():
+            return
+        if self.profile_media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.profile_media_player.stop()
+            return
+        self.profile_media_player.setSource(QUrl.fromLocalFile(str(Path(path).resolve())))
+        self.profile_media_player.play()
 
     def collect_voice_profile_form(self) -> VoiceProfile:
         existing = self.selected_voice_profile()
@@ -165,6 +322,8 @@ class VoiceProfilesWorkflowMixin:
         self.show_info("Voice Profiles", f"Profile saved:\n{profile['name']}")
 
     def delete_selected_voice_profile(self) -> None:
+        if self.voice_profile_is_recording():
+            return
         profile = self.selected_voice_profile()
         if not profile:
             return
@@ -189,9 +348,17 @@ class VoiceProfilesWorkflowMixin:
         reference_path = self.profile_reference_picker.text()
         has_reference = bool(reference_path and Path(reference_path).is_file())
         has_selection = bool(self.selected_voice_profile())
-        self.profile_delete_button.setEnabled(has_selection)
-        self.profile_open_reference_button.setEnabled(has_reference)
-        self.profile_open_folder_button.setEnabled(has_reference)
+        is_recording = self.voice_profile_is_recording()
+        self.voice_profiles_list.setEnabled(not is_recording)
+        self.profile_new_button.setEnabled(not is_recording)
+        self.profile_delete_button.setEnabled(has_selection and not is_recording)
+        self.profile_save_button.setEnabled(not is_recording)
+        self.profile_open_reference_button.setEnabled(has_reference and not is_recording)
+        self.profile_open_folder_button.setEnabled(has_reference and not is_recording)
+        if hasattr(self, "profile_record_button"):
+            self.profile_record_button.setEnabled(not is_recording and self.profile_microphone_combo.count() > 0)
+            self.profile_stop_record_button.setEnabled(is_recording)
+            self.profile_play_button.setEnabled(has_reference and not is_recording)
 
     def build_voice_profiles_page(self):
         page, layout = self.page_container()
@@ -237,6 +404,27 @@ class VoiceProfilesWorkflowMixin:
         self.profile_reference_picker = FilePicker("Reference audio")
         self.profile_reference_picker.button.clicked.connect(self.select_voice_profile_reference)
         self.profile_reference_picker.edit.textChanged.connect(lambda _text: self.update_voice_profile_buttons())
+        self.profile_microphone_combo = QComboBox()
+        self.profile_record_button = QPushButton("Record")
+        self.profile_stop_record_button = QPushButton("Stop")
+        self.profile_play_button = QPushButton("Play")
+        self.profile_record_button.clicked.connect(self.start_voice_profile_recording)
+        self.profile_stop_record_button.clicked.connect(lambda _checked=False: self.stop_voice_profile_recording())
+        self.profile_play_button.clicked.connect(self.play_voice_profile_reference)
+        self.profile_record_status_label = QLabel("Record 10-30s of clean speech for the selected profile.")
+        self.profile_record_status_label.setObjectName("Muted")
+        self.profile_record_status_label.setWordWrap(True)
+        self.profile_record_timer = QTimer(self)
+        self.profile_record_timer.timeout.connect(self.update_voice_profile_recording_timer)
+        self.profile_record_source = None
+        self.profile_record_io = None
+        self.profile_record_buffer = bytearray()
+        self.profile_record_format = None
+        self.profile_record_path = None
+        self.profile_record_started_at = 0.0
+        self.profile_audio_output = QAudioOutput(self)
+        self.profile_media_player = QMediaPlayer(self)
+        self.profile_media_player.setAudioOutput(self.profile_audio_output)
         self.profile_consent_check = QCheckBox("Voice owner consent confirmed")
         self.profile_notes_edit = QPlainTextEdit()
         self.profile_notes_edit.setMinimumHeight(90)
@@ -254,6 +442,15 @@ class VoiceProfilesWorkflowMixin:
         editor_row.addWidget(self.profile_language_combo, 1)
         editor_card.content_layout.addLayout(editor_row)
         editor_card.content_layout.addWidget(self.profile_reference_picker)
+        recorder_row = QHBoxLayout()
+        recorder_row.setContentsMargins(0, 0, 0, 0)
+        recorder_row.addWidget(QLabel("Microphone"))
+        recorder_row.addWidget(self.profile_microphone_combo, 1)
+        recorder_row.addWidget(self.profile_record_button)
+        recorder_row.addWidget(self.profile_stop_record_button)
+        recorder_row.addWidget(self.profile_play_button)
+        editor_card.content_layout.addLayout(recorder_row)
+        editor_card.content_layout.addWidget(self.profile_record_status_label)
         editor_card.content_layout.addWidget(self.profile_consent_check)
         editor_card.content_layout.addWidget(self.profile_notes_edit)
 
@@ -280,5 +477,6 @@ class VoiceProfilesWorkflowMixin:
         layout.addStretch(1)
 
         self.refresh_voice_profiles_list()
+        self.refresh_voice_profile_microphones()
         self.new_voice_profile()
         return page

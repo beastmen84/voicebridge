@@ -34,7 +34,7 @@ from voicebridge.voice_profiles import (
     voice_profile_recording_path,
     voice_profile_status,
 )
-from voicebridge.wav_writer import pcm16_duration_seconds, trim_pcm16_to_frames, write_pcm16_wav
+from voicebridge.wav_writer import prepare_voice_reference_pcm, trim_pcm16_to_frames, write_pcm16_wav
 
 VOICE_PROFILE_RECORD_SAMPLE_RATE = 24_000
 VOICE_PROFILE_RECORD_CHANNELS = 1
@@ -250,11 +250,13 @@ class VoiceProfilesWorkflowMixin:
         sample_rate = audio_format.sampleRate()
         channel_count = audio_format.channelCount()
         pcm_data = trim_pcm16_to_frames(bytes(self.profile_record_buffer), channel_count)
-        duration = pcm16_duration_seconds(len(pcm_data), sample_rate, channel_count)
+        recording = prepare_voice_reference_pcm(pcm_data, sample_rate, channel_count)
+        duration = recording.duration_seconds
         try:
             if duration < 1:
-                raise ValueError("Recording is too short.")
-            write_pcm16_wav(self.profile_record_path, pcm_data, sample_rate, channel_count)
+                reason = " ".join(recording.messages) or "Recording is too short."
+                raise ValueError(reason)
+            write_pcm16_wav(self.profile_record_path, recording.pcm_data, sample_rate, channel_count)
         except (OSError, ValueError) as exc:
             self.profile_record_status_label.setText("Recording failed.")
             self.show_error("Voice Profiles", str(exc))
@@ -262,14 +264,15 @@ class VoiceProfilesWorkflowMixin:
             return
 
         self.profile_reference_picker.set_text(str(self.profile_record_path))
+        cleanup_message = f" {' '.join(recording.messages)}" if recording.messages else ""
         if duration < VOICE_PROFILE_RECORD_MIN_SECONDS:
-            message = f"Recorded {duration:.1f}s. Use at least 10s for better cloning."
+            message = f"Recorded {duration:.1f}s. Use at least 10s for better cloning.{cleanup_message}"
         elif duration < VOICE_PROFILE_RECORD_TARGET_SECONDS:
-            message = f"Recorded {duration:.1f}s. 10-30s is recommended."
+            message = f"Recorded {duration:.1f}s. 10-30s is recommended.{cleanup_message}"
         elif auto_stopped:
-            message = "Recorded 30.0s. Maximum reference length reached."
+            message = f"Recorded {duration:.1f}s. Maximum reference length reached.{cleanup_message}"
         else:
-            message = f"Recorded {duration:.1f}s."
+            message = f"Recorded {duration:.1f}s.{cleanup_message}"
         self.profile_record_status_label.setText(message)
         self.update_voice_profile_buttons()
 

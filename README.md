@@ -86,7 +86,7 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 1. Aprire `Voice Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
-3. In alternativa, registrare direttamente dal microfono con `Record` e `Stop`; l'app salva un WAV reference in `voice_profiles`.
+3. In alternativa, registrare direttamente dal microfono con `Record` e `Stop`; l'app salva un WAV reference in `voice_profiles`, tagliando silenzio iniziale/finale e normalizzando il livello.
 4. Aprire `Text to Speech`.
 5. Selezionare engine `Local TTS`.
 6. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
@@ -171,7 +171,7 @@ Struttura principale del codice:
 - `voicebridge/stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
 - `voicebridge/readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
 - `voicebridge/voices.py`: elenco, ricerca, preferiti e ordinamento voci.
-- `voicebridge/wav_writer.py`: scrittura WAV PCM per registrazioni microfono dei profili vocali.
+- `voicebridge/wav_writer.py`: scrittura WAV PCM, analisi livello, trim silenzio e normalizzazione per registrazioni microfono dei profili vocali.
 - `stt_worker.py`: worker offline WhisperX eseguito dal runtime ML e copiato come file esterno nel bundle.
 - `local_tts_worker.py`: worker Coqui XTTS eseguito dal runtime ML e copiato come file esterno nel bundle.
 - `prepare_stt_models.py`: script di preparazione/download dei modelli STT.

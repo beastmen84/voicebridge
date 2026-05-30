@@ -1,11 +1,15 @@
 import argparse
 import os
+import re
 import sys
+import wave
+from contextlib import suppress
 from pathlib import Path
 
 DEFAULT_XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
+XTTS_MAX_CHUNK_CHARS = 240
 
 
 def status(message):
@@ -84,6 +88,140 @@ def read_text(path):
     return text
 
 
+def normalize_tts_text(text):
+    text = text.replace("\ufeff", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\u00a0", " ").replace("\u200b", "")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r" *\n+ *", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"([,.;:!?])([^\s,.;:!?])", r"\1 \2", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def split_words_for_xtts(text, max_chars=XTTS_MAX_CHUNK_CHARS):
+    chunks = []
+    current = []
+    current_length = 0
+    for word in text.split():
+        candidate_length = len(word) if not current else current_length + 1 + len(word)
+        if current and candidate_length > max_chars:
+            chunks.append(" ".join(current))
+            current = [word]
+            current_length = len(word)
+        else:
+            current.append(word)
+            current_length = candidate_length
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
+def pack_text_fragments_for_xtts(fragments, max_chars=XTTS_MAX_CHUNK_CHARS):
+    chunks = []
+    current = ""
+    for fragment in fragments:
+        clean_fragment = fragment.strip()
+        if not clean_fragment:
+            continue
+        if len(clean_fragment) <= max_chars:
+            candidates = [clean_fragment]
+        else:
+            candidates = split_words_for_xtts(clean_fragment, max_chars)
+        for candidate in candidates:
+            joined = candidate if not current else f"{current} {candidate}"
+            if current and len(joined) > max_chars:
+                chunks.append(current)
+                current = candidate
+            else:
+                current = joined
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def split_tts_text_for_xtts(text, max_chars=XTTS_MAX_CHUNK_CHARS):
+    text = normalize_tts_text(text)
+    if not text:
+        return []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks = []
+    for sentence in sentences:
+        clean_sentence = sentence.strip()
+        if not clean_sentence:
+            continue
+        if len(clean_sentence) <= max_chars:
+            chunks.append(clean_sentence)
+        else:
+            chunks.extend(
+                pack_text_fragments_for_xtts(re.split(r"(?<=[,;:])\s+", clean_sentence), max_chars)
+            )
+    return chunks
+
+
+def wav_audio_signature(params):
+    return params.nchannels, params.sampwidth, params.framerate, params.comptype
+
+
+def merge_wav_files(input_paths, output_path):
+    input_paths = [Path(path) for path in input_paths]
+    if not input_paths:
+        raise ValueError("No local TTS audio chunks were generated.")
+
+    with wave.open(str(input_paths[0]), "rb") as first:
+        params = first.getparams()
+        signature = wav_audio_signature(params)
+        with wave.open(str(output_path), "wb") as output:
+            output.setparams(params)
+            output.writeframes(first.readframes(first.getnframes()))
+            for input_path in input_paths[1:]:
+                with wave.open(str(input_path), "rb") as part:
+                    if wav_audio_signature(part.getparams()) != signature:
+                        raise RuntimeError("Local TTS generated incompatible WAV chunks.")
+                    output.writeframes(part.readframes(part.getnframes()))
+
+
+def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
+    if not chunks:
+        raise ValueError("The selected input file contains no readable text after cleanup.")
+
+    chunk_paths = []
+    try:
+        if len(chunks) == 1:
+            status("Generating local TTS audio chunk 1/1...")
+            tts.tts_to_file(
+                text=chunks[0],
+                speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
+                language=language,
+                file_path=str(output_path),
+            )
+            progress(92)
+            return
+
+        generation_start = 35
+        generation_end = 92
+        for index, chunk in enumerate(chunks, start=1):
+            status(f"Generating local TTS audio chunk {index}/{len(chunks)}...")
+            chunk_path = output_path.with_name(f"{output_path.stem}.part-{index:03d}{output_path.suffix}")
+            chunk_paths.append(chunk_path)
+            tts.tts_to_file(
+                text=chunk,
+                speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
+                language=language,
+                file_path=str(chunk_path),
+            )
+            progress(generation_start + ((generation_end - generation_start) * index / len(chunks)))
+        status("Merging local TTS audio chunks...")
+        merge_wav_files(chunk_paths, output_path)
+        progress(94)
+    finally:
+        for chunk_path in chunk_paths:
+            with suppress(OSError):
+                chunk_path.unlink(missing_ok=True)
+
+
 def reference_audio_paths(paths):
     references = [Path(path).resolve() for path in paths]
     if not references:
@@ -153,7 +291,7 @@ def synthesize(args):
     if not text_path.is_file():
         raise ValueError(f"Text file not found: {text_path}")
 
-    text = read_text(text_path)
+    chunks = split_tts_text_for_xtts(read_text(text_path))
     speaker_wav = reference_audio_paths(args.speaker_wav)
     language = normalize_tts_language(args.language)
     device = resolve_runtime_device(args.device)
@@ -166,13 +304,8 @@ def synthesize(args):
     tts = TTS(args.model).to(device)
     progress(35)
 
-    status("Generating local TTS audio...")
-    tts.tts_to_file(
-        text=text,
-        speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
-        language=language,
-        file_path=str(output_path),
-    )
+    status(f"Prepared {len(chunks)} local TTS chunk(s).")
+    synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path)
     progress(95)
     if not output_path.is_file() or output_path.stat().st_size <= 0:
         raise RuntimeError("Local TTS did not create an audio file.")

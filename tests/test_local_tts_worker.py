@@ -5,8 +5,10 @@ import pytest
 from local_tts_worker import (
     XTTS_MODEL_REQUIRED_FILES,
     normalize_tts_language,
+    normalize_tts_text,
     read_text,
     reference_audio_paths,
+    split_tts_text_for_xtts,
     write_xtts_terms_agreement,
     xtts_model_cache_dir,
     xtts_model_ready,
@@ -34,6 +36,26 @@ def test_read_text_strips_common_utf8_bom(tmp_path: Path) -> None:
     text_path.write_text("\ufeff Ciao mondo \n", encoding="utf-8")
 
     assert read_text(text_path) == "Ciao mondo"
+
+
+def test_normalize_tts_text_cleans_spacing_and_line_breaks() -> None:
+    text = " Ciao   ,  mondo .\n\nNuova   frase!Seconda frase "
+
+    assert normalize_tts_text(text) == "Ciao, mondo. Nuova frase! Seconda frase"
+
+
+def test_split_tts_text_for_xtts_keeps_chunks_short() -> None:
+    text = (
+        "Prima frase completa. "
+        "Seconda frase con molte parole da dividere in modo prevedibile, senza lasciare un blocco troppo lungo. "
+        "Terza frase."
+    )
+
+    chunks = split_tts_text_for_xtts(text, max_chars=55)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 55 for chunk in chunks)
+    assert " ".join(chunks) == normalize_tts_text(text)
 
 
 def test_xtts_model_ready_checks_required_files(tmp_path: Path) -> None:

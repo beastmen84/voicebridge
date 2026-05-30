@@ -94,6 +94,8 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
 dopo il download il modello resta disponibile localmente.
+Per ridurre artefatti su testi lunghi, Local TTS normalizza spazi/punteggiatura, divide il testo in chunk brevi
+e concatena l'audio WAV prima della conversione MP3 finale.
 Il modello XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale. Vedere `THIRD_PARTY_LICENSES`.
 Le registrazioni create dall'app sono file utente nella cartella `voice_profiles` e non vengono tracciate da git.
 

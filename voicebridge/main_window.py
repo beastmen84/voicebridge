@@ -424,7 +424,7 @@ class VoiceBridgeQt(
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(6)
         self.status_tiles = {}
-        for index, key in enumerate(("TTS", "STT", "FFMPEG", "DOC", "OCR", "CPU")):
+        for index, key in enumerate(("TTS", "LOCAL", "STT", "FFMPEG", "DOC", "OCR", "CPU")):
             tile = QLabel(key)
             tile.setObjectName("StatusTile")
             tile.setAlignment(Qt.AlignmentFlag.AlignCenter)

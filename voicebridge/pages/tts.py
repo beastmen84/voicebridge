@@ -879,6 +879,7 @@ class TtsWorkflowMixin:
     def local_tts_model_download_succeeded(self):
         self.tts_status.setText("XTTS-v2 model ready.")
         self.update_local_tts_model_status()
+        self.refresh_home_diagnostics()
         self.show_info("Local TTS", f"XTTS-v2 model downloaded:\n{local_tts_model_cache_dir()}")
 
     def start_local_tts_conversion(self):
@@ -1104,6 +1105,7 @@ class TtsWorkflowMixin:
         self.is_converting = False
         self.tts_progress.hide()
         self.update_local_tts_model_status()
+        self.refresh_home_diagnostics()
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()

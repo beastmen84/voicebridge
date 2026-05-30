@@ -46,6 +46,7 @@ Il pacchetto ML offline include:
 
 Il runtime ML puo' essere CPU-only o CUDA. Nell'app le sezioni STT e Local TTS espongono `Auto`, `CPU` e `CUDA`;
 `CUDA` viene abilitato solo quando il precheck rileva un runtime PyTorch compatibile e una GPU NVIDIA disponibile.
+La sidebar mostra anche lo stato `LOCAL` per runtime Local TTS e modello XTTS-v2.
 Per le modalita' SRT, se viene rilevata o selezionata una lingua con modello di allineamento non incluso, l'app chiede conferma prima di scaricarlo. Dopo il download, quel modello resta disponibile offline sul computer.
 
 ## Requisiti utente

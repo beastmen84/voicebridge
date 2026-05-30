@@ -15,6 +15,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from voicebridge.app_paths import (
+    local_tts_model_cache_dir,
+    local_tts_model_ready,
+    local_tts_worker_path,
+    ml_python_path,
+)
 from voicebridge.constants import STT_CPU_STATUS, STT_CUDA_STATUS
 from voicebridge.media_tools import find_ffmpeg_exe
 from voicebridge.models import JobHistoryEntry
@@ -177,6 +183,21 @@ class HomePageMixin:
         return True, "Tesseract and OCR Python packages available"
 
     @staticmethod
+    def local_tts_diagnostic_detail() -> tuple[str, str]:
+        python_path = ml_python_path()
+        worker_path = local_tts_worker_path()
+        missing = []
+        if not python_path.is_file():
+            missing.append(f"ML Python runtime missing: {python_path}")
+        if not worker_path.is_file():
+            missing.append(f"Local TTS worker missing: {worker_path}")
+        if missing:
+            return "bad", missing[0]
+        if not local_tts_model_ready():
+            return "warn", "XTTS-v2 model not downloaded. Open Local TTS and use Download XTTS-v2."
+        return "ok", f"Coqui XTTS-v2 ready: {local_tts_model_cache_dir()}"
+
+    @staticmethod
     def diagnostic_state_label(state: str) -> str:
         return {
             "ok": "OK",
@@ -205,6 +226,9 @@ class HomePageMixin:
             self.set_status_tile("TTS", "warn", "Fallback voices loaded; internet may be unavailable")
         else:
             self.set_status_tile("TTS", "ok", f"{len(self.all_voices)} online voices loaded")
+
+        local_state, local_detail = self.local_tts_diagnostic_detail()
+        self.set_status_tile("LOCAL", local_state, local_detail, display_label="LOCAL")
 
         if self.stt_preflight_ok:
             self.set_status_tile("STT", "ok", "Offline STT package complete")

@@ -141,22 +141,14 @@ class VoiceBridgeQt(
     profile_reference_picker: FilePicker
     profile_microphone_combo: QComboBox
     profile_record_button: QPushButton
-    profile_stop_record_button: QPushButton
     profile_play_button: QPushButton
     profile_record_status_label: QLabel
-    profile_record_timer: QTimer
     profile_consent_check: QCheckBox
     profile_notes_edit: QPlainTextEdit
     profile_status_label: QLabel
     profile_save_button: QPushButton
     profile_open_reference_button: QPushButton
     profile_open_folder_button: QPushButton
-    profile_record_source: Any
-    profile_record_io: Any
-    profile_record_buffer: bytearray
-    profile_record_format: Any
-    profile_record_path: Any
-    profile_record_started_at: float
     profile_audio_output: Any
     profile_media_player: Any
 

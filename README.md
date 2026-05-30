@@ -86,7 +86,7 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 1. Aprire `Voice Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
-3. In alternativa, registrare direttamente dal microfono con `Record` e `Stop`; l'app registra via `sounddevice`, salva un WAV reference in `voice_profiles`, taglia il silenzio iniziale/finale e normalizza il livello.
+3. In alternativa, registrare direttamente dal microfono con `Record`; l'app apre una registrazione guidata da 30 secondi con countdown, testo di lettura nella lingua scelta, ascolto del WAV pulito e scelta finale `Mantieni`, `Ritenta` o `Annulla`.
 4. Aprire `Text to Speech`.
 5. Selezionare engine `Local TTS`.
 6. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
@@ -167,6 +167,8 @@ Struttura principale del codice:
 - `voicebridge/constants.py`: label, opzioni e costanti condivise dell'app.
 - `voicebridge/app_paths.py`: percorsi runtime, bundle, modelli e risorse.
 - `voicebridge/audio_recorder.py`: registrazione microfono via `sounddevice` per i profili vocali.
+- `voicebridge/voice_profile_recording_dialog.py`: dialog guidato per registrare, pulire, ascoltare e confermare un reference vocale.
+- `voicebridge/voice_profile_scripts.py`: testi di registrazione per le lingue supportate dai profili vocali.
 - `voicebridge/tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
 - `voicebridge/media_tools.py`: ffmpeg, merge MP3 multi-voce, embed/burn-in sottotitoli e cleanup video.
 - `voicebridge/stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.

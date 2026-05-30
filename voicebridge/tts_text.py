@@ -1,7 +1,8 @@
 import re
 
 TTS_MAX_CHUNK_CHARS = 240
-TTS_TERMINAL_SOFTENED_PUNCTUATION = ".!"
+TTS_TERMINAL_FULL_STOP = "."
+TTS_TERMINAL_EXCLAMATION = "!"
 
 NON_SENTENCE_ABBREVIATIONS = {
     "arch.",
@@ -139,6 +140,8 @@ def split_tts_text_for_tts(text: str, max_chars: int = TTS_MAX_CHUNK_CHARS) -> l
 
 def prepare_tts_chunk_for_generation(text: str) -> str:
     text = text.strip()
-    if text and text[-1] in TTS_TERMINAL_SOFTENED_PUNCTUATION:
+    if text.endswith(TTS_TERMINAL_FULL_STOP):
         return f"{text[:-1].rstrip()},"
+    if text.endswith(TTS_TERMINAL_EXCLAMATION):
+        return f"{text}\n"
     return text

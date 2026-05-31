@@ -73,6 +73,9 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 
 ## Workflow
 
+I campi file/output delle sezioni operative partono vuoti a ogni avvio. Restano salvate solo preferenze come engine,
+modalita', lingua, device, qualita' e preset.
+
 ### Text to Speech
 
 1. Aprire `Text to Speech`.

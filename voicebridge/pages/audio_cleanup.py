@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -600,11 +600,20 @@ class AudioCleanupWorkflowMixin:
     def play_audio_cleanup_path(self, path, start_seconds=0.0, stop_after_seconds=None):
         self.audio_cleanup_preview_timer.stop()
         self.audio_cleanup_media_player.stop()
+        self.refresh_audio_cleanup_playback_device()
         self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(Path(path).resolve())))
         self.audio_cleanup_media_player.setPosition(max(0, int(start_seconds * 1000)))
         self.audio_cleanup_media_player.play()
         if stop_after_seconds:
             self.audio_cleanup_preview_timer.start(max(1, int(stop_after_seconds * 1000)))
+
+    def refresh_audio_cleanup_playback_device(self):
+        if not hasattr(self, "audio_cleanup_audio_output"):
+            return
+        try:
+            self.audio_cleanup_audio_output.setDevice(QMediaDevices.defaultAudioOutput())
+        except RuntimeError:
+            return
 
     def stop_audio_cleanup_playback(self):
         if not hasattr(self, "audio_cleanup_media_player"):
@@ -790,6 +799,9 @@ class AudioCleanupWorkflowMixin:
         layout.addStretch(1)
 
         self.audio_cleanup_audio_output = QAudioOutput(self)
+        self.refresh_audio_cleanup_playback_device()
+        self.audio_cleanup_media_devices = QMediaDevices(self)
+        self.audio_cleanup_media_devices.audioOutputsChanged.connect(self.refresh_audio_cleanup_playback_device)
         self.audio_cleanup_media_player = QMediaPlayer(self)
         self.audio_cleanup_media_player.setAudioOutput(self.audio_cleanup_audio_output)
         self.audio_cleanup_preview_timer = QTimer(self)

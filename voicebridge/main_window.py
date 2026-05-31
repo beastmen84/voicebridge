@@ -227,6 +227,7 @@ class VoiceBridgeQt(
     audio_cleanup_log: QPlainTextEdit
     audio_cleanup_process: Any
     audio_cleanup_audio_output: Any
+    audio_cleanup_media_devices: Any
     audio_cleanup_media_player: Any
     audio_cleanup_preview_timer: QTimer
 
@@ -527,8 +528,6 @@ class VoiceBridgeQt(
         self.is_restoring_settings = True
         try:
             tts_settings = self.setting_section("tts")
-            self.set_picker_text(self.tts_input_picker, tts_settings.get("input_path"))
-            self.set_picker_text(self.tts_output_picker, tts_settings.get("output_path"))
             self.set_combo_text(self.rate_combo, tts_settings.get("rate"), RATE_CHOICES)
             tts_engine = self.setting_str(tts_settings.get("engine"), "edge")
             if tts_engine not in TTS_ENGINE_LABEL_BY_KEY:
@@ -550,18 +549,12 @@ class VoiceBridgeQt(
             self.set_tts_mode(tab_index)
 
             stt_settings = self.setting_section("stt")
-            self.set_picker_text(self.stt_media_picker, stt_settings.get("media_path"))
-            self.set_picker_text(self.stt_text_picker, stt_settings.get("text_path"))
-            self.set_picker_text(self.stt_output_picker, stt_settings.get("output_path"))
             self.set_combo_text(self.stt_mode_combo, stt_settings.get("mode_label"), list(STT_MODE_LABELS))
             self.restore_stt_language_selection(stt_settings)
             self.preferred_stt_device_key = self.setting_str(stt_settings.get("device"), "auto")
             self.set_stt_device_key(self.preferred_stt_device_key)
 
             video_settings = self.setting_section("video_subtitles")
-            self.set_picker_text(self.video_media_picker, video_settings.get("media_path"))
-            self.set_picker_text(self.video_srt_picker, video_settings.get("srt_path"))
-            self.set_picker_text(self.video_output_picker, video_settings.get("output_path"))
             self.set_video_subtitle_mode(video_settings.get("mode_label"))
             self.set_combo_text(self.video_quality_combo, video_settings.get("quality_label"), BURN_QUALITY_LABELS)
             self.set_combo_text(
@@ -574,13 +567,9 @@ class VoiceBridgeQt(
             self.video_margin_spin.setValue(self.safe_int(video_settings.get("margin_v"), 36, 0, 160))
 
             audio_cleanup_settings = self.setting_section("audio_cleanup")
-            self.set_picker_text(self.audio_cleanup_input_picker, audio_cleanup_settings.get("input_path"))
-            self.set_picker_text(self.audio_cleanup_output_picker, audio_cleanup_settings.get("output_path"))
             self.set_combo_text(self.audio_cleanup_action_combo, audio_cleanup_settings.get("action_label"))
 
             cleanup_settings = self.setting_section("video_cleanup")
-            self.set_picker_text(self.cleanup_media_picker, cleanup_settings.get("media_path"))
-            self.set_picker_text(self.cleanup_output_picker, cleanup_settings.get("output_path"))
             self.set_combo_text(
                 self.cleanup_quality_combo,
                 cleanup_settings.get("quality_label"),
@@ -626,8 +615,6 @@ class VoiceBridgeQt(
             if selected_profile:
                 self.saved_tts_voice_profile_id = selected_profile["id"]
             settings["tts"] = {
-                "input_path": self.tts_input_picker.text(),
-                "output_path": self.tts_output_picker.text(),
                 "engine": self.tts_engine_key(),
                 "voice_short_name": self.saved_tts_voice_short_name,
                 "voice_profile_id": self.saved_tts_voice_profile_id,
@@ -640,9 +627,6 @@ class VoiceBridgeQt(
 
         if hasattr(self, "stt_mode_combo"):
             settings["stt"] = {
-                "media_path": self.stt_media_picker.text(),
-                "text_path": self.stt_text_picker.text(),
-                "output_path": self.stt_output_picker.text(),
                 "mode_label": self.stt_mode_combo.currentText(),
                 "language_label": self.stt_language_combo.currentText(),
                 "language_code": self.stt_language_key(),
@@ -651,9 +635,6 @@ class VoiceBridgeQt(
 
         if hasattr(self, "video_embed_mode_button"):
             settings["video_subtitles"] = {
-                "media_path": self.video_media_picker.text(),
-                "srt_path": self.video_srt_picker.text(),
-                "output_path": self.video_output_picker.text(),
                 "mode_label": self.video_subtitle_mode_label(),
                 "quality_label": self.video_quality_combo.currentText(),
                 "font_size": self.video_font_size_spin.value(),
@@ -664,15 +645,11 @@ class VoiceBridgeQt(
 
         if hasattr(self, "audio_cleanup_action_combo"):
             settings["audio_cleanup"] = {
-                "input_path": self.audio_cleanup_input_picker.text(),
-                "output_path": self.audio_cleanup_output_picker.text(),
                 "action_label": self.audio_cleanup_action_combo.currentText(),
             }
 
         if hasattr(self, "cleanup_quality_combo"):
             settings["video_cleanup"] = {
-                "media_path": self.cleanup_media_picker.text(),
-                "output_path": self.cleanup_output_picker.text(),
                 "quality_label": self.cleanup_quality_combo.currentText(),
                 "method_label": self.cleanup_method_combo.currentText(),
             }

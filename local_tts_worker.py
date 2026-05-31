@@ -5,6 +5,13 @@ import wave
 from contextlib import suppress
 from pathlib import Path
 
+from voicebridge.local_tts_presets import (
+    DEFAULT_LOCAL_TTS_PRESET_KEY,
+    LOCAL_TTS_PRESETS,
+    local_tts_preset_label,
+    local_tts_preset_settings,
+    normalize_local_tts_preset_key,
+)
 from voicebridge.tts_text import (
     TTS_MAX_CHUNK_CHARS,
     prepare_tts_chunk_for_generation,
@@ -19,12 +26,7 @@ XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
 XTTS_MAX_CHUNK_CHARS = TTS_MAX_CHUNK_CHARS
 XTTS_CHUNK_SILENCE_SECONDS = 0.25
-XTTS_STABLE_INFERENCE_SETTINGS = {
-    "temperature": 0.65,
-    "top_k": 30,
-    "top_p": 0.75,
-    "repetition_penalty": 8.0,
-}
+XTTS_STABLE_INFERENCE_SETTINGS = local_tts_preset_settings("stable")
 
 
 def status(message):
@@ -139,10 +141,11 @@ def silent_wav_frames(params, seconds):
     return b"\x00" * frame_count * params.nchannels * params.sampwidth
 
 
-def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
+def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, inference_settings=None):
     if not chunks:
         raise ValueError("The selected input file contains no readable text after cleanup.")
 
+    settings = dict(inference_settings or XTTS_STABLE_INFERENCE_SETTINGS)
     chunk_paths = []
     try:
         if len(chunks) == 1:
@@ -152,7 +155,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(output_path),
-                **XTTS_STABLE_INFERENCE_SETTINGS,
+                **settings,
             )
             progress(92)
             return
@@ -168,7 +171,7 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path):
                 speaker_wav=speaker_wav[0] if len(speaker_wav) == 1 else speaker_wav,
                 language=language,
                 file_path=str(chunk_path),
-                **XTTS_STABLE_INFERENCE_SETTINGS,
+                **settings,
             )
             progress(generation_start + ((generation_end - generation_start) * index / len(chunks)))
         status("Merging local TTS audio chunks...")
@@ -262,8 +265,10 @@ def synthesize(args):
     tts = TTS(args.model).to(device)
     progress(35)
 
+    preset_key = normalize_local_tts_preset_key(args.preset)
     status(f"Prepared {len(chunks)} local TTS chunk(s).")
-    synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path)
+    status(f"Using XTTS preset: {local_tts_preset_label(preset_key)}.")
+    synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, local_tts_preset_settings(preset_key))
     progress(95)
     if not output_path.is_file() or output_path.stat().st_size <= 0:
         raise RuntimeError("Local TTS did not create an audio file.")
@@ -280,6 +285,7 @@ def parse_args():
     parser.add_argument("--speaker-wav", action="append", default=[])
     parser.add_argument("--language", default="it")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    parser.add_argument("--preset", default=DEFAULT_LOCAL_TTS_PRESET_KEY, choices=list(LOCAL_TTS_PRESETS))
     parser.add_argument("--model", default=DEFAULT_XTTS_MODEL)
     parser.add_argument("--model-dir")
     parser.add_argument("--offline", action="store_true")

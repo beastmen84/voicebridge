@@ -216,6 +216,7 @@ class VoiceBridgeQt(
     cleanup_status: QLabel
     cleanup_log: QPlainTextEdit
     tts_segments: list[TtsSegment]
+    tts_local_preset_combo: QComboBox
     selected_tts_segment_index: int | None
     app_settings: dict[str, Any]
     is_restoring_settings: bool
@@ -489,6 +490,7 @@ class VoiceBridgeQt(
             if local_device not in STT_DEVICE_LABEL_BY_KEY:
                 local_device = "auto"
             self.set_tts_local_device_key(local_device)
+            self.set_tts_local_preset_key(tts_settings.get("local_preset"))
             self.saved_tts_voice_profile_id = self.setting_str(tts_settings.get("voice_profile_id"))
             self.refresh_local_voice_profile_combo(self.saved_tts_voice_profile_id)
             self.set_combo_text(
@@ -575,6 +577,7 @@ class VoiceBridgeQt(
                 "voice_short_name": self.saved_tts_voice_short_name,
                 "voice_profile_id": self.saved_tts_voice_profile_id,
                 "local_device": self.tts_local_device_key(),
+                "local_preset": self.tts_local_preset_key(),
                 "rate": self.rate_combo.currentText(),
                 "tab_index": self.tts_mode_index(),
                 "split_mode": self.tts_split_combo.currentText(),

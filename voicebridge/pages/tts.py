@@ -12,6 +12,7 @@ from pathlib import Path
 import aiohttp
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -54,6 +55,12 @@ from voicebridge.constants import (
     TTS_SPLIT_PARAGRAPHS,
 )
 from voicebridge.languages import language_name
+from voicebridge.local_tts_presets import (
+    DEFAULT_LOCAL_TTS_PRESET_KEY,
+    LOCAL_TTS_PRESETS,
+    local_tts_preset_description,
+    normalize_local_tts_preset_key,
+)
 from voicebridge.media_tools import concatenate_mp3_files, convert_audio_to_mp3
 from voicebridge.models import TtsSegment
 from voicebridge.readers import (
@@ -118,6 +125,29 @@ class TtsWorkflowMixin:
             self.set_tts_local_device_key("auto")
         self.save_user_settings()
 
+    def tts_local_preset_key(self):
+        if not hasattr(self, "tts_local_preset_combo"):
+            return DEFAULT_LOCAL_TTS_PRESET_KEY
+        preset = self.tts_local_preset_combo.currentData()
+        return normalize_local_tts_preset_key(preset if isinstance(preset, str) else None)
+
+    def set_tts_local_preset_key(self, preset):
+        preset = normalize_local_tts_preset_key(preset if isinstance(preset, str) else None)
+        for index in range(self.tts_local_preset_combo.count()):
+            if self.tts_local_preset_combo.itemData(index) == preset:
+                self.tts_local_preset_combo.setCurrentIndex(index)
+                self.update_tts_local_preset_tooltip()
+                return
+
+    def tts_local_preset_changed(self):
+        self.update_tts_local_preset_tooltip()
+        self.save_user_settings()
+
+    def update_tts_local_preset_tooltip(self):
+        if not hasattr(self, "tts_local_preset_combo"):
+            return
+        self.tts_local_preset_combo.setToolTip(local_tts_preset_description(self.tts_local_preset_key()))
+
     def update_tts_local_device_options(self):
         if not hasattr(self, "tts_local_device_combo"):
             return
@@ -140,7 +170,7 @@ class TtsWorkflowMixin:
                     tooltip = "Uses the detected CUDA GPU."
                 else:
                     tooltip = "CUDA is not available in the current ML runtime on this machine."
-                self.tts_local_device_combo.setItemData(index, tooltip)
+                self.tts_local_device_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             self.set_tts_local_device_key(selected_device)
         finally:
             self.tts_local_device_combo.blockSignals(False)
@@ -722,7 +752,7 @@ class TtsWorkflowMixin:
             raise ValueError("CUDA is not available in the current ML runtime on this machine.")
         self.tts_output_picker.set_text(save_path)
         self.save_user_settings()
-        return input_path, save_path, profile, self.tts_local_device_key()
+        return input_path, save_path, profile, self.tts_local_device_key(), self.tts_local_preset_key()
 
     def collect_multi_tts_options(self):
         save_path = self.tts_output_picker.text()
@@ -898,7 +928,7 @@ class TtsWorkflowMixin:
 
     def start_local_tts_conversion(self):
         try:
-            input_path, save_path, profile, device = self.collect_local_tts_options()
+            input_path, save_path, profile, device, preset = self.collect_local_tts_options()
         except ValueError as exc:
             self.tts_status.setText("Error.")
             self.show_error("Local TTS", str(exc))
@@ -918,7 +948,7 @@ class TtsWorkflowMixin:
         self.start_tts_busy("Starting local TTS...", percent=True)
         threading.Thread(
             target=self.local_tts_conversion_worker,
-            args=(python_path, worker_path, input_path, save_path, profile, device, cached_text),
+            args=(python_path, worker_path, input_path, save_path, profile, device, preset, cached_text),
             daemon=True,
         ).start()
 
@@ -930,6 +960,7 @@ class TtsWorkflowMixin:
         save_path,
         profile,
         device,
+        preset,
         cached_text,
     ):
         recent_output = []
@@ -960,6 +991,8 @@ class TtsWorkflowMixin:
                     profile["language_code"],
                     "--device",
                     device,
+                    "--preset",
+                    preset,
                     "--model-dir",
                     str(local_tts_model_dir()),
                 ]
@@ -1278,8 +1311,20 @@ class TtsWorkflowMixin:
         for label in STT_DEVICE_LABELS:
             self.tts_local_device_combo.addItem(label, STT_DEVICE_BY_LABEL[label])
         self.tts_local_device_combo.currentTextChanged.connect(lambda _text: self.tts_local_device_changed())
+        self.tts_local_preset_combo = QComboBox()
+        for preset_key, preset in LOCAL_TTS_PRESETS.items():
+            self.tts_local_preset_combo.addItem(preset["label"], preset_key)
+            self.tts_local_preset_combo.setItemData(
+                self.tts_local_preset_combo.count() - 1,
+                local_tts_preset_description(preset_key),
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        self.tts_local_preset_combo.currentTextChanged.connect(lambda _text: self.tts_local_preset_changed())
         local_device_row = QHBoxLayout()
         local_device_row.setContentsMargins(0, 0, 0, 0)
+        local_device_row.addWidget(QLabel("Preset"))
+        local_device_row.addWidget(self.tts_local_preset_combo)
+        local_device_row.addSpacing(10)
         local_device_row.addWidget(QLabel("Device"))
         local_device_row.addWidget(self.tts_local_device_combo)
         local_device_row.addStretch(1)
@@ -1342,6 +1387,7 @@ class TtsWorkflowMixin:
 
         self.set_tts_mode(0)
         self.refresh_local_voice_profile_combo()
+        self.update_tts_local_preset_tooltip()
         self.update_tts_local_device_options()
         self.set_tts_engine_key("edge")
         self.update_tts_engine_ui()

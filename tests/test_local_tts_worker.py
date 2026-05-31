@@ -18,6 +18,7 @@ from local_tts_worker import (
     xtts_model_ready,
     xtts_terms_agreed,
 )
+from voicebridge.local_tts_presets import local_tts_preset_settings, normalize_local_tts_preset_key
 
 
 def test_normalize_tts_language_keeps_xtts_chinese_code() -> None:
@@ -115,3 +116,25 @@ def test_synthesize_text_chunks_passes_stable_xtts_settings(tmp_path: Path) -> N
     assert tts.calls[0]["text"] == "Ciao mondo;"
     for key, value in XTTS_STABLE_INFERENCE_SETTINGS.items():
         assert tts.calls[0][key] == value
+
+
+def test_synthesize_text_chunks_accepts_selected_xtts_settings(tmp_path: Path) -> None:
+    class FakeTts:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def tts_to_file(self, **kwargs) -> None:
+            self.calls.append(kwargs)
+
+    tts = FakeTts()
+    settings = local_tts_preset_settings("balanced")
+
+    synthesize_text_chunks(tts, ["Ciao mondo."], ["voice.wav"], "it", tmp_path / "output.wav", settings)
+
+    for key, value in settings.items():
+        assert tts.calls[0][key] == value
+
+
+def test_unknown_local_tts_preset_falls_back_to_stable() -> None:
+    assert normalize_local_tts_preset_key("unknown") == "stable"
+    assert local_tts_preset_settings("unknown") == XTTS_STABLE_INFERENCE_SETTINGS

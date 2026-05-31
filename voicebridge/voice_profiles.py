@@ -13,6 +13,10 @@ VOICE_PROFILES_CONFIG = "voice_profiles.json"
 VOICE_PROFILES_AUDIO_DIR = "voice_profiles"
 VOICE_PROFILE_REFERENCE = "reference"
 VOICE_PROFILE_MODELING = "modeling"
+VOICE_PROFILE_TYPE_DIR_NAMES = {
+    VOICE_PROFILE_REFERENCE: "reference_clone",
+    VOICE_PROFILE_MODELING: "modeling_dataset",
+}
 VOICE_PROFILE_TYPES = {
     "Reference clone": VOICE_PROFILE_REFERENCE,
     "Modeling dataset": VOICE_PROFILE_MODELING,
@@ -60,6 +64,10 @@ def voice_profiles_audio_dir() -> Path:
     return external_base_dir() / VOICE_PROFILES_AUDIO_DIR
 
 
+def voice_profile_type_dir_name(profile_type: Any) -> str:
+    return VOICE_PROFILE_TYPE_DIR_NAMES[normalize_profile_type(profile_type)]
+
+
 def utc_timestamp() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -81,8 +89,29 @@ def safe_voice_profile_audio_stem(name: Any) -> str:
     return cleaned or "voice-profile"
 
 
-def voice_profile_recording_path(name: Any, timestamp: str | None = None, audio_dir: Path | None = None) -> Path:
+def voice_profile_type_storage_dir(
+    profile_type: str = VOICE_PROFILE_REFERENCE,
+    audio_dir: Path | None = None,
+) -> Path:
     directory = audio_dir or voice_profiles_audio_dir()
+    return directory / voice_profile_type_dir_name(profile_type)
+
+
+def voice_profile_storage_dir(
+    name: Any,
+    profile_type: str = VOICE_PROFILE_REFERENCE,
+    audio_dir: Path | None = None,
+) -> Path:
+    return voice_profile_type_storage_dir(profile_type, audio_dir) / safe_voice_profile_audio_stem(name)
+
+
+def voice_profile_recording_path(
+    name: Any,
+    timestamp: str | None = None,
+    audio_dir: Path | None = None,
+    profile_type: str = VOICE_PROFILE_REFERENCE,
+) -> Path:
+    directory = voice_profile_storage_dir(name, profile_type, audio_dir)
     return directory / f"{safe_voice_profile_audio_stem(name)}-{timestamp or file_timestamp()}.wav"
 
 
@@ -153,6 +182,8 @@ def normalized_reference_paths(value: Any) -> list[str]:
     seen = set()
     for item in values:
         if not isinstance(item, str):
+            continue
+        if not item.strip():
             continue
         path = str(Path(item).expanduser())
         if not path or path in seen:

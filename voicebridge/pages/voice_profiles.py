@@ -217,7 +217,7 @@ class VoiceProfilesWorkflowMixin:
         profile = build_voice_profile(
             name=self.profile_name_edit.text(),
             language_code=self.voice_profile_language_code(),
-            profile_type=self.voice_profile_type(),
+            profile_type=existing["profile_type"] if existing else self.voice_profile_type(),
             reference_paths=[self.profile_reference_picker.text()],
             consent_confirmed=self.profile_consent_check.isChecked(),
             notes=self.profile_notes_edit.toPlainText(),
@@ -291,6 +291,7 @@ class VoiceProfilesWorkflowMixin:
         is_recording = self.voice_profile_is_recording()
         is_modeling_profile = self.voice_profile_type() == VOICE_PROFILE_MODELING
         self.voice_profiles_list.setEnabled(not is_recording)
+        self.profile_type_combo.setEnabled(not has_selection and not is_recording)
         self.profile_new_button.setEnabled(not is_recording)
         self.profile_delete_button.setEnabled(has_selection and not is_recording)
         self.profile_save_button.setEnabled(not is_recording)

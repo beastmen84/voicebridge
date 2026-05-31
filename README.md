@@ -114,7 +114,9 @@ Per ridurre artefatti su testi lunghi, Local TTS normalizza liste, spazi, file e
 e concatena l'audio WAV prima della conversione MP3 finale. Il preset `Stable` privilegia la stabilita', `Balanced` e' il compromesso
 consigliato per i test, mentre `Natural` lascia piu' espressivita' al modello.
 Il modello XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale. Vedere `THIRD_PARTY_LICENSES`.
-Le registrazioni create dall'app sono file utente nella cartella `voice_profiles` e non vengono tracciate da git.
+Il tipo profilo si sceglie alla creazione e resta bloccato dopo il salvataggio. Le registrazioni create dall'app sono
+file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sample rapidi finiscono in
+`voice_profiles\reference_clone\<nome profilo>`, mentre i dataset futuri usano `voice_profiles\modeling_dataset\<nome profilo>`.
 
 ### Modeling Datasets
 
@@ -126,7 +128,8 @@ Le registrazioni create dall'app sono file utente nella cartella `voice_profiles
 4. Per una clip libera, usare `Free record`; la clip viene salvata come `Needs transcript`.
 5. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
 
-I dataset vengono salvati nella cartella `modeling_datasets`; ogni clip mantiene WAV pulito, testo sidecar `.txt` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
+I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,
+testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
 
 ### Transcription
 

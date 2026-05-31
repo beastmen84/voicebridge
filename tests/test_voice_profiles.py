@@ -31,7 +31,7 @@ def test_voice_profile_recording_path_uses_safe_stem(tmp_path: Path) -> None:
 
     path = voice_profile_recording_path("Marco Rossi!", timestamp="20260530-120000", audio_dir=tmp_path)
 
-    assert path == tmp_path / "marco-rossi-20260530-120000.wav"
+    assert path == tmp_path / "reference_clone" / "marco-rossi" / "marco-rossi-20260530-120000.wav"
 
 
 def test_reference_profile_ready_status(tmp_path: Path) -> None:
@@ -121,12 +121,12 @@ def test_ready_voice_profiles_only_returns_reference_profiles(tmp_path: Path) ->
 
 def test_voice_profile_owned_audio_paths_only_returns_recorded_wavs(tmp_path: Path) -> None:
     audio_dir = tmp_path / "voice_profiles"
-    audio_dir.mkdir()
-    recorded_wav = audio_dir / "recorded.wav"
+    recorded_wav = audio_dir / "reference_clone" / "reference" / "recorded.wav"
+    recorded_wav.parent.mkdir(parents=True)
     recorded_wav.write_bytes(b"RIFF")
     external_wav = tmp_path / "external.wav"
     external_wav.write_bytes(b"RIFF")
-    recorded_mp3 = audio_dir / "recorded.mp3"
+    recorded_mp3 = audio_dir / "reference_clone" / "reference" / "recorded.mp3"
     recorded_mp3.write_bytes(b"ID3")
     profile = build_voice_profile(
         name="Reference",
@@ -141,8 +141,8 @@ def test_voice_profile_owned_audio_paths_only_returns_recorded_wavs(tmp_path: Pa
 
 def test_delete_voice_profile_audio_files_removes_only_owned_wavs(tmp_path: Path) -> None:
     audio_dir = tmp_path / "voice_profiles"
-    audio_dir.mkdir()
-    recorded_wav = audio_dir / "recorded.wav"
+    recorded_wav = audio_dir / "reference_clone" / "reference" / "recorded.wav"
+    recorded_wav.parent.mkdir(parents=True)
     recorded_wav.write_bytes(b"RIFF")
     external_wav = tmp_path / "external.wav"
     external_wav.write_bytes(b"RIFF")

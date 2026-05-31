@@ -5,12 +5,15 @@ from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from voicebridge.app_paths import external_base_dir
 from voicebridge.app_settings import app_config_dir
-from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, VoiceProfile
+from voicebridge.voice_profiles import (
+    VOICE_PROFILE_MODELING,
+    VoiceProfile,
+    voice_profile_storage_dir,
+    voice_profile_type_storage_dir,
+)
 
 MODELING_DATASETS_CONFIG = "modeling_datasets.json"
-MODELING_DATASETS_DIR = "modeling_datasets"
 MODELING_CLIP_TEXT_GUIDED = "text_guided"
 MODELING_CLIP_FREE_RECORDING = "free_recording"
 MODELING_CLIP_READY = "ready"
@@ -52,11 +55,11 @@ def modeling_datasets_config_path() -> Path:
 
 
 def modeling_datasets_root() -> Path:
-    return external_base_dir() / MODELING_DATASETS_DIR
+    return voice_profile_type_storage_dir(VOICE_PROFILE_MODELING)
 
 
 def modeling_dataset_dir(dataset: ModelingDataset) -> Path:
-    return modeling_datasets_root() / dataset["profile_id"]
+    return voice_profile_storage_dir(dataset["name"], VOICE_PROFILE_MODELING)
 
 
 def modeling_dataset_clips_dir(dataset: ModelingDataset) -> Path:

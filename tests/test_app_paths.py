@@ -24,6 +24,31 @@ def test_stt_runtime_site_packages_uses_shared_ml_runtime(monkeypatch, tmp_path:
     assert app_paths.stt_runtime_site_packages() == tmp_path / ".venv-ml" / "Lib" / "site-packages"
 
 
+def test_stt_whisper_model_ready_checks_required_files(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
+    model_dir = app_paths.stt_model_dir()
+    model_dir.mkdir(parents=True)
+
+    assert not app_paths.stt_whisper_model_ready()
+
+    for filename in app_paths.stt_whisper_model_required_files():
+        (model_dir / filename).write_text("x", encoding="utf-8")
+
+    assert app_paths.stt_whisper_model_ready()
+
+
+def test_stt_alignment_model_ready_checks_language_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
+    model_dir = app_paths.stt_model_dir()
+    model_dir.mkdir(parents=True)
+
+    assert not app_paths.stt_alignment_model_ready("it")
+
+    (model_dir / app_paths.stt_alignment_model_files()["it"]).write_text("x", encoding="utf-8")
+
+    assert app_paths.stt_alignment_model_ready("it")
+
+
 def test_ffmpeg_candidates_only_include_shared_ml_runtime(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(media_tools, "external_base_dir", lambda: tmp_path)
     bundled_dir = tmp_path / "python-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries"

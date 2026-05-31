@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from voicebridge.app_paths import resource_path
+from voicebridge.app_paths import resource_path, stt_alignment_model_ready
 from voicebridge.app_settings import load_app_settings, save_app_settings
 from voicebridge.constants import (
     APP_ATTRIBUTION,
@@ -112,6 +112,7 @@ class VoiceBridgeQt(
     local_voice_profile_status: QLabel
     tts_local_device_combo: QComboBox
     local_tts_model_status: QLabel
+    local_tts_model_status_box: QFrame
     tts_download_model_button: QPushButton
     rate_combo: QComboBox
     tts_generate_button: QPushButton
@@ -160,6 +161,7 @@ class VoiceBridgeQt(
     stt_device_combo: QComboBox
     stt_preflight_box: QFrame
     stt_preflight_label: QLabel
+    stt_download_model_button: QPushButton
     stt_generate_button: QPushButton
     stt_cancel_button: QPushButton
     stt_open_output_button: QPushButton
@@ -761,7 +763,7 @@ class VoiceBridgeQt(
     def stt_alignment_language_ready(self, language_code):
         return (
             language_code == "auto"
-            or language_code in STT_ALIGNMENT_READY_LANGUAGES
+            or (language_code in STT_ALIGNMENT_READY_LANGUAGES and stt_alignment_model_ready(language_code))
             or language_code in self.downloaded_alignment_languages
         )
 
@@ -787,7 +789,7 @@ class VoiceBridgeQt(
             self.stt_language_combo.setItemData(index, code, Qt.ItemDataRole.UserRole)
             if code == "auto":
                 tooltip = "Detects the spoken language automatically."
-            elif code in STT_ALIGNMENT_READY_LANGUAGES:
+            elif code in STT_ALIGNMENT_READY_LANGUAGES and stt_alignment_model_ready(code):
                 tooltip = "Included in the offline package for SRT alignment."
             elif code in self.downloaded_alignment_languages:
                 tooltip = "Downloaded on this computer and available offline for SRT alignment."

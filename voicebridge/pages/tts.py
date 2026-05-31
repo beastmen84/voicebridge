@@ -233,6 +233,8 @@ class TtsWorkflowMixin:
             self.local_tts_model_status.setText("XTTS-v2 model ready.")
         else:
             self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
+        if hasattr(self, "local_tts_model_status_box"):
+            self.local_tts_model_status_box.setVisible(model_ready)
         if hasattr(self, "tts_download_model_button"):
             self.tts_download_model_button.setVisible(not model_ready)
         self.update_tts_button_state()
@@ -1328,16 +1330,20 @@ class TtsWorkflowMixin:
         local_device_row.addWidget(QLabel("Device"))
         local_device_row.addWidget(self.tts_local_device_combo)
         local_device_row.addStretch(1)
-        self.local_tts_model_status = QLabel("XTTS-v2 model not downloaded. Required once for all languages.")
-        self.local_tts_model_status.setObjectName("Muted")
+        self.local_tts_model_status = QLabel("XTTS-v2 model ready.")
         self.local_tts_model_status.setWordWrap(True)
+        self.local_tts_model_status_box = QFrame()
+        self.local_tts_model_status_box.setObjectName("GoodBox")
+        local_model_status_layout = QVBoxLayout(self.local_tts_model_status_box)
+        local_model_status_layout.setContentsMargins(12, 10, 12, 10)
+        local_model_status_layout.addWidget(self.local_tts_model_status)
         self.tts_download_model_button = QPushButton("Download XTTS-v2")
         self.tts_download_model_button.clicked.connect(self.start_local_tts_model_download)
         local_voice_layout.addWidget(QLabel("Voice profile"))
         local_voice_layout.addLayout(profile_row)
         local_voice_layout.addWidget(self.local_voice_profile_status)
         local_voice_layout.addLayout(local_device_row)
-        local_voice_layout.addWidget(self.local_tts_model_status)
+        local_voice_layout.addWidget(self.local_tts_model_status_box)
         local_voice_layout.addWidget(self.tts_download_model_button)
 
         voice_card.content_layout.addWidget(self.edge_voice_panel)

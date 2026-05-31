@@ -20,6 +20,8 @@ from voicebridge.app_paths import (
     local_tts_model_ready,
     local_tts_worker_path,
     ml_python_path,
+    stt_model_dir,
+    stt_whisper_model_ready,
 )
 from voicebridge.constants import STT_CPU_STATUS, STT_CUDA_STATUS
 from voicebridge.media_tools import find_ffmpeg_exe
@@ -232,6 +234,8 @@ class HomePageMixin:
 
         if self.stt_preflight_ok:
             self.set_status_tile("STT", "ok", "Offline STT package complete")
+        elif not stt_whisper_model_ready():
+            self.set_status_tile("STT", "warn", f"Whisper large-v3 model not downloaded: {stt_model_dir()}")
         elif self.stt_preflight_details:
             self.set_status_tile("STT", "bad", self.stt_preflight_details[0])
         else:

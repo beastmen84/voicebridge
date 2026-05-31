@@ -51,6 +51,27 @@ def stt_model_dir():
     return stt_models_root() / "whisperx"
 
 
+def stt_whisper_model_required_files():
+    return ("config.json", "model.bin", "preprocessor_config.json", "tokenizer.json", "vocabulary.json")
+
+
+def stt_whisper_model_ready():
+    model_dir = stt_model_dir()
+    return all((model_dir / filename).is_file() for filename in stt_whisper_model_required_files())
+
+
+def stt_alignment_model_files():
+    return {
+        "en": "wav2vec2_fairseq_base_ls960_asr_ls960.pth",
+        "it": "wav2vec2_voxpopuli_base_10k_asr_it.pt",
+    }
+
+
+def stt_alignment_model_ready(language_code):
+    filename = stt_alignment_model_files().get(language_code)
+    return bool(filename and (stt_model_dir() / filename).is_file())
+
+
 def local_tts_model_dir():
     return stt_models_root() / "coqui"
 

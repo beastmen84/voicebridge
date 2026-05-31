@@ -35,7 +35,7 @@ dist\VoiceBridge\VoiceBridge.exe
 
 Distribuire sempre tutta la cartella `VoiceBridge`, non solo l'eseguibile.
 
-Il pacchetto ML offline include:
+Il pacchetto ML offline puo' includere:
 
 - runtime Python ML condiviso in `python-ml`
 - Whisper `large-v3`
@@ -43,6 +43,11 @@ Il pacchetto ML offline include:
 - allineamento italiano
 - Silero VAD
 - ffmpeg tramite `imageio-ffmpeg`
+
+La cartella `models` puo' essere distribuita gia' pronta oppure lasciata assente. Se Whisper `large-v3`
+non e' presente, la pagina `Transcription` mostra `Download Whisper large-v3` e scarica il modello STT,
+Silero VAD e i dati NLTK necessari. I modelli di allineamento per SRT restano scaricabili su richiesta
+quando si seleziona o si rileva una lingua non disponibile offline.
 
 Il runtime ML puo' essere CPU-only o CUDA. Nell'app le sezioni STT e Local TTS espongono `Auto`, `CPU` e `CUDA`;
 `CUDA` viene abilitato solo quando il precheck rileva un runtime PyTorch compatibile e una GPU NVIDIA disponibile.
@@ -104,18 +109,19 @@ Le registrazioni create dall'app sono file utente nella cartella `voice_profiles
 ### Transcription
 
 1. Aprire `Transcription`.
-2. Scegliere un file audio o video.
-3. Scegliere la modalita':
+2. Se compare `Download Whisper large-v3`, scaricare prima il modello STT richiesto.
+3. Scegliere un file audio o video.
+4. Scegliere la modalita':
    - `Transcript Markdown (.md)`
    - `Auto subtitles (.srt)`
    - `Subtitles from provided text (.srt)`
-4. Scegliere lingua. `Auto detect` va bene nella maggior parte dei casi; nel menu le lingue gia' incluse sono marcate `offline ready`, mentre le altre sono marcate `download for SRT`.
-5. Scegliere device `Auto`, `CPU` o `CUDA`.
-6. Generare il file.
-7. Per aggiungere un `.srt` a un video, usare la sezione `Subtitles`.
+5. Scegliere lingua. `Auto detect` va bene nella maggior parte dei casi; nel menu le lingue gia' disponibili sono marcate `offline ready`, mentre le altre sono marcate `download for SRT`.
+6. Scegliere device `Auto`, `CPU` o `CUDA`.
+7. Generare il file.
+8. Per aggiungere un `.srt` a un video, usare la sezione `Subtitles`.
 
 La modalita' `Transcript Markdown (.md)` non richiede modelli di allineamento: Whisper `large-v3` puo' trascrivere anche lingue non incluse nel pacchetto alignment.
-Le due modalita' `.srt` richiedono invece il modello di allineamento della lingua parlata. Inglese e italiano sono inclusi; per altre lingue l'app mostra un prompt e scarica il modello solo se l'utente conferma.
+Le due modalita' `.srt` richiedono invece il modello di allineamento della lingua parlata. Se il modello non e' disponibile, l'app mostra un prompt e lo scarica solo se l'utente conferma.
 Nel modo `Subtitles from provided text (.srt)`, il transcript fornito puo' essere `.txt`, `.md`, `.docx` o `.doc`; i vecchi `.doc` richiedono Microsoft Word installato.
 `Subtitles` usa `ffmpeg` incluso nel bundle completo ed e' indipendente dall'ultimo job STT: si puo' usare anche con un `.srt` creato da un audio estratto dal video.
 `Embed SRT track` crea un file `_subtitled`, mentre `Burn in SRT` crea un file `_burned`.
@@ -236,8 +242,9 @@ Build completo pulito:
 
 - `requirements-stt.txt` e `requirements-local-tts.txt` non servono al programma a runtime, ma documentano come ricreare il runtime ML.
 - Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
+- `Download Whisper large-v3` scarica il modello STT in `models\whisperx` e prepara le cache STT richieste.
 - `Download XTTS-v2` scarica un unico modello multilingua in `models\coqui` e richiede circa 1.8-2.3 GB.
-- Il supporto offline di allineamento incluso e' per inglese e italiano. Altri modelli di allineamento possono essere scaricati su richiesta dalle funzioni SRT.
+- I modelli di allineamento SRT possono essere inclusi nella distribuzione o scaricati su richiesta dalle funzioni SRT.
 - La generazione Edge TTS resta online; Local TTS usa il runtime ML locale.
 - Il README, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.
 

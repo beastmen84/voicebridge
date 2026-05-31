@@ -20,7 +20,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from voicebridge.app_paths import external_base_dir, stt_python_path, stt_worker_path
+from voicebridge.app_paths import (
+    external_base_dir,
+    stt_model_dir,
+    stt_python_path,
+    stt_whisper_model_ready,
+    stt_worker_path,
+)
 from voicebridge.constants import (
     MISSING_ALIGNMENT_PREFIX,
     STT_DEVICE_BY_LABEL,
@@ -168,6 +174,7 @@ class SttWorkflowMixin:
         self.update_stt_device_options()
         self.update_tts_local_device_options()
         self.stt_preflight_label.setText(summary)
+        self.update_stt_model_status()
         self.update_stt_button_state()
         self.refresh_home_diagnostics()
 
@@ -176,6 +183,12 @@ class SttWorkflowMixin:
             return
         busy_elsewhere = self.is_converting or self.is_video_running or self.is_cleanup_running
         self.stt_generate_button.setEnabled(not self.is_stt_running and not busy_elsewhere and self.stt_preflight_ok)
+        if hasattr(self, "stt_download_model_button"):
+            self.stt_download_model_button.setEnabled(
+                not self.is_stt_running
+                and not busy_elsewhere
+                and not stt_whisper_model_ready()
+            )
         self.stt_cancel_button.setEnabled(self.is_stt_running)
         output_ready = bool(self.stt_last_output_path and Path(self.stt_last_output_path).is_file())
         self.stt_open_output_button.setEnabled(output_ready)
@@ -184,6 +197,13 @@ class SttWorkflowMixin:
             not self.is_stt_running and not self.is_video_running and not self.is_converting
         )
         self.update_navigation_state()
+
+    def update_stt_model_status(self):
+        if not hasattr(self, "stt_download_model_button"):
+            return
+        model_ready = stt_whisper_model_ready()
+        self.stt_preflight_box.setVisible(model_ready)
+        self.stt_download_model_button.setVisible(not model_ready)
 
     def append_stt_log(self, line):
         self.stt_log_lines.append(line)
@@ -465,6 +485,96 @@ class SttWorkflowMixin:
             daemon=True,
         ).start()
 
+    def start_stt_model_download(self):
+        python_path = stt_python_path()
+        worker_path = stt_worker_path()
+        if not python_path.is_file():
+            self.show_error("STT environment missing", f"Could not find the STT Python runtime:\n{python_path}")
+            return
+        if not worker_path.is_file():
+            self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
+            return
+
+        self.stt_cancel_requested = False
+        self.stt_process = None
+        self.is_stt_running = True
+        self.show_percent_progress(self.stt_progress, 0)
+        self.stt_status.setText("Downloading Whisper large-v3 model...")
+        self.append_stt_log("Downloading Whisper large-v3 model and STT runtime caches.")
+        self.update_stt_button_state()
+        self.update_tts_button_state()
+        self.update_video_subtitle_button_state()
+        self.update_video_cleanup_button_state()
+        threading.Thread(
+            target=self.stt_model_download_thread,
+            args=(python_path, worker_path),
+            daemon=True,
+        ).start()
+
+    def stt_model_download_thread(self, python_path, worker_path):
+        command = [
+            str(python_path),
+            str(worker_path),
+            "--mode",
+            "download_whisper",
+            "--model",
+            STT_MODEL,
+            "--model-dir",
+            str(stt_model_dir()),
+        ]
+        recent_output = []
+        completion_callback = None
+        completion_args = ()
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            process = subprocess.Popen(
+                command,
+                cwd=str(external_base_dir()),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+            )
+            self.stt_process = process
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("PROGRESS: "):
+                    try:
+                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
+                    except ValueError:
+                        continue
+                    self.post(self.update_stt_progress_percent, progress_percent)
+                    continue
+                recent_output.append(line)
+                recent_output = recent_output[-12:]
+                self.post(self.append_stt_log, line)
+                if line.startswith("STATUS: "):
+                    self.post(self.stt_status.setText, line.removeprefix("STATUS: "))
+                if self.stt_cancel_requested and process.poll() is None:
+                    process.terminate()
+            return_code = process.wait()
+            if self.stt_cancel_requested:
+                completion_callback = self.stt_job_cancelled
+            elif return_code != 0:
+                message = "\n".join(recent_output[-8:]) or f"Whisper model download exited with code {return_code}."
+                completion_callback = self.stt_job_failed
+                completion_args = (message,)
+            else:
+                completion_callback = self.stt_model_download_succeeded
+        except (OSError, RuntimeError, AssertionError) as exc:
+            completion_callback = self.stt_job_failed
+            completion_args = (str(exc),)
+        finally:
+            self.stt_process = None
+            self.post(self.finish_stt_job)
+            if completion_callback:
+                self.post(completion_callback, *completion_args)
+
     def alignment_model_download_thread(self, python_path, worker_path, language_code):
         command = [
             str(python_path),
@@ -539,6 +649,12 @@ class SttWorkflowMixin:
         self.append_stt_log(f"Alignment model ready for language: {language_code}")
         QTimer.singleShot(250, self.start_stt_job)
 
+    def stt_model_download_succeeded(self):
+        self.stt_status.setText("Whisper large-v3 model downloaded.")
+        self.append_stt_log(f"Whisper model ready: {stt_model_dir()}")
+        self.refresh_stt_preflight_async()
+        self.refresh_home_diagnostics()
+
     def cancel_stt_job(self):
         if not self.is_stt_running:
             return
@@ -575,6 +691,7 @@ class SttWorkflowMixin:
     def finish_stt_job(self):
         self.is_stt_running = False
         self.stt_progress.hide()
+        self.update_stt_model_status()
         self.update_stt_button_state()
         self.update_tts_button_state()
         self.update_video_subtitle_button_state()
@@ -645,7 +762,10 @@ class SttWorkflowMixin:
         pf_layout = QVBoxLayout(self.stt_preflight_box)
         pf_layout.setContentsMargins(12, 10, 12, 10)
         pf_layout.addWidget(self.stt_preflight_label)
+        self.stt_download_model_button = QPushButton("Download Whisper large-v3")
+        self.stt_download_model_button.clicked.connect(self.start_stt_model_download)
         settings_card.content_layout.addWidget(self.stt_preflight_box)
+        settings_card.content_layout.addWidget(self.stt_download_model_button)
 
         grid.addWidget(media_card, 0, 0)
         grid.addWidget(settings_card, 0, 1)
@@ -694,6 +814,7 @@ class SttWorkflowMixin:
         layout.addStretch(1)
 
         self.stt_mode_changed()
+        self.update_stt_model_status()
         self.update_stt_button_state()
         return page
 

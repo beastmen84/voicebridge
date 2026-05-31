@@ -408,6 +408,32 @@ def download_alignment_model(language, model_dir, device):
     status(f"Alignment model ready for language: {language}.")
 
 
+def download_whisper_model(model_name, model_dir):
+    import nltk
+    import torch
+    from faster_whisper.utils import download_model
+
+    progress(2)
+    status(f"Downloading Faster Whisper {model_name}...")
+    download_model(model_name, output_dir=str(model_dir))
+    progress(50)
+
+    status("Downloading Silero VAD...")
+    torch.hub.load(
+        repo_or_dir="snakers4/silero-vad",
+        model="silero_vad",
+        force_reload=False,
+        onnx=False,
+        trust_repo=True,
+    )
+    progress(75)
+
+    status("Downloading NLTK punctuation data...")
+    nltk.download("punkt_tab", download_dir=str(model_dir.parent / "nltk"), quiet=False)
+    progress(100)
+    status(f"Whisper model ready: {model_dir}.")
+
+
 def align_provided_text(
     media_path,
     text_path,
@@ -464,6 +490,9 @@ def run(args):
 
     if args.mode == "download_align":
         download_alignment_model(args.language, model_dir, args.device)
+        return
+    if args.mode == "download_whisper":
+        download_whisper_model(args.model, model_dir)
         return
 
     if not args.media:
@@ -523,7 +552,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Offline speech-to-text worker.")
     parser.add_argument("--media")
     parser.add_argument("--output")
-    parser.add_argument("--mode", choices=["transcript", "auto_srt", "align_text", "download_align"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=["transcript", "auto_srt", "align_text", "download_align", "download_whisper"],
+        required=True,
+    )
     parser.add_argument("--text")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--model-dir")

@@ -3,17 +3,14 @@ from pathlib import Path
 from typing import TypedDict
 
 from voicebridge.app_paths import (
+    stt_alignment_model_files,
     stt_model_dir,
     stt_models_root,
     stt_python_path,
     stt_runtime_site_packages,
+    stt_whisper_model_required_files,
     stt_worker_path,
 )
-
-STT_ALIGNMENT_MODELS = {
-    "en": "wav2vec2_fairseq_base_ls960_asr_ls960.pth",
-    "it": "wav2vec2_voxpopuli_base_10k_asr_it.pt",
-}
 
 
 class SttRuntimeInfo(TypedDict):
@@ -108,11 +105,17 @@ def inspect_stt_runtime(python_path: Path) -> SttRuntimeInfo:
 
 def check_stt_preflight():
     checks = []
+    optional_checks = []
 
     def add_check(label, path, ok=None):
         path = Path(path)
         exists = path.exists() if ok is None else ok
         checks.append((label, exists, path))
+
+    def add_optional_check(label, path, ok=None):
+        path = Path(path)
+        exists = path.exists() if ok is None else ok
+        optional_checks.append((label, exists, path))
 
     python_path = stt_python_path()
     worker_path = stt_worker_path()
@@ -123,13 +126,10 @@ def check_stt_preflight():
     add_check("STT Python runtime", python_path, python_path.is_file())
     add_check("Torch runtime", python_path, runtime_info["torch_ok"])
     add_check("STT worker", worker_path, worker_path.is_file())
-    add_check("Whisper large-v3 model", model_dir / "model.bin")
-    add_check("Whisper config", model_dir / "config.json")
-    add_check("Whisper preprocessor config", model_dir / "preprocessor_config.json")
-    add_check("Whisper tokenizer", model_dir / "tokenizer.json")
-    add_check("Whisper vocabulary", model_dir / "vocabulary.json")
-    for language, filename in STT_ALIGNMENT_MODELS.items():
-        add_check(f"Alignment model {language}", model_dir / filename)
+    for filename in stt_whisper_model_required_files():
+        add_check(f"Whisper large-v3 {filename}", model_dir / filename)
+    for language, filename in stt_alignment_model_files().items():
+        add_optional_check(f"Alignment model {language}", model_dir / filename)
     add_check(
         "Silero VAD cache",
         models_root / "torch" / "hub" / "snakers4_silero-vad_master",
@@ -148,22 +148,25 @@ def check_stt_preflight():
 
     missing = [(label, path) for label, exists, path in checks if not exists]
     if missing:
-        summary = f"STT offline package incomplete: {len(missing)} missing item(s). Open details for paths."
+        summary = f"STT core package incomplete: {len(missing)} missing item(s). Open details for paths."
     elif runtime_info["cuda_available"]:
         device_name = runtime_info["cuda_device_name"] or "CUDA device"
         summary = (
-            "Offline STT ready: large-v3, English/Italian alignment, VAD, ffmpeg and CUDA runtime found. "
-            f"GPU: {device_name}. Other SRT alignment languages can be downloaded on request."
+            "Offline STT ready: large-v3, VAD, ffmpeg and CUDA runtime found. "
+            f"GPU: {device_name}. SRT alignment languages can be downloaded on request."
         )
     else:
         summary = (
-            "Offline STT ready: large-v3, English/Italian alignment, VAD, ffmpeg and CPU runtime found. "
-            "Other SRT alignment languages can be downloaded on request."
+            "Offline STT ready: large-v3, VAD, ffmpeg and CPU runtime found. "
+            "SRT alignment languages can be downloaded on request."
         )
 
     details = []
     for label, exists, path in checks:
         marker = "OK" if exists else "MISSING"
+        details.append(f"{marker}: {label} - {path}")
+    for label, exists, path in optional_checks:
+        marker = "OK" if exists else "OPTIONAL"
         details.append(f"{marker}: {label} - {path}")
     details.append(f"INFO: {runtime_info['detail']}")
     return not missing, summary, details, runtime_info

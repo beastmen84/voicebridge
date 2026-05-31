@@ -49,6 +49,7 @@ AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS = (
 
 class AudioCleanupWorkflowMixin:
     def audio_cleanup_input_changed(self):
+        self.stop_audio_cleanup_playback()
         self.audio_cleanup_last_output_path = ""
         self.update_audio_cleanup_output(force=False)
         self.refresh_audio_cleanup_input_info()
@@ -64,6 +65,7 @@ class AudioCleanupWorkflowMixin:
             return
         self.audio_cleanup_waveform_generation += 1
         self.audio_cleanup_waveform.clear_waveform()
+        self.audio_cleanup_waveform.set_playhead(None)
         self.audio_cleanup_waveform_status.setText(status)
         if hasattr(self, "audio_cleanup_waveform_zoom_combo"):
             self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
@@ -79,6 +81,7 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_waveform_generation += 1
         generation = self.audio_cleanup_waveform_generation
         self.audio_cleanup_waveform.clear_waveform()
+        self.audio_cleanup_waveform.set_playhead(None)
         self.audio_cleanup_waveform_status.setText("Loading waveform...")
         self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
         self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(0)
@@ -107,6 +110,7 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_waveform_status.setText("Waveform unavailable.")
             return
         self.audio_cleanup_waveform.set_waveform(peaks, duration)
+        self.audio_cleanup_waveform.set_playhead(None)
         self.audio_cleanup_waveform.set_selection(
             self.audio_cleanup_start_spin.value(),
             self.audio_cleanup_end_spin.value(),
@@ -323,7 +327,10 @@ class AudioCleanupWorkflowMixin:
         start = self.audio_cleanup_start_spin.value()
         end = self.audio_cleanup_end_spin.value()
         duration = max(0.0, end - start)
-        self.audio_cleanup_selection_note.setText(f"Selection: {duration:.3f}s")
+        self.audio_cleanup_selection_note.setText(
+            f"Selection: {self.format_audio_cleanup_time(start)} - "
+            f"{self.format_audio_cleanup_time(end)} ({duration:.3f}s)"
+        )
 
     def audio_cleanup_action_key(self):
         return AUDIO_CLEANUP_ACTION_BY_LABEL.get(
@@ -603,18 +610,44 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_media_player.stop()
         self.refresh_audio_cleanup_playback_device()
         start_ms = max(0, round(start_seconds * 1000))
-        self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(Path(path).resolve())))
+        resolved_path = Path(path).resolve()
+        tracks_waveform = self.audio_cleanup_path_matches_waveform_source(resolved_path)
+        self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(resolved_path)))
         self.audio_cleanup_media_player.setPosition(start_ms)
+        self.audio_cleanup_preview_tracks_waveform = tracks_waveform
+        if tracks_waveform and hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.center_on(start_ms / 1000)
+            self.audio_cleanup_waveform.set_playhead(start_ms / 1000)
+        elif hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_playhead(None)
         if stop_after_seconds:
             self.audio_cleanup_preview_end_ms = start_ms + max(1, round(stop_after_seconds * 1000))
         self.audio_cleanup_media_player.play()
         if stop_after_seconds:
             self.audio_cleanup_preview_timer.start(max(10_000, round(stop_after_seconds * 1000) + 5000))
 
+    def audio_cleanup_path_matches_waveform_source(self, path):
+        input_path = self.audio_cleanup_input_picker.text()
+        if not input_path:
+            return False
+        try:
+            return Path(path).resolve() == Path(input_path).resolve()
+        except OSError:
+            return False
+
     def audio_cleanup_playback_position_changed(self, position_ms):
+        if getattr(self, "audio_cleanup_preview_tracks_waveform", False) and hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_playhead(position_ms / 1000)
         target_ms = self.audio_cleanup_preview_end_ms
         if target_ms is not None and position_ms >= target_ms:
             self.stop_audio_cleanup_playback()
+
+    def audio_cleanup_playback_state_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            return
+        self.audio_cleanup_preview_tracks_waveform = False
+        if hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_playhead(None)
 
     def refresh_audio_cleanup_playback_device(self):
         if not hasattr(self, "audio_cleanup_audio_output"):
@@ -628,8 +661,11 @@ class AudioCleanupWorkflowMixin:
         if not hasattr(self, "audio_cleanup_media_player"):
             return
         self.audio_cleanup_preview_end_ms = None
+        self.audio_cleanup_preview_tracks_waveform = False
         self.audio_cleanup_preview_timer.stop()
         self.audio_cleanup_media_player.stop()
+        if hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_playhead(None)
 
     def open_audio_cleanup_output(self):
         open_path(self.audio_cleanup_last_output_path)
@@ -708,7 +744,7 @@ class AudioCleanupWorkflowMixin:
         for spin in (self.audio_cleanup_start_spin, self.audio_cleanup_end_spin):
             spin.setDecimals(3)
             spin.setRange(0.0, 0.001)
-            spin.setSingleStep(0.1)
+            spin.setSingleStep(0.01)
             spin.setSuffix(" s")
             spin.valueChanged.connect(lambda _value: self.audio_cleanup_time_changed())
         self.audio_cleanup_selection_note = QLabel("Selection: 0.000s")
@@ -815,7 +851,9 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_media_player = QMediaPlayer(self)
         self.audio_cleanup_media_player.setAudioOutput(self.audio_cleanup_audio_output)
         self.audio_cleanup_preview_end_ms = None
+        self.audio_cleanup_preview_tracks_waveform = False
         self.audio_cleanup_media_player.positionChanged.connect(self.audio_cleanup_playback_position_changed)
+        self.audio_cleanup_media_player.playbackStateChanged.connect(self.audio_cleanup_playback_state_changed)
         self.audio_cleanup_preview_timer = QTimer(self)
         self.audio_cleanup_preview_timer.setSingleShot(True)
         self.audio_cleanup_preview_timer.timeout.connect(self.stop_audio_cleanup_playback)

@@ -15,6 +15,7 @@ class AudioWaveformWidget(QWidget):
         self._duration = 0.0
         self._start = 0.0
         self._end = 0.0
+        self._playhead: float | None = None
         self._zoom_factor = 1.0
         self._view_start = 0.0
         self._drag_mode: str | None = None
@@ -28,6 +29,7 @@ class AudioWaveformWidget(QWidget):
         self._duration = 0.0
         self._start = 0.0
         self._end = 0.0
+        self._playhead = None
         self._zoom_factor = 1.0
         self._view_start = 0.0
         self.setEnabled(False)
@@ -68,6 +70,14 @@ class AudioWaveformWidget(QWidget):
         self._emit_view_changed()
         self.update()
 
+    def center_on(self, seconds: float) -> None:
+        if self._duration <= 0:
+            return
+        visible_duration = self._visible_duration()
+        self._view_start = self._clamped_view_start(float(seconds) - (visible_duration / 2))
+        self._emit_view_changed()
+        self.update()
+
     def view_position_ratio(self) -> float:
         max_start = max(0.0, self._duration - self._visible_duration())
         if max_start <= 0:
@@ -91,6 +101,13 @@ class AudioWaveformWidget(QWidget):
         self.update()
         if emit:
             self.selectionChanged.emit(self._start, self._end)
+
+    def set_playhead(self, seconds: float | None) -> None:
+        if seconds is None or self._duration <= 0:
+            self._playhead = None
+        else:
+            self._playhead = min(self._duration, max(0.0, float(seconds)))
+        self.update()
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -130,6 +147,13 @@ class AudioWaveformWidget(QWidget):
             if visible_start <= self._end <= visible_end:
                 end_x = self._x_for_seconds(self._end, plot_rect)
                 painter.drawLine(QPointF(end_x, plot_rect.top()), QPointF(end_x, plot_rect.bottom()))
+
+        if self._playhead is not None and self._duration > 0:
+            visible_start, visible_end = self._visible_window()
+            if visible_start <= self._playhead <= visible_end:
+                playhead_x = self._x_for_seconds(self._playhead, plot_rect)
+                painter.setPen(QPen(QColor("#dc2626"), 2.2))
+                painter.drawLine(QPointF(playhead_x, plot_rect.top()), QPointF(playhead_x, plot_rect.bottom()))
 
     def mousePressEvent(self, event) -> None:
         if not self.isEnabled() or self._duration <= 0:

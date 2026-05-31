@@ -145,11 +145,11 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
-3. Usare la waveform, lo zoom o i campi `Start` / `End` per impostare l'intervallo e ascoltare la selezione.
+3. Usare la waveform, lo zoom o i campi `Start` / `End` per impostare l'intervallo con passo da 10 ms e ascoltare la selezione.
 4. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
 5. Salvare un nuovo file audio e premere `Clean audio`.
 
-Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche audio creati altrove. Usa `ffmpeg` dal bundle completo.
+Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche audio creati altrove. Durante l'anteprima della sorgente, la waveform mostra il punto di riproduzione corrente. Usa `ffmpeg` dal bundle completo.
 
 ### Video Cleanup
 

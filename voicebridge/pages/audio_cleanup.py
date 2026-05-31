@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -1203,10 +1204,12 @@ class AudioCleanupWorkflowMixin:
         waveform_action_controls = QHBoxLayout()
         waveform_action_controls.setContentsMargins(0, 0, 0, 0)
         waveform_action_controls.setSpacing(8)
+        self.audio_cleanup_play_selection_button = QPushButton("Play selection")
         self.audio_cleanup_cut_button = QPushButton("Cut")
         self.audio_cleanup_cut_button.setObjectName("DangerButton")
         self.audio_cleanup_silence_button = QPushButton("Silence")
         self.audio_cleanup_fade_button = QPushButton("Fade")
+        self.audio_cleanup_play_selection_button.clicked.connect(self.play_audio_cleanup_selection)
         self.audio_cleanup_cut_button.clicked.connect(
             lambda _checked=False: self.apply_audio_cleanup_change(
                 AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_REMOVE_LABEL]
@@ -1227,6 +1230,12 @@ class AudioCleanupWorkflowMixin:
         waveform_action_controls.addWidget(QLabel("End"))
         waveform_action_controls.addWidget(self.audio_cleanup_end_spin)
         waveform_action_controls.addStretch(1)
+        waveform_action_controls.addWidget(self.audio_cleanup_play_selection_button)
+        waveform_action_separator = QFrame()
+        waveform_action_separator.setFrameShape(QFrame.Shape.VLine)
+        waveform_action_separator.setFrameShadow(QFrame.Shadow.Plain)
+        waveform_action_separator.setObjectName("VerticalSeparator")
+        waveform_action_controls.addWidget(waveform_action_separator)
         waveform_action_controls.addWidget(self.audio_cleanup_cut_button)
         waveform_action_controls.addWidget(self.audio_cleanup_silence_button)
         waveform_action_controls.addWidget(self.audio_cleanup_fade_button)
@@ -1279,21 +1288,18 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_start_button = QPushButton("Clean audio")
         self.audio_cleanup_start_button.setObjectName("PrimaryButton")
         self.audio_cleanup_cancel_button = QPushButton("Cancel")
-        self.audio_cleanup_play_selection_button = QPushButton("Play selection")
         self.audio_cleanup_play_output_button = QPushButton("Play output")
         self.audio_cleanup_open_output_button = QPushButton("Open output")
         self.audio_cleanup_open_folder_button = QPushButton("Open folder")
         self.audio_cleanup_details_button = QPushButton("Show details")
         self.audio_cleanup_start_button.clicked.connect(self.start_audio_cleanup_job)
         self.audio_cleanup_cancel_button.clicked.connect(self.cancel_audio_cleanup_job)
-        self.audio_cleanup_play_selection_button.clicked.connect(self.play_audio_cleanup_selection)
         self.audio_cleanup_play_output_button.clicked.connect(self.play_audio_cleanup_output)
         self.audio_cleanup_open_output_button.clicked.connect(self.open_audio_cleanup_output)
         self.audio_cleanup_open_folder_button.clicked.connect(self.open_audio_cleanup_output_folder)
         self.audio_cleanup_details_button.clicked.connect(self.toggle_audio_cleanup_details)
         actions.addWidget(self.audio_cleanup_start_button)
         actions.addWidget(self.audio_cleanup_cancel_button)
-        actions.addWidget(self.audio_cleanup_play_selection_button)
         actions.addStretch(1)
         actions.addWidget(self.audio_cleanup_play_output_button)
         actions.addWidget(self.audio_cleanup_open_output_button)

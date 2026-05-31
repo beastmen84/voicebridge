@@ -119,6 +119,7 @@ def apply_app_style(widget, check_icon, chevron_icon):
         #Card { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; }
         #HomeCard { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; }
         #Card QLabel, #HomeCard QLabel, #InlinePanel { background: transparent; }
+        #VerticalSeparator { color: #d8dee8; margin: 4px 6px; }
         #FilePicker { background: transparent; }
         #CardTitle { font-size: 13pt; font-weight: 700; }
         #PageTitle { font-size: 21pt; font-weight: 750; }

@@ -599,13 +599,22 @@ class AudioCleanupWorkflowMixin:
 
     def play_audio_cleanup_path(self, path, start_seconds=0.0, stop_after_seconds=None):
         self.audio_cleanup_preview_timer.stop()
+        self.audio_cleanup_preview_end_ms = None
         self.audio_cleanup_media_player.stop()
         self.refresh_audio_cleanup_playback_device()
+        start_ms = max(0, round(start_seconds * 1000))
         self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(Path(path).resolve())))
-        self.audio_cleanup_media_player.setPosition(max(0, int(start_seconds * 1000)))
+        self.audio_cleanup_media_player.setPosition(start_ms)
+        if stop_after_seconds:
+            self.audio_cleanup_preview_end_ms = start_ms + max(1, round(stop_after_seconds * 1000))
         self.audio_cleanup_media_player.play()
         if stop_after_seconds:
-            self.audio_cleanup_preview_timer.start(max(1, int(stop_after_seconds * 1000)))
+            self.audio_cleanup_preview_timer.start(max(10_000, round(stop_after_seconds * 1000) + 5000))
+
+    def audio_cleanup_playback_position_changed(self, position_ms):
+        target_ms = self.audio_cleanup_preview_end_ms
+        if target_ms is not None and position_ms >= target_ms:
+            self.stop_audio_cleanup_playback()
 
     def refresh_audio_cleanup_playback_device(self):
         if not hasattr(self, "audio_cleanup_audio_output"):
@@ -618,6 +627,7 @@ class AudioCleanupWorkflowMixin:
     def stop_audio_cleanup_playback(self):
         if not hasattr(self, "audio_cleanup_media_player"):
             return
+        self.audio_cleanup_preview_end_ms = None
         self.audio_cleanup_preview_timer.stop()
         self.audio_cleanup_media_player.stop()
 
@@ -804,6 +814,8 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_media_devices.audioOutputsChanged.connect(self.refresh_audio_cleanup_playback_device)
         self.audio_cleanup_media_player = QMediaPlayer(self)
         self.audio_cleanup_media_player.setAudioOutput(self.audio_cleanup_audio_output)
+        self.audio_cleanup_preview_end_ms = None
+        self.audio_cleanup_media_player.positionChanged.connect(self.audio_cleanup_playback_position_changed)
         self.audio_cleanup_preview_timer = QTimer(self)
         self.audio_cleanup_preview_timer.setSingleShot(True)
         self.audio_cleanup_preview_timer.timeout.connect(self.stop_audio_cleanup_playback)

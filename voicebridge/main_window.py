@@ -229,6 +229,7 @@ class VoiceBridgeQt(
     audio_cleanup_audio_output: Any
     audio_cleanup_media_devices: Any
     audio_cleanup_media_player: Any
+    audio_cleanup_preview_end_ms: int | None
     audio_cleanup_preview_timer: QTimer
 
     cleanup_media_picker: FilePicker
@@ -392,6 +393,7 @@ class VoiceBridgeQt(
         self.audio_cleanup_waveform_generation = 0
         self.audio_cleanup_waveform_syncing = False
         self.audio_cleanup_waveform_view_syncing = False
+        self.audio_cleanup_preview_end_ms = None
         self.is_cleanup_running = False
         self.cleanup_cancel_requested = False
         self.cleanup_process = None

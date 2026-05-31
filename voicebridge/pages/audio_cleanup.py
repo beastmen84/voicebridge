@@ -34,7 +34,7 @@ from voicebridge.media_tools import (
     probe_audio_info,
     suggest_audio_cleanup_output_path,
 )
-from voicebridge.tts_timeline import load_tts_timeline_for_audio
+from voicebridge.tts_timeline import load_tts_timeline_for_audio, write_audio_cleanup_timeline
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import Card, FilePicker
@@ -512,7 +512,15 @@ class AudioCleanupWorkflowMixin:
             if self.audio_cleanup_cancel_requested:
                 self.post(self.audio_cleanup_job_cancelled)
             elif return_code == 0 and Path(output_path).is_file():
-                self.post(self.audio_cleanup_job_succeeded, output_path, action)
+                timeline_path = write_audio_cleanup_timeline(
+                    input_path,
+                    output_path,
+                    action=action,
+                    start_seconds=start,
+                    end_seconds=end,
+                    total_duration_seconds=output_duration,
+                )
+                self.post(self.audio_cleanup_job_succeeded, output_path, action, str(timeline_path or ""))
             else:
                 message = "\n".join(recent_output[-8:]) or f"Audio cleanup exited with code {return_code}."
                 self.post(self.audio_cleanup_job_failed, message)
@@ -609,13 +617,18 @@ class AudioCleanupWorkflowMixin:
             except OSError as exc:
                 self.append_audio_cleanup_log(f"Could not terminate process cleanly: {exc}")
 
-    def audio_cleanup_job_succeeded(self, output_path, action):
+    def audio_cleanup_job_succeeded(self, output_path, action, timeline_path=""):
         self.audio_cleanup_last_output_path = output_path
         self.audio_cleanup_status.setText("Cleaned audio saved.")
         self.append_audio_cleanup_log(f"Output saved: {output_path}")
+        if timeline_path:
+            self.append_audio_cleanup_log(f"TTS timeline saved: {timeline_path}")
         self.update_audio_cleanup_progress_percent(100)
         self.record_job("AUDIO", "Audio cleanup", self.audio_cleanup_input_picker.text(), output_path, action)
-        self.show_info("Audio Cleanup", f"Audio saved:\n{output_path}")
+        self.load_audio_cleanup_source(output_path)
+        self.audio_cleanup_last_output_path = output_path
+        self.update_audio_cleanup_button_state()
+        self.show_info("Audio Cleanup", f"Audio saved and loaded for the next cleanup pass:\n{output_path}")
 
     def audio_cleanup_job_failed(self, message):
         self.audio_cleanup_status.setText("Error.")

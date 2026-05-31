@@ -64,7 +64,108 @@ def _clean_block(block: dict[str, Any], fallback_index: int) -> dict[str, Any] |
         value = _text(block.get(key))
         if value:
             cleaned[key] = value
+    if block.get("edited") is True:
+        cleaned["edited"] = True
+    for key in ("contains_cut", "contains_silence", "contains_fade"):
+        if block.get(key) is True:
+            cleaned[key] = True
+    cleanup_actions = block.get("cleanup_actions")
+    if isinstance(cleanup_actions, list):
+        actions = [_text(action) for action in cleanup_actions if _text(action)]
+        if actions:
+            cleaned["cleanup_actions"] = actions
     return cleaned
+
+
+def block_overlaps_range(block: dict[str, Any], start_seconds: float, end_seconds: float) -> bool:
+    return block["start_seconds"] < end_seconds and block["end_seconds"] > start_seconds
+
+
+def mark_block_edited(block: dict[str, Any], action: str) -> dict[str, Any]:
+    updated = dict(block)
+    updated["edited"] = True
+    if action == "remove":
+        updated["contains_cut"] = True
+    elif action == "silence":
+        updated["contains_silence"] = True
+    elif action == "fade":
+        updated["contains_fade"] = True
+    actions = list(updated.get("cleanup_actions") or [])
+    if action not in actions:
+        actions.append(action)
+    updated["cleanup_actions"] = actions
+    return updated
+
+
+def transformed_block_after_cut(
+    block: dict[str, Any],
+    start_seconds: float,
+    end_seconds: float,
+) -> dict[str, Any] | None:
+    block_start = block["start_seconds"]
+    block_end = block["end_seconds"]
+    cut_seconds = max(0.0, end_seconds - start_seconds)
+    if block_end <= start_seconds:
+        return dict(block)
+    if block_start >= end_seconds:
+        shifted = dict(block)
+        shifted["start_seconds"] = round(block_start - cut_seconds, 6)
+        shifted["end_seconds"] = round(block_end - cut_seconds, 6)
+        shifted["duration_seconds"] = round(shifted["end_seconds"] - shifted["start_seconds"], 6)
+        return shifted
+    if block_start >= start_seconds and block_end <= end_seconds:
+        return None
+
+    updated = mark_block_edited(block, "remove")
+    if block_start < start_seconds and block_end > end_seconds:
+        updated["start_seconds"] = block_start
+        updated["end_seconds"] = round(block_end - cut_seconds, 6)
+    elif block_start < start_seconds:
+        updated["start_seconds"] = block_start
+        updated["end_seconds"] = start_seconds
+    else:
+        updated["start_seconds"] = start_seconds
+        updated["end_seconds"] = round(block_end - cut_seconds, 6)
+    updated["duration_seconds"] = round(updated["end_seconds"] - updated["start_seconds"], 6)
+    if updated["end_seconds"] <= updated["start_seconds"]:
+        return None
+    return updated
+
+
+def transform_tts_timeline_blocks_for_cleanup(
+    blocks: list[dict[str, Any]],
+    *,
+    action: str,
+    start_seconds: float,
+    end_seconds: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    cleaned_blocks = [
+        cleaned
+        for index, block in enumerate(blocks, start=1)
+        if isinstance(block, dict) and (cleaned := _clean_block(block, index)) is not None
+    ]
+    if action == "remove":
+        updated_blocks = []
+        removed_blocks = []
+        for block in cleaned_blocks:
+            updated = transformed_block_after_cut(block, start_seconds, end_seconds)
+            if updated is None:
+                removed_blocks.append(mark_block_edited(block, action))
+            else:
+                updated_blocks.append(updated)
+    else:
+        updated_blocks = [
+            mark_block_edited(block, action) if block_overlaps_range(block, start_seconds, end_seconds) else block
+            for block in cleaned_blocks
+        ]
+        removed_blocks = []
+
+    reindexed_blocks = []
+    for index, block in enumerate(updated_blocks, start=1):
+        reindexed = dict(block)
+        reindexed["index"] = index
+        reindexed_blocks.append(reindexed)
+    return reindexed_blocks, removed_blocks
 
 
 def write_tts_timeline(
@@ -98,6 +199,70 @@ def write_tts_timeline(
         "blocks": cleaned_blocks,
     }
     timeline_path = tts_timeline_path(audio)
+    timeline_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return timeline_path
+
+
+def write_audio_cleanup_timeline(
+    input_audio_path: str | Path,
+    output_audio_path: str | Path,
+    *,
+    action: str,
+    start_seconds: float,
+    end_seconds: float,
+    total_duration_seconds: float | None = None,
+) -> Path | None:
+    timeline = load_tts_timeline_for_audio(input_audio_path)
+    if not timeline:
+        remove_tts_timeline(output_audio_path)
+        return None
+
+    start = _seconds(start_seconds)
+    end = _seconds(end_seconds)
+    if end <= start:
+        remove_tts_timeline(output_audio_path)
+        return None
+
+    updated_blocks, removed_blocks = transform_tts_timeline_blocks_for_cleanup(
+        timeline["blocks"],
+        action=action,
+        start_seconds=start,
+        end_seconds=end,
+    )
+    if not updated_blocks:
+        remove_tts_timeline(output_audio_path)
+        return None
+
+    input_audio = Path(input_audio_path)
+    output_audio = Path(output_audio_path)
+    previous_edits = timeline.get("edits")
+    edits = list(previous_edits) if isinstance(previous_edits, list) else []
+    edit = {
+        "action": action,
+        "source_audio_path": str(input_audio.resolve()),
+        "start_seconds": start,
+        "end_seconds": end,
+        "duration_seconds": round(end - start, 6),
+        "text_policy": "Block text is preserved as an operational guide and is not rewritten after cleanup.",
+    }
+    if removed_blocks:
+        edit["removed_blocks"] = removed_blocks
+    edits.append(edit)
+
+    total_duration = _seconds(total_duration_seconds, updated_blocks[-1]["end_seconds"])
+    data = {
+        "schema_version": TTS_TIMELINE_SCHEMA_VERSION,
+        "kind": TTS_TIMELINE_KIND,
+        "created_at": _timestamp(),
+        "audio_path": str(output_audio.resolve()),
+        "source_path": _text(timeline.get("source_path")),
+        "engine": _text(timeline.get("engine")),
+        "mode": _text(timeline.get("mode")),
+        "total_duration_seconds": total_duration,
+        "blocks": updated_blocks,
+        "edits": edits,
+    }
+    timeline_path = tts_timeline_path(output_audio)
     timeline_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return timeline_path
 

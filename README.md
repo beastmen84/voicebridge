@@ -157,6 +157,10 @@ ma il testo associato ai blocchi resta una guida operativa, non una trascrizione
 5. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
 6. Salvare un nuovo file audio e premere `Clean audio`.
 
+Se l'audio sorgente ha una timeline TTS, anche il file pulito riceve un nuovo `nome.voicebridge-tts.json`: `Cut range`
+riallinea i tempi dei blocchi successivi e marca quelli toccati, mentre `Replace with silence` e `Fade range to silence`
+mantengono la durata. L'output pulito viene caricato come nuova sorgente per continuare con eventuali altre correzioni.
+
 Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche audio creati altrove. Durante l'anteprima della sorgente, la waveform mostra il punto di riproduzione corrente. Usa `ffmpeg` dal bundle completo.
 
 ### Video Cleanup

@@ -3,7 +3,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QComboBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QSlider,
 )
 
 from voicebridge.constants import (
@@ -36,6 +37,15 @@ from voicebridge.ui.helpers import open_path
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import Card, FilePicker
 
+AUDIO_CLEANUP_WAVEFORM_SCROLL_MAX = 10_000
+AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS = (
+    ("Fit", 1.0),
+    ("2x", 2.0),
+    ("4x", 4.0),
+    ("8x", 8.0),
+    ("16x", 16.0),
+)
+
 
 class AudioCleanupWorkflowMixin:
     def audio_cleanup_input_changed(self):
@@ -55,6 +65,13 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_waveform_generation += 1
         self.audio_cleanup_waveform.clear_waveform()
         self.audio_cleanup_waveform_status.setText(status)
+        if hasattr(self, "audio_cleanup_waveform_zoom_combo"):
+            self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
+            self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(0)
+            self.audio_cleanup_waveform_zoom_combo.blockSignals(False)
+            self.audio_cleanup_waveform_scroll.setValue(0)
+            self.audio_cleanup_waveform_zoom_combo.setEnabled(False)
+            self.audio_cleanup_waveform_scroll.setEnabled(False)
 
     def start_audio_cleanup_waveform_load(self, ffmpeg, audio_path, duration):
         if not hasattr(self, "audio_cleanup_waveform"):
@@ -63,6 +80,12 @@ class AudioCleanupWorkflowMixin:
         generation = self.audio_cleanup_waveform_generation
         self.audio_cleanup_waveform.clear_waveform()
         self.audio_cleanup_waveform_status.setText("Loading waveform...")
+        self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
+        self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(0)
+        self.audio_cleanup_waveform_zoom_combo.blockSignals(False)
+        self.audio_cleanup_waveform_scroll.setValue(0)
+        self.audio_cleanup_waveform_zoom_combo.setEnabled(False)
+        self.audio_cleanup_waveform_scroll.setEnabled(False)
         threading.Thread(
             target=self.audio_cleanup_waveform_worker,
             args=(generation, str(ffmpeg), str(audio_path), float(duration)),
@@ -88,8 +111,49 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_start_spin.value(),
             self.audio_cleanup_end_spin.value(),
         )
-        self.audio_cleanup_waveform_status.setText("Waveform ready.")
+        self.audio_cleanup_waveform_zoom_combo.setEnabled(True)
+        self.audio_cleanup_waveform_view_changed(*self.audio_cleanup_waveform.visible_window())
         self.update_audio_cleanup_button_state()
+
+    def audio_cleanup_waveform_zoom_changed(self):
+        if not hasattr(self, "audio_cleanup_waveform"):
+            return
+        zoom_factor = self.audio_cleanup_waveform_zoom_combo.currentData()
+        try:
+            zoom_factor = float(zoom_factor)
+        except (TypeError, ValueError):
+            zoom_factor = 1.0
+        self.audio_cleanup_waveform.set_zoom_factor(zoom_factor)
+        self.update_audio_cleanup_button_state()
+
+    def audio_cleanup_waveform_scroll_changed(self, value):
+        if (
+            not hasattr(self, "audio_cleanup_waveform")
+            or self.audio_cleanup_waveform_view_syncing
+            or not self.audio_cleanup_waveform.has_waveform()
+        ):
+            return
+        ratio = value / AUDIO_CLEANUP_WAVEFORM_SCROLL_MAX
+        self.audio_cleanup_waveform.set_view_position_ratio(ratio)
+
+    def audio_cleanup_waveform_view_changed(self, start, end):
+        if not hasattr(self, "audio_cleanup_waveform_scroll"):
+            return
+        if not self.audio_cleanup_waveform.has_waveform():
+            self.audio_cleanup_waveform_scroll.setEnabled(False)
+            return
+        self.audio_cleanup_waveform_view_syncing = True
+        try:
+            ratio = self.audio_cleanup_waveform.view_position_ratio()
+            self.audio_cleanup_waveform_scroll.setValue(round(ratio * AUDIO_CLEANUP_WAVEFORM_SCROLL_MAX))
+        finally:
+            self.audio_cleanup_waveform_view_syncing = False
+        zoomed = self.audio_cleanup_waveform.zoom_factor() > 1.0
+        self.audio_cleanup_waveform_scroll.setEnabled(zoomed and not self.is_audio_cleanup_running)
+        self.audio_cleanup_waveform_status.setText(
+            f"Waveform ready. View: {self.format_audio_cleanup_time(start)} - "
+            f"{self.format_audio_cleanup_time(end)}"
+        )
 
     def update_audio_cleanup_output(self, force=False):
         if not hasattr(self, "audio_cleanup_output_picker"):
@@ -102,6 +166,22 @@ class AudioCleanupWorkflowMixin:
         if force or not current or current == self.audio_cleanup_last_auto_output_path:
             self.audio_cleanup_output_picker.set_text(suggested)
             self.audio_cleanup_last_auto_output_path = suggested
+
+    def load_audio_cleanup_source(self, input_path):
+        audio_path = Path(input_path)
+        if not audio_path.is_file():
+            raise ValueError("The selected audio file does not exist.")
+        self.stop_audio_cleanup_playback()
+        self.audio_cleanup_input_picker.edit.blockSignals(True)
+        try:
+            self.audio_cleanup_input_picker.set_text(str(audio_path))
+        finally:
+            self.audio_cleanup_input_picker.edit.blockSignals(False)
+        self.audio_cleanup_last_output_path = ""
+        self.update_audio_cleanup_output(force=True)
+        self.refresh_audio_cleanup_input_info()
+        self.update_audio_cleanup_button_state()
+        self.save_user_settings()
 
     def select_audio_cleanup_input_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -484,8 +564,15 @@ class AudioCleanupWorkflowMixin:
         ):
             widget.setEnabled(not self.is_audio_cleanup_running)
         if hasattr(self, "audio_cleanup_waveform"):
+            has_waveform = self.audio_cleanup_waveform.has_waveform()
             self.audio_cleanup_waveform.setEnabled(
-                self.audio_cleanup_waveform.has_waveform() and not self.is_audio_cleanup_running
+                has_waveform and not self.is_audio_cleanup_running
+            )
+            self.audio_cleanup_waveform_zoom_combo.setEnabled(has_waveform and not self.is_audio_cleanup_running)
+            self.audio_cleanup_waveform_scroll.setEnabled(
+                has_waveform
+                and self.audio_cleanup_waveform.zoom_factor() > 1.0
+                and not self.is_audio_cleanup_running
             )
         self.update_navigation_state()
 
@@ -630,11 +717,31 @@ class AudioCleanupWorkflowMixin:
         waveform_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.audio_cleanup_waveform_generation = 0
         self.audio_cleanup_waveform_syncing = False
+        self.audio_cleanup_waveform_view_syncing = False
         self.audio_cleanup_waveform = AudioWaveformWidget()
         self.audio_cleanup_waveform.selectionChanged.connect(self.audio_cleanup_waveform_selection_changed)
+        self.audio_cleanup_waveform.viewChanged.connect(self.audio_cleanup_waveform_view_changed)
+        waveform_controls = QHBoxLayout()
+        waveform_controls.setContentsMargins(0, 0, 0, 0)
+        self.audio_cleanup_waveform_zoom_combo = QComboBox()
+        for label, zoom_factor in AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS:
+            self.audio_cleanup_waveform_zoom_combo.addItem(label, zoom_factor)
+        self.audio_cleanup_waveform_zoom_combo.setEnabled(False)
+        self.audio_cleanup_waveform_zoom_combo.currentTextChanged.connect(
+            lambda _text: self.audio_cleanup_waveform_zoom_changed()
+        )
+        self.audio_cleanup_waveform_scroll = QSlider(Qt.Orientation.Horizontal)
+        self.audio_cleanup_waveform_scroll.setRange(0, AUDIO_CLEANUP_WAVEFORM_SCROLL_MAX)
+        self.audio_cleanup_waveform_scroll.setEnabled(False)
+        self.audio_cleanup_waveform_scroll.valueChanged.connect(self.audio_cleanup_waveform_scroll_changed)
+        waveform_controls.addWidget(QLabel("Zoom"))
+        waveform_controls.addWidget(self.audio_cleanup_waveform_zoom_combo)
+        waveform_controls.addWidget(QLabel("Position"))
+        waveform_controls.addWidget(self.audio_cleanup_waveform_scroll, 1)
         self.audio_cleanup_waveform_status = QLabel("No audio selected.")
         self.audio_cleanup_waveform_status.setObjectName("Muted")
         waveform_card.content_layout.addWidget(self.audio_cleanup_waveform)
+        waveform_card.content_layout.addLayout(waveform_controls)
         waveform_card.content_layout.addWidget(self.audio_cleanup_waveform_status)
         layout.addWidget(waveform_card)
 

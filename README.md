@@ -80,7 +80,7 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 3. Selezionare voce, preferiti e velocita'.
 4. In alternativa, scegliere `Multi-voice blocks`, dividere il documento in blocchi e assegnare voce/velocita' Edge oppure profili vocali Local TTS ai singoli blocchi.
 5. Salvare come `.mp3`.
-6. Premere `Generate MP3`; a fine generazione usare `Open output` o `Open folder`.
+6. Premere `Generate MP3`; a fine generazione usare `Open output`, `Open folder` o `Open in Audio Cleanup`.
 
 Questo workflow richiede connessione internet quando l'engine selezionato e' `Edge TTS`.
 Il pulsante `Cancel` annulla la generazione TTS in corso. L'app scrive su file temporanei e sostituisce l'MP3 finale solo a generazione completata, quindi un annullamento non lascia output finali parziali.
@@ -142,7 +142,7 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
-3. Usare la waveform o i campi `Start` / `End` per impostare l'intervallo e ascoltare la selezione.
+3. Usare la waveform, lo zoom o i campi `Start` / `End` per impostare l'intervallo e ascoltare la selezione.
 4. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
 5. Salvare un nuovo file audio e premere `Clean audio`.
 

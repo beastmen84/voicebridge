@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSlider,
     QSpinBox,
     QStackedWidget,
     QStyle,
@@ -124,6 +125,7 @@ class VoiceBridgeQt(
     tts_cancel_button: QPushButton
     tts_open_output_button: QPushButton
     tts_open_folder_button: QPushButton
+    tts_audio_cleanup_button: QPushButton
     tts_progress: QProgressBar
     tts_status: QLabel
     tts_process: Any
@@ -211,6 +213,8 @@ class VoiceBridgeQt(
     audio_cleanup_selection_note: QLabel
     audio_cleanup_waveform: AudioWaveformWidget
     audio_cleanup_waveform_status: QLabel
+    audio_cleanup_waveform_zoom_combo: QComboBox
+    audio_cleanup_waveform_scroll: QSlider
     audio_cleanup_start_button: QPushButton
     audio_cleanup_cancel_button: QPushButton
     audio_cleanup_play_selection_button: QPushButton
@@ -386,6 +390,7 @@ class VoiceBridgeQt(
         self.audio_cleanup_log_lines = []
         self.audio_cleanup_waveform_generation = 0
         self.audio_cleanup_waveform_syncing = False
+        self.audio_cleanup_waveform_view_syncing = False
         self.is_cleanup_running = False
         self.cleanup_cancel_requested = False
         self.cleanup_process = None

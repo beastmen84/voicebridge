@@ -609,6 +609,8 @@ class TtsWorkflowMixin:
         output_ready = bool(self.tts_last_output_path and Path(self.tts_last_output_path).is_file())
         self.tts_open_output_button.setEnabled(output_ready)
         self.tts_open_folder_button.setEnabled(output_ready)
+        if hasattr(self, "tts_audio_cleanup_button"):
+            self.tts_audio_cleanup_button.setEnabled(output_ready and not self.is_converting)
         self.update_navigation_state()
 
     def current_tts_input_text(self, preserve_text_layout=False):
@@ -1489,6 +1491,16 @@ class TtsWorkflowMixin:
         if self.tts_last_output_path and Path(self.tts_last_output_path).is_file():
             open_path(Path(self.tts_last_output_path).parent)
 
+    def open_tts_output_in_audio_cleanup(self):
+        if not self.tts_last_output_path or not Path(self.tts_last_output_path).is_file():
+            return
+        try:
+            self.load_audio_cleanup_source(self.tts_last_output_path)
+        except ValueError as exc:
+            self.show_error("Audio Cleanup", str(exc))
+            return
+        self.show_page(5)
+
     def build_tts_page(self):
         page, layout = self.page_container()
         self.page_header(
@@ -1671,13 +1683,16 @@ class TtsWorkflowMixin:
         self.tts_cancel_button = QPushButton("Cancel")
         self.tts_open_output_button = QPushButton("Open output")
         self.tts_open_folder_button = QPushButton("Open folder")
+        self.tts_audio_cleanup_button = QPushButton("Open in Audio Cleanup")
         self.tts_generate_button.clicked.connect(self.start_tts_conversion)
         self.tts_cancel_button.clicked.connect(self.cancel_tts_conversion)
         self.tts_open_output_button.clicked.connect(self.open_tts_output)
         self.tts_open_folder_button.clicked.connect(self.open_tts_output_folder)
+        self.tts_audio_cleanup_button.clicked.connect(self.open_tts_output_in_audio_cleanup)
         action_layout.addWidget(self.tts_generate_button)
         action_layout.addWidget(self.tts_cancel_button)
         action_layout.addStretch(1)
+        action_layout.addWidget(self.tts_audio_cleanup_button)
         action_layout.addWidget(self.tts_open_output_button)
         action_layout.addWidget(self.tts_open_folder_button)
         action_bar.content_layout.addLayout(action_layout)

@@ -142,7 +142,7 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
-3. Impostare intervallo `Start` / `End` e ascoltare la selezione.
+3. Usare la waveform o i campi `Start` / `End` per impostare l'intervallo e ascoltare la selezione.
 4. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
 5. Salvare un nuovo file audio e premere `Clean audio`.
 

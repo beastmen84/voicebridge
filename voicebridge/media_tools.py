@@ -1,6 +1,8 @@
 import re
 import shutil
 import subprocess
+import sys
+from array import array
 from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict
@@ -19,6 +21,8 @@ AUDIO_CLEANUP_REMOVE = "remove"
 AUDIO_CLEANUP_SILENCE = "silence"
 AUDIO_CLEANUP_FADE = "fade"
 AUDIO_CLEANUP_DEFAULT_FADE_SECONDS = 0.08
+AUDIO_WAVEFORM_DEFAULT_BINS = 1600
+AUDIO_WAVEFORM_SAMPLE_RATE = 2000
 BURN_QUALITY_AUTO = "auto"
 BURN_QUALITY_STANDARD = "crf20"
 BURN_QUALITY_HIGH = "crf18"
@@ -283,6 +287,73 @@ def suggest_audio_cleanup_output_path(audio_path):
     audio_path = Path(audio_path)
     suffix = audio_path.suffix.lower() if audio_path.suffix.lower() in SUPPORTED_AUDIO_SUFFIXES else ".mp3"
     return str(audio_path.with_name(f"{audio_path.stem}_cleaned").with_suffix(suffix))
+
+
+def audio_waveform_command(ffmpeg, media_path, sample_rate=AUDIO_WAVEFORM_SAMPLE_RATE):
+    return [
+        str(ffmpeg),
+        "-hide_banner",
+        "-nostdin",
+        "-nostats",
+        "-loglevel",
+        "error",
+        "-i",
+        str(media_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(int(sample_rate)),
+        "-f",
+        "s16le",
+        "pipe:1",
+    ]
+
+
+def pcm_s16le_peak_bins(pcm_data, bin_count=AUDIO_WAVEFORM_DEFAULT_BINS) -> list[float]:
+    if bin_count <= 0:
+        raise ValueError("Waveform bin count must be greater than zero.")
+    if not pcm_data:
+        return []
+
+    even_length = len(pcm_data) - (len(pcm_data) % 2)
+    samples = array("h")
+    samples.frombytes(pcm_data[:even_length])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    sample_count = len(samples)
+    if sample_count == 0:
+        return []
+
+    target_bins = min(int(bin_count), sample_count)
+    peaks = []
+    for bin_index in range(target_bins):
+        start = int((bin_index * sample_count) / target_bins)
+        end = int(((bin_index + 1) * sample_count) / target_bins)
+        if end <= start:
+            end = min(sample_count, start + 1)
+        peak = 0
+        for sample_index in range(start, end):
+            peak = max(peak, abs(samples[sample_index]))
+        peaks.append(min(1.0, peak / 32768.0))
+    return peaks
+
+
+def audio_waveform_peaks(
+    ffmpeg,
+    media_path,
+    bin_count=AUDIO_WAVEFORM_DEFAULT_BINS,
+    sample_rate=AUDIO_WAVEFORM_SAMPLE_RATE,
+) -> list[float]:
+    result = subprocess.run(
+        audio_waveform_command(ffmpeg, media_path, sample_rate=sample_rate),
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        error_text = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(error_text or f"ffmpeg exited with code {result.returncode}.")
+    return pcm_s16le_peak_bins(result.stdout, bin_count=bin_count)
 
 
 def _ffmpeg_input_info(ffmpeg, media_path):

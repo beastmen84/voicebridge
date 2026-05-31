@@ -63,6 +63,7 @@ from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
 from voicebridge.ui.styles import apply_app_style
+from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import FilePicker
 from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
@@ -208,6 +209,8 @@ class VoiceBridgeQt(
     audio_cleanup_start_spin: QDoubleSpinBox
     audio_cleanup_end_spin: QDoubleSpinBox
     audio_cleanup_selection_note: QLabel
+    audio_cleanup_waveform: AudioWaveformWidget
+    audio_cleanup_waveform_status: QLabel
     audio_cleanup_start_button: QPushButton
     audio_cleanup_cancel_button: QPushButton
     audio_cleanup_play_selection_button: QPushButton
@@ -381,6 +384,8 @@ class VoiceBridgeQt(
         self.audio_cleanup_last_auto_output_path = ""
         self.audio_cleanup_duration_seconds = 0.0
         self.audio_cleanup_log_lines = []
+        self.audio_cleanup_waveform_generation = 0
+        self.audio_cleanup_waveform_syncing = False
         self.is_cleanup_running = False
         self.cleanup_cancel_requested = False
         self.cleanup_process = None

@@ -27,11 +27,13 @@ from voicebridge.constants import (
 from voicebridge.media_tools import (
     SUPPORTED_AUDIO_SUFFIXES,
     audio_cleanup_command,
+    audio_waveform_peaks,
     find_ffmpeg_exe,
     probe_audio_info,
     suggest_audio_cleanup_output_path,
 )
 from voicebridge.ui.helpers import open_path
+from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import Card, FilePicker
 
 
@@ -46,6 +48,48 @@ class AudioCleanupWorkflowMixin:
     def audio_cleanup_action_changed(self, text):
         self.audio_cleanup_action_description.setText(AUDIO_CLEANUP_ACTION_DESCRIPTIONS.get(text, ""))
         self.save_user_settings()
+
+    def reset_audio_cleanup_waveform(self, status="No waveform loaded."):
+        if not hasattr(self, "audio_cleanup_waveform"):
+            return
+        self.audio_cleanup_waveform_generation += 1
+        self.audio_cleanup_waveform.clear_waveform()
+        self.audio_cleanup_waveform_status.setText(status)
+
+    def start_audio_cleanup_waveform_load(self, ffmpeg, audio_path, duration):
+        if not hasattr(self, "audio_cleanup_waveform"):
+            return
+        self.audio_cleanup_waveform_generation += 1
+        generation = self.audio_cleanup_waveform_generation
+        self.audio_cleanup_waveform.clear_waveform()
+        self.audio_cleanup_waveform_status.setText("Loading waveform...")
+        threading.Thread(
+            target=self.audio_cleanup_waveform_worker,
+            args=(generation, str(ffmpeg), str(audio_path), float(duration)),
+            daemon=True,
+        ).start()
+
+    def audio_cleanup_waveform_worker(self, generation, ffmpeg, audio_path, duration):
+        try:
+            peaks = audio_waveform_peaks(ffmpeg, audio_path)
+            self.post(self.audio_cleanup_waveform_loaded, generation, peaks, duration, None)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.post(self.audio_cleanup_waveform_loaded, generation, [], duration, str(exc))
+
+    def audio_cleanup_waveform_loaded(self, generation, peaks, duration, error_message):
+        if generation != self.audio_cleanup_waveform_generation:
+            return
+        if error_message or not peaks:
+            self.audio_cleanup_waveform.clear_waveform()
+            self.audio_cleanup_waveform_status.setText("Waveform unavailable.")
+            return
+        self.audio_cleanup_waveform.set_waveform(peaks, duration)
+        self.audio_cleanup_waveform.set_selection(
+            self.audio_cleanup_start_spin.value(),
+            self.audio_cleanup_end_spin.value(),
+        )
+        self.audio_cleanup_waveform_status.setText("Waveform ready.")
+        self.update_audio_cleanup_button_state()
 
     def update_audio_cleanup_output(self, force=False):
         if not hasattr(self, "audio_cleanup_output_picker"):
@@ -118,32 +162,38 @@ class AudioCleanupWorkflowMixin:
         input_path = self.audio_cleanup_input_picker.text()
         if not input_path:
             self.audio_cleanup_duration_label.setText("No audio selected.")
+            self.reset_audio_cleanup_waveform("No audio selected.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         audio_path = Path(input_path)
         if not audio_path.is_file():
             self.audio_cleanup_duration_label.setText("Selected audio file does not exist.")
+            self.reset_audio_cleanup_waveform("No waveform loaded.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
             self.audio_cleanup_duration_label.setText("ffmpeg missing.")
+            self.reset_audio_cleanup_waveform("ffmpeg missing.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         try:
             info = probe_audio_info(ffmpeg, audio_path)
         except (OSError, RuntimeError, ValueError) as exc:
             self.audio_cleanup_duration_label.setText(f"Could not inspect audio: {exc}")
+            self.reset_audio_cleanup_waveform("Waveform unavailable.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         duration = float(info.get("duration_seconds") or 0.0)
         if not info.get("has_audio") or duration <= 0:
             self.audio_cleanup_duration_label.setText("Could not detect an audio stream.")
+            self.reset_audio_cleanup_waveform("Waveform unavailable.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         self.audio_cleanup_duration_seconds = duration
         self.audio_cleanup_duration_label.setText(f"Duration: {self.format_audio_cleanup_time(duration)}")
         self.update_audio_cleanup_time_limits(duration)
+        self.start_audio_cleanup_waveform_load(ffmpeg, audio_path, duration)
 
     def update_audio_cleanup_time_limits(self, duration):
         duration = max(0.0, float(duration))
@@ -165,6 +215,25 @@ class AudioCleanupWorkflowMixin:
         self.update_audio_cleanup_selection_note()
 
     def audio_cleanup_time_changed(self):
+        self.update_audio_cleanup_selection_note()
+        if hasattr(self, "audio_cleanup_waveform") and not self.audio_cleanup_waveform_syncing:
+            self.audio_cleanup_waveform.set_selection(
+                self.audio_cleanup_start_spin.value(),
+                self.audio_cleanup_end_spin.value(),
+            )
+        self.update_audio_cleanup_button_state()
+
+    def audio_cleanup_waveform_selection_changed(self, start, end):
+        self.audio_cleanup_waveform_syncing = True
+        try:
+            self.audio_cleanup_start_spin.blockSignals(True)
+            self.audio_cleanup_end_spin.blockSignals(True)
+            self.audio_cleanup_start_spin.setValue(start)
+            self.audio_cleanup_end_spin.setValue(end)
+        finally:
+            self.audio_cleanup_start_spin.blockSignals(False)
+            self.audio_cleanup_end_spin.blockSignals(False)
+            self.audio_cleanup_waveform_syncing = False
         self.update_audio_cleanup_selection_note()
         self.update_audio_cleanup_button_state()
 
@@ -414,6 +483,10 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_end_spin,
         ):
             widget.setEnabled(not self.is_audio_cleanup_running)
+        if hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.setEnabled(
+                self.audio_cleanup_waveform.has_waveform() and not self.is_audio_cleanup_running
+            )
         self.update_navigation_state()
 
     def play_audio_cleanup_selection(self):
@@ -552,6 +625,18 @@ class AudioCleanupWorkflowMixin:
         grid.addWidget(settings_card, 0, 1)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
+
+        waveform_card = Card("Waveform")
+        waveform_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.audio_cleanup_waveform_generation = 0
+        self.audio_cleanup_waveform_syncing = False
+        self.audio_cleanup_waveform = AudioWaveformWidget()
+        self.audio_cleanup_waveform.selectionChanged.connect(self.audio_cleanup_waveform_selection_changed)
+        self.audio_cleanup_waveform_status = QLabel("No audio selected.")
+        self.audio_cleanup_waveform_status.setObjectName("Muted")
+        waveform_card.content_layout.addWidget(self.audio_cleanup_waveform)
+        waveform_card.content_layout.addWidget(self.audio_cleanup_waveform_status)
+        layout.addWidget(waveform_card)
 
         action_card = Card()
         action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)

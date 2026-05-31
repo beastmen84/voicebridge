@@ -10,12 +10,14 @@ from voicebridge.media_tools import (
     BURN_QUALITY_STANDARD,
     audio_cleanup_command,
     audio_cleanup_filter_complex,
+    audio_waveform_command,
     auto_burn_quality,
     first_srt_timestamp_seconds,
     freezeframes_filter_complex,
     isolated_black_frame_numbers,
     parse_ffmpeg_duration,
     parse_srt_timestamp,
+    pcm_s16le_peak_bins,
     removeframes_filter_complex,
     suggest_audio_cleanup_output_path,
     suggest_video_cleanup_output_path,
@@ -89,6 +91,21 @@ def test_audio_cleanup_command_maps_clean_audio() -> None:
     assert "-filter_complex" in command
     assert command[-3:] == ["-q:a", "4", "out.mp3"]
     assert "[aclean]" in command
+
+
+def test_audio_waveform_command_outputs_mono_pcm() -> None:
+    command = audio_waveform_command("ffmpeg", "in.mp3", sample_rate=1000)
+
+    assert command[-2:] == ["s16le", "pipe:1"]
+    assert command[command.index("-ac"):command.index("-ac") + 2] == ["-ac", "1"]
+    assert command[command.index("-ar"):command.index("-ar") + 2] == ["-ar", "1000"]
+
+
+def test_pcm_s16le_peak_bins_normalizes_samples() -> None:
+    samples = [0, 32767, 0, 16384]
+    pcm_data = b"".join(int(sample).to_bytes(2, "little", signed=True) for sample in samples)
+
+    assert pcm_s16le_peak_bins(pcm_data, bin_count=2) == pytest.approx([32767 / 32768, 0.5])
 
 
 def test_isolated_black_frame_numbers_splits_runs() -> None:

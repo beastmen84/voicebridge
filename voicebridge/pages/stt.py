@@ -181,7 +181,12 @@ class SttWorkflowMixin:
     def update_stt_button_state(self):
         if not hasattr(self, "stt_generate_button"):
             return
-        busy_elsewhere = self.is_converting or self.is_video_running or self.is_cleanup_running
+        busy_elsewhere = (
+            self.is_converting
+            or self.is_video_running
+            or self.is_audio_cleanup_running
+            or self.is_cleanup_running
+        )
         self.stt_generate_button.setEnabled(not self.is_stt_running and not busy_elsewhere and self.stt_preflight_ok)
         if hasattr(self, "stt_download_model_button"):
             self.stt_download_model_button.setEnabled(
@@ -317,6 +322,7 @@ class SttWorkflowMixin:
         self.update_stt_button_state()
         self.update_tts_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
         threading.Thread(
             target=self.stt_worker_thread,
@@ -475,6 +481,7 @@ class SttWorkflowMixin:
         self.update_stt_button_state()
         self.update_tts_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
         threading.Thread(
             target=self.alignment_model_download_thread,
@@ -501,6 +508,7 @@ class SttWorkflowMixin:
         self.update_stt_button_state()
         self.update_tts_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
         threading.Thread(
             target=self.stt_model_download_thread,
@@ -692,6 +700,7 @@ class SttWorkflowMixin:
         self.update_stt_button_state()
         self.update_tts_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
 
     def open_stt_output(self):

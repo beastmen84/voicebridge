@@ -333,6 +333,7 @@ class SubtitlesWorkflowMixin:
         self.update_video_subtitle_button_state()
         self.update_stt_button_state()
         self.update_tts_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
         threading.Thread(
             target=self.video_subtitle_worker,
@@ -536,6 +537,7 @@ class SubtitlesWorkflowMixin:
         self.update_video_subtitle_button_state()
         self.update_stt_button_state()
         self.update_tts_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
 
     def open_video_subtitle_output(self):
@@ -548,7 +550,12 @@ class SubtitlesWorkflowMixin:
     def update_video_subtitle_button_state(self):
         if not hasattr(self, "video_start_button"):
             return
-        busy_elsewhere = self.is_converting or self.is_stt_running or self.is_cleanup_running
+        busy_elsewhere = (
+            self.is_converting
+            or self.is_stt_running
+            or self.is_audio_cleanup_running
+            or self.is_cleanup_running
+        )
         burn_mode = self.video_subtitle_mode_key() == "burn"
         self.video_start_button.setEnabled(not self.is_video_running and not busy_elsewhere)
         self.video_preview_button.setEnabled(not self.is_video_running and not busy_elsewhere and burn_mode)

@@ -23,7 +23,13 @@ class PageBuilderMixin(HomePageMixin):
         return button
 
     def show_page(self, index):
-        if self.is_converting or self.is_stt_running or self.is_video_running or self.is_cleanup_running:
+        if (
+            self.is_converting
+            or self.is_stt_running
+            or self.is_video_running
+            or self.is_audio_cleanup_running
+            or self.is_cleanup_running
+        ):
             return
         self.stack.setCurrentIndex(index)
         for button, active in (
@@ -32,7 +38,8 @@ class PageBuilderMixin(HomePageMixin):
             (self.nav_profiles, index == 2),
             (self.nav_stt, index == 3),
             (self.nav_video, index == 4),
-            (self.nav_cleanup, index == 5),
+            (self.nav_audio_cleanup, index == 5),
+            (self.nav_cleanup, index == 6),
         ):
             button.setProperty("active", active)
             button.style().unpolish(button)
@@ -45,13 +52,20 @@ class PageBuilderMixin(HomePageMixin):
     def update_navigation_state(self):
         if not hasattr(self, "nav_home"):
             return
-        enabled = not (self.is_converting or self.is_stt_running or self.is_video_running or self.is_cleanup_running)
+        enabled = not (
+            self.is_converting
+            or self.is_stt_running
+            or self.is_video_running
+            or self.is_audio_cleanup_running
+            or self.is_cleanup_running
+        )
         for button in (
             self.nav_home,
             self.nav_tts,
             self.nav_profiles,
             self.nav_stt,
             self.nav_video,
+            self.nav_audio_cleanup,
             self.nav_cleanup,
         ):
             button.setEnabled(enabled)

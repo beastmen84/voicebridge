@@ -2,6 +2,9 @@ from pathlib import Path
 
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.media_tools import (
+    AUDIO_CLEANUP_FADE,
+    AUDIO_CLEANUP_REMOVE,
+    AUDIO_CLEANUP_SILENCE,
     BURN_QUALITY_AUTO,
     BURN_QUALITY_HIGH,
     BURN_QUALITY_MAXIMUM,
@@ -158,4 +161,23 @@ VIDEO_CLEANUP_METHOD_DESCRIPTIONS = {
         "Deletes selected black frames and the matching audio slices. Useful before creating subtitles, "
         "but it shortens the timeline."
     ),
+}
+
+AUDIO_CLEANUP_REMOVE_LABEL = "Cut range"
+AUDIO_CLEANUP_SILENCE_LABEL = "Replace with silence"
+AUDIO_CLEANUP_FADE_LABEL = "Fade range to silence"
+AUDIO_CLEANUP_ACTION_LABELS = [
+    AUDIO_CLEANUP_REMOVE_LABEL,
+    AUDIO_CLEANUP_SILENCE_LABEL,
+    AUDIO_CLEANUP_FADE_LABEL,
+]
+AUDIO_CLEANUP_ACTION_BY_LABEL = {
+    AUDIO_CLEANUP_REMOVE_LABEL: AUDIO_CLEANUP_REMOVE,
+    AUDIO_CLEANUP_SILENCE_LABEL: AUDIO_CLEANUP_SILENCE,
+    AUDIO_CLEANUP_FADE_LABEL: AUDIO_CLEANUP_FADE,
+}
+AUDIO_CLEANUP_ACTION_DESCRIPTIONS = {
+    AUDIO_CLEANUP_REMOVE_LABEL: "Deletes the selected time range and shortens the output audio.",
+    AUDIO_CLEANUP_SILENCE_LABEL: "Keeps timing unchanged and replaces the selected range with silence.",
+    AUDIO_CLEANUP_FADE_LABEL: "Keeps timing unchanged and fades the selected range down to silence, then back in.",
 }

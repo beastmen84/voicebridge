@@ -1,6 +1,6 @@
 # VoiceBridge
 
-Desktop app Windows per convertire documenti in audio MP3, creare transcript/sottotitoli da file audio o video e gestire piccoli interventi video.
+Desktop app Windows per convertire documenti in audio MP3, creare transcript/sottotitoli da file audio o video e gestire piccoli interventi audio/video.
 
 ## Funzioni
 
@@ -16,6 +16,7 @@ Desktop app Windows per convertire documenti in audio MP3, creare transcript/sot
 - Creazione sottotitoli `.srt` automatici.
 - Creazione `.srt` da transcript fornito, con allineamento al video/audio.
 - Aggiunta sottotitoli `.srt` al video come traccia selezionabile oppure impressi nel video.
+- Cleanup manuale di file audio con taglio, silenziamento o fade di un intervallo selezionato.
 - Rilevamento di frame neri isolati nei video, con riparazione conservativa o rimozione dei frame selezionati.
 - Transcript fornito per allineamento da `.txt`, `.md`, `.docx` o `.doc`.
 
@@ -134,6 +135,16 @@ Nel burn-in si puo' scegliere la qualita' di ricodifica:
 - `Original bitrate`: ricodifica puntando al bitrate video sorgente; non e' lossless.
 
 CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file piu' grandi.
+
+### Audio Cleanup
+
+1. Aprire `Audio Cleanup`.
+2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
+3. Impostare intervallo `Start` / `End` e ascoltare la selezione.
+4. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
+5. Salvare un nuovo file audio e premere `Clean audio`.
+
+Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche audio creati altrove. Usa `ffmpeg` dal bundle completo.
 
 ### Video Cleanup
 

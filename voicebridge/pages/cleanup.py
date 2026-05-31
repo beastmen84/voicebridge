@@ -224,6 +224,7 @@ class VideoCleanupWorkflowMixin:
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         threading.Thread(
             target=self.video_cleanup_detect_worker,
             args=(str(ffmpeg), media_path),
@@ -263,6 +264,7 @@ class VideoCleanupWorkflowMixin:
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         threading.Thread(
             target=self.video_cleanup_repair_worker,
             args=(
@@ -702,6 +704,7 @@ class VideoCleanupWorkflowMixin:
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
 
     def cancel_video_cleanup_job(self):
         if not self.is_cleanup_running:
@@ -727,7 +730,12 @@ class VideoCleanupWorkflowMixin:
     def update_video_cleanup_button_state(self):
         if not hasattr(self, "cleanup_start_button"):
             return
-        busy_elsewhere = self.is_converting or self.is_stt_running or self.is_video_running
+        busy_elsewhere = (
+            self.is_converting
+            or self.is_stt_running
+            or self.is_video_running
+            or self.is_audio_cleanup_running
+        )
         current_media = self.cleanup_media_picker.text()
         detection_ready = bool(
             self.cleanup_detected_media_path

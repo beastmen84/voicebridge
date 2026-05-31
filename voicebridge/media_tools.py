@@ -8,12 +8,17 @@ from typing import TypedDict
 from voicebridge.app_paths import external_base_dir
 
 STT_VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
+SUPPORTED_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 MP4_SUBTITLE_SUFFIXES = {".mp4", ".mov", ".m4v"}
 VIDEO_CLEANUP_MAX_REPAIR_FRAMES = 200
 VIDEO_CLEANUP_BLACK_AMOUNT = 98
 VIDEO_CLEANUP_BLACK_THRESHOLD = 32
 VIDEO_CLEANUP_METHOD_FREEZE = "freeze"
 VIDEO_CLEANUP_METHOD_REMOVE = "remove"
+AUDIO_CLEANUP_REMOVE = "remove"
+AUDIO_CLEANUP_SILENCE = "silence"
+AUDIO_CLEANUP_FADE = "fade"
+AUDIO_CLEANUP_DEFAULT_FADE_SECONDS = 0.08
 BURN_QUALITY_AUTO = "auto"
 BURN_QUALITY_STANDARD = "crf20"
 BURN_QUALITY_HIGH = "crf18"
@@ -32,6 +37,11 @@ class VideoInfo(TypedDict):
     bitrate_kbps: int | None
     duration_seconds: float | None
     fps: float | None
+    has_audio: bool
+
+
+class AudioInfo(TypedDict):
+    duration_seconds: float | None
     has_audio: bool
 
 
@@ -269,10 +279,34 @@ def suggest_video_cleanup_output_path(media_path):
     return str(media_path.with_name(f"{media_path.stem}_cleaned").with_suffix(suffix))
 
 
+def suggest_audio_cleanup_output_path(audio_path):
+    audio_path = Path(audio_path)
+    suffix = audio_path.suffix.lower() if audio_path.suffix.lower() in SUPPORTED_AUDIO_SUFFIXES else ".mp3"
+    return str(audio_path.with_name(f"{audio_path.stem}_cleaned").with_suffix(suffix))
+
+
 def _ffmpeg_input_info(ffmpeg, media_path):
     command = [str(ffmpeg), "-hide_banner", "-i", str(media_path)]
     result = subprocess.run(command, capture_output=True, text=True, errors="replace", check=False)
     return f"{result.stdout or ''}\n{result.stderr or ''}"
+
+
+def parse_ffmpeg_duration(output):
+    duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+    if not duration_match:
+        return None
+    hours = int(duration_match.group(1))
+    minutes = int(duration_match.group(2))
+    seconds = float(duration_match.group(3))
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def probe_audio_info(ffmpeg, media_path) -> AudioInfo:
+    output = _ffmpeg_input_info(ffmpeg, media_path)
+    return {
+        "duration_seconds": parse_ffmpeg_duration(output),
+        "has_audio": any("Audio:" in line for line in output.splitlines()),
+    }
 
 
 def probe_video_info(ffmpeg, media_path) -> VideoInfo:
@@ -286,12 +320,7 @@ def probe_video_info(ffmpeg, media_path) -> VideoInfo:
         "has_audio": False,
     }
 
-    duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
-    if duration_match:
-        hours = int(duration_match.group(1))
-        minutes = int(duration_match.group(2))
-        seconds = float(duration_match.group(3))
-        info["duration_seconds"] = hours * 3600 + minutes * 60 + seconds
+    info["duration_seconds"] = parse_ffmpeg_duration(output)
 
     for line in output.splitlines():
         if "Video:" not in line:
@@ -322,6 +351,83 @@ def probe_video_info(ffmpeg, media_path) -> VideoInfo:
             info["bitrate_kbps"] = max(1, round(float(match.group(1))))
 
     return info
+
+
+def audio_cleanup_codec_args(output_path):
+    suffix = Path(output_path).suffix.lower()
+    if suffix == ".wav":
+        return ["-c:a", "pcm_s16le"]
+    if suffix == ".flac":
+        return ["-c:a", "flac"]
+    if suffix in {".m4a", ".aac"}:
+        return ["-c:a", "aac", "-b:a", "192k"]
+    if suffix == ".ogg":
+        return ["-c:a", "libvorbis", "-q:a", "5"]
+    return ["-c:a", "libmp3lame", "-q:a", "4"]
+
+
+def audio_cleanup_filter_complex(action, start_seconds, end_seconds, duration_seconds=None):
+    start = max(0.0, float(start_seconds))
+    end = max(start, float(end_seconds))
+    duration = float(duration_seconds) if duration_seconds else None
+    if end <= start:
+        raise ValueError("Cleanup end time must be greater than start time.")
+
+    if action == AUDIO_CLEANUP_REMOVE:
+        if duration is not None and start <= 0 and end >= duration:
+            raise ValueError("Cannot remove the entire audio file.")
+        if start <= 0:
+            return f"[0:a]atrim=start={end:.6f},asetpts=PTS-STARTPTS[aclean]"
+        if duration is not None and end >= duration:
+            return f"[0:a]atrim=end={start:.6f},asetpts=PTS-STARTPTS[aclean]"
+        return (
+            f"[0:a]atrim=end={start:.6f},asetpts=PTS-STARTPTS[a0];"
+            f"[0:a]atrim=start={end:.6f},asetpts=PTS-STARTPTS[a1];"
+            "[a0][a1]concat=n=2:v=0:a=1[aclean]"
+        )
+
+    if action == AUDIO_CLEANUP_SILENCE:
+        return f"[0:a]volume=enable='between(t\\,{start:.6f}\\,{end:.6f})':volume=0[aclean]"
+
+    if action == AUDIO_CLEANUP_FADE:
+        range_seconds = end - start
+        fade_seconds = min(AUDIO_CLEANUP_DEFAULT_FADE_SECONDS, range_seconds / 2)
+        if fade_seconds <= 0:
+            return f"[0:a]volume=enable='between(t\\,{start:.6f}\\,{end:.6f})':volume=0[aclean]"
+        middle_start = start + fade_seconds
+        middle_end = end - fade_seconds
+        filters = [f"afade=t=out:st={start:.6f}:d={fade_seconds:.6f}"]
+        if middle_end > middle_start:
+            filters.append(
+                f"volume=enable='between(t\\,{middle_start:.6f}\\,{middle_end:.6f})':volume=0"
+            )
+        filters.append(f"afade=t=in:st={middle_end:.6f}:d={fade_seconds:.6f}")
+        return "[0:a]" + ",".join(filters) + "[aclean]"
+
+    raise ValueError(f"Unsupported audio cleanup action: {action}")
+
+
+def audio_cleanup_command(ffmpeg, input_path, output_path, action, start_seconds, end_seconds, duration_seconds=None):
+    filter_complex = audio_cleanup_filter_complex(action, start_seconds, end_seconds, duration_seconds)
+    return [
+        str(ffmpeg),
+        "-y",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "error",
+        "-progress",
+        "pipe:1",
+        "-i",
+        str(input_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[aclean]",
+        "-vn",
+        *audio_cleanup_codec_args(output_path),
+        str(output_path),
+    ]
 
 
 BLACKFRAME_RE = re.compile(

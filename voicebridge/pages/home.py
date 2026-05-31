@@ -78,6 +78,13 @@ class HomePageMixin:
             "FFmpeg tools",
             "BadgeBlue",
         )
+        audio_cleanup_card = self.home_card(
+            "AUDIO",
+            "Audio Cleanup",
+            "Remove, silence or fade short problem ranges in generated or recorded audio.",
+            "Manual audio repair",
+            "BadgeGreen",
+        )
         cleanup_card = self.home_card(
             "FIX",
             "Video Cleanup",
@@ -85,7 +92,7 @@ class HomePageMixin:
             "Frame repair/removal",
             "BadgeGreen",
         )
-        for card in (tts_card, profiles_card, stt_card, video_card, cleanup_card):
+        for card in (tts_card, profiles_card, stt_card, video_card, audio_cleanup_card, cleanup_card):
             modules_layout.addWidget(card)
 
         note = QLabel("TTS requires internet. Local voice profiles are prepared separately.")

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -54,6 +55,7 @@ from voicebridge.media_tools import (
     BlackFrame,
 )
 from voicebridge.models import JobHistoryEntry, TtsSegment
+from voicebridge.pages.audio_cleanup import AudioCleanupWorkflowMixin
 from voicebridge.pages.builders import PageBuilderMixin
 from voicebridge.pages.cleanup import VideoCleanupWorkflowMixin
 from voicebridge.pages.stt import SttWorkflowMixin
@@ -69,6 +71,7 @@ from voicebridge.voices import (
 
 
 class VoiceBridgeQt(
+    AudioCleanupWorkflowMixin,
     VideoCleanupWorkflowMixin,
     SubtitlesWorkflowMixin,
     SttWorkflowMixin,
@@ -83,6 +86,7 @@ class VoiceBridgeQt(
     nav_profiles: QPushButton
     nav_stt: QPushButton
     nav_video: QPushButton
+    nav_audio_cleanup: QPushButton
     nav_cleanup: QPushButton
     status_tiles: dict[str, QLabel]
     job_history_list: QListWidget
@@ -195,6 +199,29 @@ class VoiceBridgeQt(
     video_progress: QProgressBar
     video_status: QLabel
     video_log: QPlainTextEdit
+
+    audio_cleanup_input_picker: FilePicker
+    audio_cleanup_output_picker: FilePicker
+    audio_cleanup_duration_label: QLabel
+    audio_cleanup_action_combo: QComboBox
+    audio_cleanup_action_description: QLabel
+    audio_cleanup_start_spin: QDoubleSpinBox
+    audio_cleanup_end_spin: QDoubleSpinBox
+    audio_cleanup_selection_note: QLabel
+    audio_cleanup_start_button: QPushButton
+    audio_cleanup_cancel_button: QPushButton
+    audio_cleanup_play_selection_button: QPushButton
+    audio_cleanup_play_output_button: QPushButton
+    audio_cleanup_open_output_button: QPushButton
+    audio_cleanup_open_folder_button: QPushButton
+    audio_cleanup_details_button: QPushButton
+    audio_cleanup_progress: QProgressBar
+    audio_cleanup_status: QLabel
+    audio_cleanup_log: QPlainTextEdit
+    audio_cleanup_process: Any
+    audio_cleanup_audio_output: Any
+    audio_cleanup_media_player: Any
+    audio_cleanup_preview_timer: QTimer
 
     cleanup_media_picker: FilePicker
     cleanup_output_picker: FilePicker
@@ -347,6 +374,13 @@ class VoiceBridgeQt(
         self.video_last_srt_path = ""
         self.video_last_auto_output_path = ""
         self.video_log_lines = []
+        self.is_audio_cleanup_running = False
+        self.audio_cleanup_cancel_requested = False
+        self.audio_cleanup_process = None
+        self.audio_cleanup_last_output_path = ""
+        self.audio_cleanup_last_auto_output_path = ""
+        self.audio_cleanup_duration_seconds = 0.0
+        self.audio_cleanup_log_lines = []
         self.is_cleanup_running = False
         self.cleanup_cancel_requested = False
         self.cleanup_process = None
@@ -401,12 +435,14 @@ class VoiceBridgeQt(
         self.nav_profiles = self.nav_button("Voice Profiles", lambda: self.show_page(2))
         self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(3))
         self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(4))
-        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(5))
+        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(5))
+        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(6))
         side_layout.addWidget(self.nav_home)
         side_layout.addWidget(self.nav_tts)
         side_layout.addWidget(self.nav_profiles)
         side_layout.addWidget(self.nav_stt)
         side_layout.addWidget(self.nav_video)
+        side_layout.addWidget(self.nav_audio_cleanup)
         side_layout.addWidget(self.nav_cleanup)
         side_layout.addStretch(1)
 
@@ -440,6 +476,7 @@ class VoiceBridgeQt(
         self.stack.addWidget(self.build_voice_profiles_page())
         self.stack.addWidget(self.build_stt_page())
         self.stack.addWidget(self.build_video_subtitle_page())
+        self.stack.addWidget(self.build_audio_cleanup_page())
         self.stack.addWidget(self.build_video_cleanup_page())
         root_layout.addWidget(sidebar)
         root_layout.addWidget(self.stack, 1)
@@ -526,6 +563,11 @@ class VoiceBridgeQt(
             self.video_outline_spin.setValue(self.safe_int(video_settings.get("outline"), 2, 0, 8))
             self.video_margin_spin.setValue(self.safe_int(video_settings.get("margin_v"), 36, 0, 160))
 
+            audio_cleanup_settings = self.setting_section("audio_cleanup")
+            self.set_picker_text(self.audio_cleanup_input_picker, audio_cleanup_settings.get("input_path"))
+            self.set_picker_text(self.audio_cleanup_output_picker, audio_cleanup_settings.get("output_path"))
+            self.set_combo_text(self.audio_cleanup_action_combo, audio_cleanup_settings.get("action_label"))
+
             cleanup_settings = self.setting_section("video_cleanup")
             self.set_picker_text(self.cleanup_media_picker, cleanup_settings.get("media_path"))
             self.set_picker_text(self.cleanup_output_picker, cleanup_settings.get("output_path"))
@@ -546,6 +588,8 @@ class VoiceBridgeQt(
         self.stt_mode_changed()
         self.video_subtitle_mode_changed()
         self.update_video_quality_description(self.video_quality_combo.currentText())
+        self.refresh_audio_cleanup_input_info()
+        self.audio_cleanup_action_changed(self.audio_cleanup_action_combo.currentText())
         self.cleanup_media_changed()
         self.update_cleanup_method_description(self.cleanup_method_combo.currentText())
         self.update_cleanup_quality_description(self.cleanup_quality_combo.currentText())
@@ -606,6 +650,13 @@ class VoiceBridgeQt(
                 "outline": self.video_outline_spin.value(),
                 "margin_v": self.video_margin_spin.value(),
                 "position_label": self.video_position_combo.currentText(),
+            }
+
+        if hasattr(self, "audio_cleanup_action_combo"):
+            settings["audio_cleanup"] = {
+                "input_path": self.audio_cleanup_input_picker.text(),
+                "output_path": self.audio_cleanup_output_picker.text(),
+                "action_label": self.audio_cleanup_action_combo.currentText(),
             }
 
         if hasattr(self, "cleanup_quality_combo"):
@@ -820,6 +871,9 @@ class VoiceBridgeQt(
 
     def update_video_progress_percent(self, percent):
         self.show_percent_progress(self.video_progress, percent)
+
+    def update_audio_cleanup_progress_percent(self, percent):
+        self.show_percent_progress(self.audio_cleanup_progress, percent)
 
     def update_cleanup_progress_percent(self, percent):
         self.show_percent_progress(self.cleanup_progress, percent)

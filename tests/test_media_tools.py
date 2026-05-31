@@ -3,14 +3,21 @@ from pathlib import Path
 import pytest
 
 from voicebridge.media_tools import (
+    AUDIO_CLEANUP_FADE,
+    AUDIO_CLEANUP_REMOVE,
+    AUDIO_CLEANUP_SILENCE,
     BURN_QUALITY_HIGH,
     BURN_QUALITY_STANDARD,
+    audio_cleanup_command,
+    audio_cleanup_filter_complex,
     auto_burn_quality,
     first_srt_timestamp_seconds,
     freezeframes_filter_complex,
     isolated_black_frame_numbers,
+    parse_ffmpeg_duration,
     parse_srt_timestamp,
     removeframes_filter_complex,
+    suggest_audio_cleanup_output_path,
     suggest_video_cleanup_output_path,
     suggest_video_subtitle_output_path,
 )
@@ -42,6 +49,46 @@ def test_suggest_video_subtitle_output_path(media_path: str, mode: str, expected
 def test_suggest_video_cleanup_output_path_uses_safe_suffix() -> None:
     assert suggest_video_cleanup_output_path("source.mov") == "source_cleaned.mov"
     assert suggest_video_cleanup_output_path("source.webm") == "source_cleaned.mp4"
+
+
+def test_suggest_audio_cleanup_output_path_keeps_audio_suffix() -> None:
+    assert suggest_audio_cleanup_output_path("source.wav") == "source_cleaned.wav"
+    assert suggest_audio_cleanup_output_path("source.unknown") == "source_cleaned.mp3"
+
+
+def test_parse_ffmpeg_duration() -> None:
+    output = "Duration: 01:02:03.45, start: 0.000000, bitrate: 128 kb/s"
+
+    assert parse_ffmpeg_duration(output) == pytest.approx(3723.45)
+
+
+def test_audio_cleanup_remove_filter_removes_middle_range() -> None:
+    graph = audio_cleanup_filter_complex(AUDIO_CLEANUP_REMOVE, 1.0, 2.0, duration_seconds=4.0)
+
+    assert "[0:a]atrim=end=1.000000,asetpts=PTS-STARTPTS[a0]" in graph
+    assert "[0:a]atrim=start=2.000000,asetpts=PTS-STARTPTS[a1]" in graph
+    assert "[a0][a1]concat=n=2:v=0:a=1[aclean]" in graph
+
+
+def test_audio_cleanup_silence_filter_keeps_timing() -> None:
+    graph = audio_cleanup_filter_complex(AUDIO_CLEANUP_SILENCE, 1.0, 2.0, duration_seconds=4.0)
+
+    assert "volume=enable='between(t\\,1.000000\\,2.000000)':volume=0[aclean]" in graph
+
+
+def test_audio_cleanup_fade_filter_adds_fades() -> None:
+    graph = audio_cleanup_filter_complex(AUDIO_CLEANUP_FADE, 1.0, 2.0, duration_seconds=4.0)
+
+    assert "afade=t=out:st=1.000000" in graph
+    assert "afade=t=in:st=1.920000" in graph
+
+
+def test_audio_cleanup_command_maps_clean_audio() -> None:
+    command = audio_cleanup_command("ffmpeg", "in.mp3", "out.mp3", AUDIO_CLEANUP_SILENCE, 1.0, 2.0, 4.0)
+
+    assert "-filter_complex" in command
+    assert command[-3:] == ["-q:a", "4", "out.mp3"]
+    assert "[aclean]" in command
 
 
 def test_isolated_black_frame_numbers_splits_runs() -> None:

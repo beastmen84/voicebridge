@@ -503,6 +503,7 @@ class TtsWorkflowMixin:
             and not self.is_converting
             and not self.is_stt_running
             and not self.is_video_running
+            and not self.is_audio_cleanup_running
             and not self.is_cleanup_running
             and not self.input_file_error_message
         )
@@ -1064,6 +1065,7 @@ class TtsWorkflowMixin:
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
 
     def conversion_worker(self, input_path, save_path, voice, rate, cached_text):
@@ -1170,6 +1172,7 @@ class TtsWorkflowMixin:
         self.update_tts_button_state()
         self.update_stt_button_state()
         self.update_video_subtitle_button_state()
+        self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
 
     def cancel_tts_conversion(self):

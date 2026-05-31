@@ -843,7 +843,7 @@ class AudioCleanupWorkflowMixin:
             layout,
             "AUDIO",
             "Audio Cleanup",
-            "Manually remove, silence or fade short problem ranges in an existing audio file.",
+            "Remove, silence or fade short AI TTS artifacts and hallucinated fragments, not full audio edits.",
             "BadgeGreen",
         )
 

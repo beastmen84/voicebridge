@@ -81,8 +81,8 @@ class HomePageMixin:
         audio_cleanup_card = self.home_card(
             "AUDIO",
             "Audio Cleanup",
-            "Remove, silence or fade short problem ranges in generated or recorded audio.",
-            "Manual audio repair",
+            "Remove short AI TTS artifacts or hallucinated fragments without rebuilding the whole output.",
+            "TTS artifact repair",
             "BadgeGreen",
         )
         cleanup_card = self.home_card(

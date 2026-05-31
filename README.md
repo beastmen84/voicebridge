@@ -146,6 +146,10 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 ### Audio Cleanup
 
+Audio Cleanup serve soprattutto a correggere piccoli artefatti o allucinazioni generate dal TTS AI senza rifare tutto
+l'output. Non e' pensato come editor audio completo: se si taglia una porzione, la timeline puo' riallineare i tempi,
+ma il testo associato ai blocchi resta una guida operativa, non una trascrizione riscritta.
+
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
 3. Se esiste un sidecar `nome.voicebridge-tts.json`, usare la scheda `TTS blocks` sotto la waveform: click su un blocco per agganciare il range e leggere il testo associato.

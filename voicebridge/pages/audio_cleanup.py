@@ -15,18 +15,21 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSizePolicy,
     QSlider,
+    QToolButton,
+    QWidget,
 )
 
 from voicebridge.constants import (
     AUDIO_CLEANUP_ACTION_BY_LABEL,
-    AUDIO_CLEANUP_ACTION_DESCRIPTIONS,
-    AUDIO_CLEANUP_ACTION_LABELS,
+    AUDIO_CLEANUP_FADE_LABEL,
     AUDIO_CLEANUP_REMOVE_LABEL,
+    AUDIO_CLEANUP_SILENCE_LABEL,
 )
 from voicebridge.media_tools import (
     SUPPORTED_AUDIO_SUFFIXES,
@@ -64,15 +67,12 @@ class AudioCleanupWorkflowMixin:
         self.update_audio_cleanup_button_state()
         self.save_user_settings()
 
-    def audio_cleanup_action_changed(self, text):
-        self.audio_cleanup_action_description.setText(AUDIO_CLEANUP_ACTION_DESCRIPTIONS.get(text, ""))
-        self.save_user_settings()
-
     def reset_audio_cleanup_waveform(self, status="No waveform loaded."):
         if not hasattr(self, "audio_cleanup_waveform"):
             return
         self.audio_cleanup_waveform_generation += 1
         self.audio_cleanup_waveform.clear_waveform()
+        self.audio_cleanup_waveform.set_markers([])
         self.audio_cleanup_waveform.set_playhead(None)
         self.audio_cleanup_waveform_status.setText(status)
         if hasattr(self, "audio_cleanup_waveform_zoom_combo"):
@@ -123,6 +123,7 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_start_spin.value(),
             self.audio_cleanup_end_spin.value(),
         )
+        self.refresh_audio_cleanup_waveform_markers()
         self.audio_cleanup_waveform_zoom_combo.setEnabled(True)
         self.audio_cleanup_waveform_view_changed(*self.audio_cleanup_waveform.visible_window())
         self.update_audio_cleanup_button_state()
@@ -448,15 +449,25 @@ class AudioCleanupWorkflowMixin:
         return str(action)
 
     def audio_cleanup_action_key(self):
-        return AUDIO_CLEANUP_ACTION_BY_LABEL.get(
-            self.audio_cleanup_action_combo.currentText(),
-            AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_REMOVE_LABEL],
-        )
+        return AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_REMOVE_LABEL]
 
     def reset_audio_cleanup_changes(self):
         self.audio_cleanup_changes = []
         if hasattr(self, "audio_cleanup_changes_list"):
             self.refresh_audio_cleanup_changes_list()
+        self.refresh_audio_cleanup_waveform_markers()
+
+    def refresh_audio_cleanup_waveform_markers(self):
+        if not hasattr(self, "audio_cleanup_waveform"):
+            return
+        self.audio_cleanup_waveform.set_markers([
+            {
+                "action": change["action"],
+                "start_seconds": change["source_start_seconds"],
+                "end_seconds": change["source_end_seconds"],
+            }
+            for change in self.audio_cleanup_changes
+        ])
 
     def adjusted_audio_cleanup_range_for_changes(self, start, end, changes):
         adjusted_start = float(start)
@@ -501,6 +512,30 @@ class AudioCleanupWorkflowMixin:
             f"{self.audio_cleanup_action_label_for_key(change['action'])}"
         )
 
+    def audio_cleanup_change_row_widget(self, index, change):
+        row = QWidget()
+        row.setObjectName("InlinePanel")
+        row_index = index - 1
+
+        def select_change(_event):
+            self.audio_cleanup_changes_list.setCurrentRow(row_index)
+
+        row.mousePressEvent = select_change
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+        label = QLabel(self.audio_cleanup_change_label(index, change))
+        label.setObjectName("Muted")
+        label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        remove_button = QToolButton()
+        remove_button.setObjectName("InlineDangerButton")
+        remove_button.setText("X")
+        remove_button.setToolTip("Remove this change")
+        remove_button.clicked.connect(lambda _checked=False: self.remove_audio_cleanup_change_at_index(row_index))
+        row_layout.addWidget(label, 1)
+        row_layout.addWidget(remove_button)
+        return row
+
     def refresh_audio_cleanup_changes_list(self):
         if not hasattr(self, "audio_cleanup_changes_list"):
             return
@@ -511,11 +546,15 @@ class AudioCleanupWorkflowMixin:
                 self.audio_cleanup_changes_list.addItem("No applied changes.")
             else:
                 for index, change in enumerate(self.audio_cleanup_changes, start=1):
-                    self.audio_cleanup_changes_list.addItem(self.audio_cleanup_change_label(index, change))
-                    item = self.audio_cleanup_changes_list.item(self.audio_cleanup_changes_list.count() - 1)
+                    item = QListWidgetItem()
                     item.setData(Qt.ItemDataRole.UserRole, index - 1)
+                    row = self.audio_cleanup_change_row_widget(index, change)
+                    item.setSizeHint(row.sizeHint())
+                    self.audio_cleanup_changes_list.addItem(item)
+                    self.audio_cleanup_changes_list.setItemWidget(item, row)
         finally:
             self.audio_cleanup_changes_list.blockSignals(False)
+        self.refresh_audio_cleanup_waveform_markers()
         self.audio_cleanup_changes_status.setText(
             f"{len(self.audio_cleanup_changes)} change(s) queued."
             if self.audio_cleanup_changes else
@@ -523,7 +562,33 @@ class AudioCleanupWorkflowMixin:
         )
         self.update_audio_cleanup_button_state()
 
-    def apply_audio_cleanup_change(self):
+    def audio_cleanup_change_selection_changed(self):
+        item = self.audio_cleanup_changes_list.currentItem()
+        if item is None:
+            self.update_audio_cleanup_button_state()
+            return
+        index = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(index, int) or not (0 <= index < len(self.audio_cleanup_changes)):
+            self.update_audio_cleanup_button_state()
+            return
+        change = self.audio_cleanup_changes[index]
+        start = change["source_start_seconds"]
+        end = change["source_end_seconds"]
+        if hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.center_on((start + end) / 2)
+            self.audio_cleanup_waveform.set_selection(start, end)
+        self.audio_cleanup_start_spin.blockSignals(True)
+        self.audio_cleanup_end_spin.blockSignals(True)
+        try:
+            self.audio_cleanup_start_spin.setValue(start)
+            self.audio_cleanup_end_spin.setValue(end)
+        finally:
+            self.audio_cleanup_start_spin.blockSignals(False)
+            self.audio_cleanup_end_spin.blockSignals(False)
+        self.update_audio_cleanup_selection_note()
+        self.update_audio_cleanup_button_state()
+
+    def apply_audio_cleanup_change(self, action=None):
         if not self.has_audio_cleanup_selection():
             self.show_error("Audio Cleanup", "Select a range before applying a cleanup change.")
             return
@@ -538,7 +603,7 @@ class AudioCleanupWorkflowMixin:
             self.show_error("Audio Cleanup", "The selected range is no longer valid after queued cuts.")
             return
         self.audio_cleanup_changes.append({
-            "action": self.audio_cleanup_action_key(),
+            "action": action or self.audio_cleanup_action_key(),
             "source_start_seconds": start,
             "source_end_seconds": end,
             "start_seconds": adjusted_start,
@@ -546,10 +611,6 @@ class AudioCleanupWorkflowMixin:
         })
         self.refresh_audio_cleanup_changes_list()
         self.audio_cleanup_changes_list.setCurrentRow(len(self.audio_cleanup_changes) - 1)
-        self.audio_cleanup_start_spin.setValue(end)
-        self.audio_cleanup_end_spin.setValue(end)
-        if hasattr(self, "audio_cleanup_waveform"):
-            self.audio_cleanup_waveform.set_selection(end, end)
         self.audio_cleanup_status.setText(f"Queued cleanup change {len(self.audio_cleanup_changes)}.")
 
     def remove_selected_audio_cleanup_change(self):
@@ -557,6 +618,9 @@ class AudioCleanupWorkflowMixin:
         if item is None:
             return
         index = item.data(Qt.ItemDataRole.UserRole)
+        self.remove_audio_cleanup_change_at_index(index)
+
+    def remove_audio_cleanup_change_at_index(self, index):
         if not isinstance(index, int) or not (0 <= index < len(self.audio_cleanup_changes)):
             return
         del self.audio_cleanup_changes[index]
@@ -842,26 +906,17 @@ class AudioCleanupWorkflowMixin:
         has_input = bool(self.audio_cleanup_input_picker.text() and self.audio_cleanup_duration_seconds > 0)
         has_range = self.has_audio_cleanup_selection()
         has_changes = bool(self.audio_cleanup_changes)
-        selected_change_item = None
-        if hasattr(self, "audio_cleanup_changes_list"):
-            selected_change_item = self.audio_cleanup_changes_list.currentItem()
-        selected_change_index = selected_change_item.data(Qt.ItemDataRole.UserRole) if selected_change_item else None
-        has_selected_change = (
-            has_changes
-            and isinstance(selected_change_index, int)
-            and 0 <= selected_change_index < len(self.audio_cleanup_changes)
-        )
         self.audio_cleanup_start_button.setEnabled(
             has_input and has_changes and not self.is_audio_cleanup_running and not busy_elsewhere
         )
-        if hasattr(self, "audio_cleanup_apply_range_button"):
-            self.audio_cleanup_apply_range_button.setEnabled(
-                has_input and has_range and not self.is_audio_cleanup_running and not busy_elsewhere
-            )
-        if hasattr(self, "audio_cleanup_remove_change_button"):
-            self.audio_cleanup_remove_change_button.setEnabled(
-                has_selected_change and not self.is_audio_cleanup_running and not busy_elsewhere
-            )
+        action_buttons_enabled = has_input and has_range and not self.is_audio_cleanup_running and not busy_elsewhere
+        for button_name in (
+            "audio_cleanup_cut_button",
+            "audio_cleanup_silence_button",
+            "audio_cleanup_fade_button",
+        ):
+            if hasattr(self, button_name):
+                getattr(self, button_name).setEnabled(action_buttons_enabled)
         if hasattr(self, "audio_cleanup_changes_list"):
             self.audio_cleanup_changes_list.setEnabled(has_changes and not self.is_audio_cleanup_running)
             if not has_changes:
@@ -880,7 +935,6 @@ class AudioCleanupWorkflowMixin:
         for widget in (
             self.audio_cleanup_input_picker,
             self.audio_cleanup_output_picker,
-            self.audio_cleanup_action_combo,
             self.audio_cleanup_start_spin,
             self.audio_cleanup_end_spin,
         ):
@@ -1088,16 +1142,21 @@ class AudioCleanupWorkflowMixin:
         files_card.content_layout.addWidget(self.audio_cleanup_output_picker)
         files_card.content_layout.addWidget(self.audio_cleanup_duration_label)
 
-        settings_card = Card("Cleanup range")
-        settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        settings_card.setMinimumHeight(cleanup_top_card_min_height)
-        self.audio_cleanup_action_combo = QComboBox()
-        self.audio_cleanup_action_combo.addItems(AUDIO_CLEANUP_ACTION_LABELS)
-        self.audio_cleanup_action_combo.setCurrentText(AUDIO_CLEANUP_REMOVE_LABEL)
-        self.audio_cleanup_action_combo.currentTextChanged.connect(self.audio_cleanup_action_changed)
-        self.audio_cleanup_action_description = QLabel(AUDIO_CLEANUP_ACTION_DESCRIPTIONS[AUDIO_CLEANUP_REMOVE_LABEL])
-        self.audio_cleanup_action_description.setObjectName("Muted")
-        self.audio_cleanup_action_description.setWordWrap(True)
+        self.audio_cleanup_tts_timeline = None
+        self.audio_cleanup_changes_card = Card("Applied changes")
+        self.audio_cleanup_changes_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.audio_cleanup_changes_card.setMinimumHeight(cleanup_top_card_min_height)
+        self.audio_cleanup_changes_list = QListWidget()
+        self.audio_cleanup_changes_list.setMinimumHeight(88)
+        self.audio_cleanup_changes_list.currentItemChanged.connect(
+            lambda _current, _previous: self.audio_cleanup_change_selection_changed()
+        )
+        self.audio_cleanup_changes_status = QLabel("Apply one or more ranges before cleaning audio.")
+        self.audio_cleanup_changes_status.setObjectName("Muted")
+        self.audio_cleanup_changes_status.setWordWrap(True)
+        self.audio_cleanup_changes_card.content_layout.addWidget(self.audio_cleanup_changes_list)
+        self.audio_cleanup_changes_card.content_layout.addWidget(self.audio_cleanup_changes_status)
+
         self.audio_cleanup_start_spin = QDoubleSpinBox()
         self.audio_cleanup_end_spin = QDoubleSpinBox()
         for spin in (self.audio_cleanup_start_spin, self.audio_cleanup_end_spin):
@@ -1108,26 +1167,9 @@ class AudioCleanupWorkflowMixin:
             spin.valueChanged.connect(lambda _value: self.audio_cleanup_time_changed())
         self.audio_cleanup_selection_note = QLabel("Selection: none")
         self.audio_cleanup_selection_note.setObjectName("Muted")
-        self.audio_cleanup_tts_timeline = None
-        self.audio_cleanup_apply_range_button = QPushButton("Apply to range")
-        self.audio_cleanup_apply_range_button.clicked.connect(self.apply_audio_cleanup_change)
-        settings_grid = QGridLayout()
-        settings_grid.setContentsMargins(0, 0, 0, 0)
-        settings_grid.setHorizontalSpacing(8)
-        settings_grid.setVerticalSpacing(8)
-        settings_grid.addWidget(QLabel("Action"), 0, 0)
-        settings_grid.addWidget(self.audio_cleanup_action_combo, 0, 1, 1, 3)
-        settings_grid.addWidget(QLabel("Start"), 1, 0)
-        settings_grid.addWidget(self.audio_cleanup_start_spin, 1, 1)
-        settings_grid.addWidget(QLabel("End"), 1, 2)
-        settings_grid.addWidget(self.audio_cleanup_end_spin, 1, 3)
-        settings_card.content_layout.addLayout(settings_grid)
-        settings_card.content_layout.addWidget(self.audio_cleanup_action_description)
-        settings_card.content_layout.addWidget(self.audio_cleanup_selection_note)
-        settings_card.content_layout.addWidget(self.audio_cleanup_apply_range_button)
 
         grid.addWidget(files_card, 0, 0)
-        grid.addWidget(settings_card, 0, 1)
+        grid.addWidget(self.audio_cleanup_changes_card, 0, 1)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
@@ -1156,10 +1198,42 @@ class AudioCleanupWorkflowMixin:
         waveform_controls.addWidget(self.audio_cleanup_waveform_zoom_combo)
         waveform_controls.addWidget(QLabel("Position"))
         waveform_controls.addWidget(self.audio_cleanup_waveform_scroll, 1)
+        waveform_action_controls = QHBoxLayout()
+        waveform_action_controls.setContentsMargins(0, 0, 0, 0)
+        waveform_action_controls.setSpacing(8)
+        self.audio_cleanup_cut_button = QPushButton("Cut")
+        self.audio_cleanup_cut_button.setObjectName("DangerButton")
+        self.audio_cleanup_silence_button = QPushButton("Silence")
+        self.audio_cleanup_fade_button = QPushButton("Fade")
+        self.audio_cleanup_cut_button.clicked.connect(
+            lambda _checked=False: self.apply_audio_cleanup_change(
+                AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_REMOVE_LABEL]
+            )
+        )
+        self.audio_cleanup_silence_button.clicked.connect(
+            lambda _checked=False: self.apply_audio_cleanup_change(
+                AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_SILENCE_LABEL]
+            )
+        )
+        self.audio_cleanup_fade_button.clicked.connect(
+            lambda _checked=False: self.apply_audio_cleanup_change(
+                AUDIO_CLEANUP_ACTION_BY_LABEL[AUDIO_CLEANUP_FADE_LABEL]
+            )
+        )
+        waveform_action_controls.addWidget(QLabel("Start"))
+        waveform_action_controls.addWidget(self.audio_cleanup_start_spin)
+        waveform_action_controls.addWidget(QLabel("End"))
+        waveform_action_controls.addWidget(self.audio_cleanup_end_spin)
+        waveform_action_controls.addStretch(1)
+        waveform_action_controls.addWidget(self.audio_cleanup_cut_button)
+        waveform_action_controls.addWidget(self.audio_cleanup_silence_button)
+        waveform_action_controls.addWidget(self.audio_cleanup_fade_button)
         self.audio_cleanup_waveform_status = QLabel("No audio selected.")
         self.audio_cleanup_waveform_status.setObjectName("Muted")
         waveform_card.content_layout.addWidget(self.audio_cleanup_waveform)
         waveform_card.content_layout.addLayout(waveform_controls)
+        waveform_card.content_layout.addLayout(waveform_action_controls)
+        waveform_card.content_layout.addWidget(self.audio_cleanup_selection_note)
         waveform_card.content_layout.addWidget(self.audio_cleanup_waveform_status)
         layout.addWidget(waveform_card)
 
@@ -1187,28 +1261,6 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_tts_blocks_card.content_layout.addWidget(self.audio_cleanup_tts_block_status)
         self.audio_cleanup_tts_blocks_card.hide()
         layout.addWidget(self.audio_cleanup_tts_blocks_card)
-
-        self.audio_cleanup_changes_card = Card("Applied changes")
-        self.audio_cleanup_changes_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.audio_cleanup_changes_list = QListWidget()
-        self.audio_cleanup_changes_list.setMinimumHeight(120)
-        self.audio_cleanup_changes_list.currentItemChanged.connect(
-            lambda _current, _previous: self.update_audio_cleanup_button_state()
-        )
-        self.audio_cleanup_remove_change_button = QPushButton("X Remove selected")
-        self.audio_cleanup_remove_change_button.setObjectName("DangerButton")
-        self.audio_cleanup_remove_change_button.clicked.connect(self.remove_selected_audio_cleanup_change)
-        changes_layout = QHBoxLayout()
-        changes_layout.setContentsMargins(0, 0, 0, 0)
-        changes_layout.setSpacing(12)
-        changes_layout.addWidget(self.audio_cleanup_changes_list, 1)
-        changes_layout.addWidget(self.audio_cleanup_remove_change_button)
-        self.audio_cleanup_changes_status = QLabel("Apply one or more ranges before cleaning audio.")
-        self.audio_cleanup_changes_status.setObjectName("Muted")
-        self.audio_cleanup_changes_status.setWordWrap(True)
-        self.audio_cleanup_changes_card.content_layout.addLayout(changes_layout)
-        self.audio_cleanup_changes_card.content_layout.addWidget(self.audio_cleanup_changes_status)
-        layout.addWidget(self.audio_cleanup_changes_card)
 
         action_card = Card()
         action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)

@@ -154,8 +154,8 @@ ma il testo associato ai blocchi resta una guida operativa, non una trascrizione
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
 3. Se esiste un sidecar `nome.voicebridge-tts.json`, usare la scheda `TTS blocks` sotto la waveform: click su un blocco per agganciare il range e leggere il testo associato.
 4. Usare la waveform, lo zoom o i campi `Start` / `End` per rifinire l'intervallo con passo da 10 ms; un click singolo sulla waveform azzera la selezione e il pulsante diventa `Play all`.
-5. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence` e premere `Apply to range`.
-6. Ripetere il passaggio per aggiungere piu' correzioni; `Applied changes` mostra le modifiche in coda e permette di rimuovere una singola voce.
+5. Premere `Cut`, `Silence` o `Fade` nella scheda `Waveform` per mettere in coda la correzione.
+6. Ripetere il passaggio per aggiungere piu' correzioni; `Applied changes` mostra le modifiche in coda, le evidenzia sulla waveform e permette di rimuovere una singola voce con la `X`.
 7. Salvare un nuovo file audio e premere `Clean audio`.
 
 Se l'audio sorgente ha una timeline TTS, anche il file pulito riceve un nuovo `nome.voicebridge-tts.json`: `Cut range`

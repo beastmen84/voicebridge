@@ -89,6 +89,19 @@ def apply_app_style(widget, check_icon, chevron_icon):
         #PrimaryButton { color: white; background: #2f6fed; border-color: #2f6fed; font-weight: 600; }
         #PrimaryButton:hover { background: #265ecb; }
         #DangerButton { color: white; background: #b42318; border-color: #b42318; font-weight: 600; }
+        QToolButton#InlineDangerButton {
+            color: #b42318;
+            background: #fff5f5;
+            border: 1px solid #f3b7b1;
+            border-radius: 11px;
+            font-weight: 800;
+            min-width: 22px;
+            min-height: 22px;
+            max-width: 22px;
+            max-height: 22px;
+            padding: 0;
+        }
+        QToolButton#InlineDangerButton:hover { background: #fee2e2; }
         #SecondaryButton { background: #f8fafc; }
         #SegmentButton {
             background: #f8fafc;

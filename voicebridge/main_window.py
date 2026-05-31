@@ -206,15 +206,14 @@ class VoiceBridgeQt(
     audio_cleanup_input_picker: FilePicker
     audio_cleanup_output_picker: FilePicker
     audio_cleanup_duration_label: QLabel
-    audio_cleanup_action_combo: QComboBox
-    audio_cleanup_action_description: QLabel
     audio_cleanup_start_spin: QDoubleSpinBox
     audio_cleanup_end_spin: QDoubleSpinBox
     audio_cleanup_selection_note: QLabel
-    audio_cleanup_apply_range_button: QPushButton
+    audio_cleanup_cut_button: QPushButton
+    audio_cleanup_silence_button: QPushButton
+    audio_cleanup_fade_button: QPushButton
     audio_cleanup_changes: list[dict[str, Any]]
     audio_cleanup_changes_list: QListWidget
-    audio_cleanup_remove_change_button: QPushButton
     audio_cleanup_changes_status: QLabel
     audio_cleanup_tts_timeline: dict[str, Any] | None
     audio_cleanup_tts_blocks_list: QListWidget
@@ -585,9 +584,6 @@ class VoiceBridgeQt(
             self.video_outline_spin.setValue(self.safe_int(video_settings.get("outline"), 2, 0, 8))
             self.video_margin_spin.setValue(self.safe_int(video_settings.get("margin_v"), 36, 0, 160))
 
-            audio_cleanup_settings = self.setting_section("audio_cleanup")
-            self.set_combo_text(self.audio_cleanup_action_combo, audio_cleanup_settings.get("action_label"))
-
             cleanup_settings = self.setting_section("video_cleanup")
             self.set_combo_text(
                 self.cleanup_quality_combo,
@@ -607,7 +603,6 @@ class VoiceBridgeQt(
         self.video_subtitle_mode_changed()
         self.update_video_quality_description(self.video_quality_combo.currentText())
         self.refresh_audio_cleanup_input_info()
-        self.audio_cleanup_action_changed(self.audio_cleanup_action_combo.currentText())
         self.cleanup_media_changed()
         self.update_cleanup_method_description(self.cleanup_method_combo.currentText())
         self.update_cleanup_quality_description(self.cleanup_quality_combo.currentText())
@@ -660,11 +655,6 @@ class VoiceBridgeQt(
                 "outline": self.video_outline_spin.value(),
                 "margin_v": self.video_margin_spin.value(),
                 "position_label": self.video_position_combo.currentText(),
-            }
-
-        if hasattr(self, "audio_cleanup_action_combo"):
-            settings["audio_cleanup"] = {
-                "action_label": self.audio_cleanup_action_combo.currentText(),
             }
 
         if hasattr(self, "cleanup_quality_combo"):

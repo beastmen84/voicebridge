@@ -16,6 +16,7 @@ class AudioWaveformWidget(QWidget):
         self._start = 0.0
         self._end = 0.0
         self._playhead: float | None = None
+        self._markers: list[dict[str, float | str]] = []
         self._zoom_factor = 1.0
         self._view_start = 0.0
         self._drag_mode: str | None = None
@@ -32,6 +33,7 @@ class AudioWaveformWidget(QWidget):
         self._start = 0.0
         self._end = 0.0
         self._playhead = None
+        self._markers = []
         self._zoom_factor = 1.0
         self._view_start = 0.0
         self.setEnabled(False)
@@ -104,6 +106,23 @@ class AudioWaveformWidget(QWidget):
         if emit:
             self.selectionChanged.emit(self._start, self._end)
 
+    def set_markers(self, markers: Sequence[dict[str, float | str]]) -> None:
+        self._markers = []
+        for marker in markers:
+            try:
+                start = max(0.0, float(marker.get("start_seconds", 0.0)))
+                end = max(0.0, float(marker.get("end_seconds", 0.0)))
+            except (TypeError, ValueError):
+                continue
+            if end <= start:
+                continue
+            self._markers.append({
+                "action": str(marker.get("action", "")),
+                "start_seconds": start,
+                "end_seconds": end,
+            })
+        self.update()
+
     def set_playhead(self, seconds: float | None) -> None:
         if seconds is None or self._duration <= 0:
             self._playhead = None
@@ -126,6 +145,8 @@ class AudioWaveformWidget(QWidget):
         if not self._peaks:
             return
 
+        self._draw_markers(painter, plot_rect)
+
         peaks = self._peaks_for_width(max(1, int(plot_rect.width())))
         painter.setPen(QPen(QColor("#365a7c"), 1.4))
         for index, peak in enumerate(peaks):
@@ -141,8 +162,8 @@ class AudioWaveformWidget(QWidget):
                 start_x = self._x_for_seconds(clipped_start, plot_rect)
                 end_x = self._x_for_seconds(clipped_end, plot_rect)
                 selection_rect = QRectF(start_x, plot_rect.top(), max(1.0, end_x - start_x), plot_rect.height())
-                painter.fillRect(selection_rect, QColor(245, 158, 11, 70))
-            painter.setPen(QPen(QColor("#b45309"), 2.4))
+                painter.fillRect(selection_rect, QColor(37, 99, 235, 58))
+            painter.setPen(QPen(QColor("#1d4ed8"), 2.4))
             if visible_start <= self._start <= visible_end:
                 start_x = self._x_for_seconds(self._start, plot_rect)
                 painter.drawLine(QPointF(start_x, plot_rect.top()), QPointF(start_x, plot_rect.bottom()))
@@ -156,6 +177,33 @@ class AudioWaveformWidget(QWidget):
                 playhead_x = self._x_for_seconds(self._playhead, plot_rect)
                 painter.setPen(QPen(QColor("#dc2626"), 2.2))
                 painter.drawLine(QPointF(playhead_x, plot_rect.top()), QPointF(playhead_x, plot_rect.bottom()))
+
+    def _draw_markers(self, painter: QPainter, plot_rect: QRectF) -> None:
+        if self._duration <= 0 or not self._markers:
+            return
+        visible_start, visible_end = self._visible_window()
+        colors = {
+            "remove": (QColor(220, 38, 38, 46), QColor("#b91c1c")),
+            "silence": (QColor(245, 158, 11, 48), QColor("#b45309")),
+            "fade": (QColor(124, 58, 237, 44), QColor("#6d28d9")),
+        }
+        for marker in self._markers:
+            start = float(marker["start_seconds"])
+            end = float(marker["end_seconds"])
+            clipped_start = max(start, visible_start)
+            clipped_end = min(end, visible_end)
+            if clipped_end <= clipped_start:
+                continue
+            fill_color, border_color = colors.get(str(marker["action"]), colors["remove"])
+            start_x = self._x_for_seconds(clipped_start, plot_rect)
+            end_x = self._x_for_seconds(clipped_end, plot_rect)
+            marker_rect = QRectF(start_x, plot_rect.top(), max(1.0, end_x - start_x), plot_rect.height())
+            painter.fillRect(marker_rect, fill_color)
+            painter.setPen(QPen(border_color, 1.4))
+            if visible_start <= start <= visible_end:
+                painter.drawLine(QPointF(start_x, plot_rect.top()), QPointF(start_x, plot_rect.bottom()))
+            if visible_start <= end <= visible_end:
+                painter.drawLine(QPointF(end_x, plot_rect.top()), QPointF(end_x, plot_rect.bottom()))
 
     def mousePressEvent(self, event) -> None:
         if not self.isEnabled() or self._duration <= 0:

@@ -20,6 +20,8 @@ class AudioWaveformWidget(QWidget):
         self._view_start = 0.0
         self._drag_mode: str | None = None
         self._drag_anchor = 0.0
+        self._drag_start_x = 0.0
+        self._drag_moved = False
         self.setMinimumHeight(170)
         self.setMouseTracking(True)
         self.setEnabled(False)
@@ -159,6 +161,8 @@ class AudioWaveformWidget(QWidget):
         if not self.isEnabled() or self._duration <= 0:
             return
         seconds = self._seconds_for_x(event.position().x())
+        self._drag_start_x = event.position().x()
+        self._drag_moved = False
         if self._near_handle(event.position().x(), self._start):
             self._drag_mode = "start"
         elif self._near_handle(event.position().x(), self._end):
@@ -182,6 +186,7 @@ class AudioWaveformWidget(QWidget):
             self.setCursor(cursor)
             return
 
+        self._drag_moved = self._drag_moved or abs(event.position().x() - self._drag_start_x) > 3
         seconds = self._seconds_for_x(event.position().x())
         if self._drag_mode == "start":
             self.set_selection(seconds, self._end, emit=True)
@@ -192,6 +197,9 @@ class AudioWaveformWidget(QWidget):
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
+        if self._drag_mode and not self._drag_moved:
+            seconds = self._seconds_for_x(event.position().x())
+            self.set_selection(seconds, seconds, emit=True)
         self._drag_mode = None
         event.accept()
 

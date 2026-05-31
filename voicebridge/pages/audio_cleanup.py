@@ -422,10 +422,16 @@ class AudioCleanupWorkflowMixin:
         start = self.audio_cleanup_start_spin.value()
         end = self.audio_cleanup_end_spin.value()
         duration = max(0.0, end - start)
+        if duration <= 0:
+            self.audio_cleanup_selection_note.setText("Selection: none")
+            return
         self.audio_cleanup_selection_note.setText(
             f"Selection: {self.format_audio_cleanup_time(start)} - "
             f"{self.format_audio_cleanup_time(end)} ({duration:.3f}s)"
         )
+
+    def has_audio_cleanup_selection(self):
+        return self.audio_cleanup_end_spin.value() > self.audio_cleanup_start_spin.value()
 
     def audio_cleanup_action_key(self):
         return AUDIO_CLEANUP_ACTION_BY_LABEL.get(
@@ -654,16 +660,15 @@ class AudioCleanupWorkflowMixin:
             return
         busy_elsewhere = self.is_converting or self.is_stt_running or self.is_video_running or self.is_cleanup_running
         has_input = bool(self.audio_cleanup_input_picker.text() and self.audio_cleanup_duration_seconds > 0)
-        has_range = self.audio_cleanup_end_spin.value() > self.audio_cleanup_start_spin.value()
+        has_range = self.has_audio_cleanup_selection()
         self.audio_cleanup_start_button.setEnabled(
             has_input and has_range and not self.is_audio_cleanup_running and not busy_elsewhere
         )
         self.audio_cleanup_cancel_button.setEnabled(
             self.is_audio_cleanup_running and not self.audio_cleanup_cancel_requested
         )
-        self.audio_cleanup_play_selection_button.setEnabled(
-            has_input and has_range and not self.is_audio_cleanup_running
-        )
+        self.audio_cleanup_play_selection_button.setText("Play selection" if has_range else "Play all")
+        self.audio_cleanup_play_selection_button.setEnabled(has_input and not self.is_audio_cleanup_running)
         output_ready = bool(
             self.audio_cleanup_last_output_path and Path(self.audio_cleanup_last_output_path).is_file()
         )
@@ -705,6 +710,7 @@ class AudioCleanupWorkflowMixin:
         start = self.audio_cleanup_start_spin.value()
         end = self.audio_cleanup_end_spin.value()
         if end <= start:
+            self.play_audio_cleanup_path(input_path)
             return
         self.play_audio_cleanup_path(input_path, start_seconds=start, stop_after_seconds=end - start)
 
@@ -895,7 +901,7 @@ class AudioCleanupWorkflowMixin:
             spin.setSingleStep(0.01)
             spin.setSuffix(" s")
             spin.valueChanged.connect(lambda _value: self.audio_cleanup_time_changed())
-        self.audio_cleanup_selection_note = QLabel("Selection: 0.000s")
+        self.audio_cleanup_selection_note = QLabel("Selection: none")
         self.audio_cleanup_selection_note.setObjectName("Muted")
         self.audio_cleanup_tts_timeline = None
         settings_grid = QGridLayout()

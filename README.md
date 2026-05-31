@@ -78,7 +78,7 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 1. Aprire `Text to Speech`.
 2. Scegliere un file supportato.
 3. Selezionare voce, preferiti e velocita'.
-4. In alternativa, scegliere `Multi-voice blocks`, dividere il documento in blocchi e assegnare voce/velocita' ai singoli blocchi.
+4. In alternativa, scegliere `Multi-voice blocks`, dividere il documento in blocchi e assegnare voce/velocita' Edge oppure profili vocali Local TTS ai singoli blocchi.
 5. Salvare come `.mp3`.
 6. Premere `Generate MP3`; a fine generazione usare `Open output` o `Open folder`.
 
@@ -101,6 +101,8 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
 dopo il download il modello resta disponibile localmente.
+Con almeno due profili vocali pronti, `Multi-voice blocks` e' disponibile anche per Local TTS: ogni blocco usa il
+profilo assegnato e, se XTTS divide internamente un blocco lungo, mantiene lo stesso profilo su tutte le parti.
 Per ridurre artefatti su testi lunghi, Local TTS normalizza liste, spazi, file extension e punteggiatura, divide il testo in chunk brevi
 e concatena l'audio WAV prima della conversione MP3 finale. Il preset `Stable` privilegia la stabilita', `Balanced` e' il compromesso
 consigliato per i test, mentre `Natural` lascia piu' espressivita' al modello.

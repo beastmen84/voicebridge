@@ -181,12 +181,31 @@ class TtsWorkflowMixin:
             return None
         return next((profile for profile in self.voice_profiles if profile["id"] == profile_id), None)
 
+    def ready_tts_voice_profiles(self) -> list[VoiceProfile]:
+        return ready_voice_profiles(self.voice_profiles)
+
+    def local_multi_voice_available(self) -> bool:
+        return len(self.ready_tts_voice_profiles()) > 1
+
+    def update_tts_multi_mode_availability(self) -> None:
+        if not hasattr(self, "tts_multi_mode_button"):
+            return
+        local = self.tts_engine_key() == "local"
+        available = not local or self.local_multi_voice_available()
+        self.tts_multi_mode_button.setEnabled(available)
+        if local and not available:
+            self.tts_multi_mode_button.setToolTip("Local multi-voice requires at least two ready voice profiles.")
+            if self.tts_mode_index() == 1:
+                self.set_tts_mode(0)
+        else:
+            self.tts_multi_mode_button.setToolTip("")
+
     def refresh_local_voice_profile_combo(self, preferred_profile_id=None):
         if not hasattr(self, "local_voice_profile_combo"):
             return
         previous_profile_id = self.local_voice_profile_combo.currentData()
         target_profile_id = preferred_profile_id or previous_profile_id or self.saved_tts_voice_profile_id
-        profiles = ready_voice_profiles(self.voice_profiles)
+        profiles = self.ready_tts_voice_profiles()
 
         self.local_voice_profile_combo.blockSignals(True)
         try:
@@ -206,11 +225,17 @@ class TtsWorkflowMixin:
         finally:
             self.local_voice_profile_combo.blockSignals(False)
         self.update_local_voice_profile_status()
+        self.update_tts_multi_mode_availability()
+        if self.tts_engine_key() == "local":
+            self.refresh_local_block_voice_combo(target_profile_id)
 
     def local_voice_profile_changed(self):
         profile = self.selected_tts_voice_profile()
         self.saved_tts_voice_profile_id = profile["id"] if profile else ""
         self.update_local_voice_profile_status()
+        self.update_tts_multi_mode_availability()
+        if self.tts_engine_key() == "local":
+            self.refresh_local_block_voice_combo(profile["id"] if profile else None)
         self.save_user_settings()
 
     def update_local_voice_profile_status(self):
@@ -245,10 +270,6 @@ class TtsWorkflowMixin:
         local = self.tts_engine_key() == "local"
         self.edge_voice_panel.setVisible(not local)
         self.local_voice_panel.setVisible(local)
-        if hasattr(self, "tts_multi_mode_button"):
-            self.tts_multi_mode_button.setEnabled(not local)
-            if local and self.tts_mode_index() == 1:
-                self.set_tts_mode(0)
         if local:
             self.refresh_local_voice_profile_combo()
             self.update_tts_local_device_options()
@@ -260,6 +281,10 @@ class TtsWorkflowMixin:
                 self.tts_status.setText("Download XTTS-v2 before Local TTS generation.")
         elif hasattr(self, "tts_status"):
             self.tts_status.setText("Ready.")
+        self.update_tts_multi_mode_availability()
+        self.update_block_settings_controls()
+        self.refresh_block_voice_combo_for_engine()
+        self.update_tts_mode_note()
         self.update_tts_button_state()
 
     def start_voice_loading(self):
@@ -302,18 +327,18 @@ class TtsWorkflowMixin:
             filtered_voices,
             preferred_short_names=self.preferred_voice_short_names,
         )
+        self.current_voice_labels = values
         self.voice_combo.blockSignals(True)
         self.voice_combo.clear()
         self.voice_combo.addItems(values)
-        self.block_voice_combo.clear()
-        self.block_voice_combo.addItems(values)
         target_short_name = preferred_short_name or previous_short_name
         selected_label = find_voice_label(self.current_voice_map, target_short_name)
         if not selected_label and self.current_voice_map:
             selected_label = next(iter(self.current_voice_map))
         self.voice_combo.setCurrentText(selected_label)
-        self.block_voice_combo.setCurrentText(selected_label)
         self.voice_combo.blockSignals(False)
+        if self.tts_engine_key() != "local":
+            self.refresh_edge_block_voice_combo(preferred_short_name=target_short_name)
         self.last_valid_voice_label = selected_label
         self.voice_combo.setEnabled(
             bool(self.current_voice_map)
@@ -322,6 +347,68 @@ class TtsWorkflowMixin:
         )
         self.sync_voice_preferred_state()
         self.update_tts_button_state()
+
+    def refresh_block_voice_combo_for_engine(self) -> None:
+        if not hasattr(self, "block_voice_combo"):
+            return
+        if self.tts_engine_key() == "local":
+            profile = self.selected_tts_voice_profile()
+            self.refresh_local_block_voice_combo(profile["id"] if profile else None)
+        else:
+            self.refresh_edge_block_voice_combo()
+
+    def refresh_edge_block_voice_combo(self, preferred_short_name=None) -> None:
+        if not hasattr(self, "block_voice_combo"):
+            return
+        previous_short_name = self.current_voice_map.get(self.block_voice_combo.currentText())
+        target_short_name = preferred_short_name or previous_short_name or self.saved_tts_voice_short_name
+        selected_label = find_voice_label(self.current_voice_map, target_short_name)
+        if not selected_label and self.current_voice_map:
+            selected_label = next(iter(self.current_voice_map))
+        self.block_voice_combo.blockSignals(True)
+        try:
+            self.block_voice_combo.clear()
+            self.block_voice_combo.addItems(getattr(self, "current_voice_labels", list(self.current_voice_map)))
+            self.block_voice_combo.setEnabled(bool(self.current_voice_map))
+            self.block_voice_combo.setCurrentText(selected_label)
+        finally:
+            self.block_voice_combo.blockSignals(False)
+
+    def refresh_local_block_voice_combo(self, preferred_profile_id=None) -> None:
+        if not hasattr(self, "block_voice_combo"):
+            return
+        profiles = self.ready_tts_voice_profiles()
+        previous_profile_id = self.block_voice_combo.currentData()
+        target_profile_id = preferred_profile_id or previous_profile_id
+        self.block_voice_combo.blockSignals(True)
+        try:
+            self.block_voice_combo.clear()
+            if not profiles:
+                self.block_voice_combo.addItem("No ready voice profiles", "")
+                self.block_voice_combo.setEnabled(False)
+            else:
+                for profile in profiles:
+                    self.block_voice_combo.addItem(voice_profile_display_label(profile), profile["id"])
+                self.block_voice_combo.setEnabled(True)
+                if target_profile_id:
+                    for index in range(self.block_voice_combo.count()):
+                        if self.block_voice_combo.itemData(index) == target_profile_id:
+                            self.block_voice_combo.setCurrentIndex(index)
+                            break
+        finally:
+            self.block_voice_combo.blockSignals(False)
+
+    def update_block_settings_controls(self) -> None:
+        if not hasattr(self, "block_voice_label"):
+            return
+        local = self.tts_engine_key() == "local"
+        self.block_voice_label.setText("Block voice profile" if local else "Block voice")
+        self.block_rate_label.setVisible(not local)
+        self.block_rate_combo.setVisible(not local)
+        self.apply_current_block_button.setText("Use current profile" if local else "Use current voice")
+        self.apply_all_blocks_button.setText(
+            "Use current profile for all" if local else "Use current voice for all"
+        )
 
     def voice_selected(self, label):
         if label in self.current_voice_map:
@@ -546,6 +633,22 @@ class TtsWorkflowMixin:
             raise ValueError("Please select a valid voice.")
         return voice_label, voice_short_name
 
+    @staticmethod
+    def local_tts_segment_voice_fields(profile: VoiceProfile) -> dict[str, str]:
+        return {
+            "voice_label": voice_profile_display_label(profile),
+            "voice_profile_id": profile["id"],
+            "language_code": profile["language_code"],
+            "voice_short_name": "",
+            "rate": DEFAULT_RATE,
+        }
+
+    def selected_block_voice_profile(self) -> VoiceProfile | None:
+        profile_id = self.block_voice_combo.currentData()
+        if not isinstance(profile_id, str) or not profile_id:
+            return None
+        return next((profile for profile in self.ready_tts_voice_profiles() if profile["id"] == profile_id), None)
+
     def split_tts_text_blocks(self, text):
         if self.tts_split_combo.currentText() == TTS_SPLIT_LINES:
             blocks = [line.strip() for line in text.splitlines() if line.strip()]
@@ -568,7 +671,18 @@ class TtsWorkflowMixin:
     def split_tts_document_into_blocks(self):
         try:
             text = self.current_tts_input_text(preserve_text_layout=True)
-            voice_label, voice_short_name = self.selected_voice_assignment()
+            if self.tts_engine_key() == "local":
+                profile = self.selected_tts_voice_profile()
+                if not profile:
+                    raise ValueError("Please create and select a ready voice profile.")
+                voice_fields = self.local_tts_segment_voice_fields(profile)
+            else:
+                voice_label, voice_short_name = self.selected_voice_assignment()
+                voice_fields = {
+                    "voice_label": voice_label,
+                    "voice_short_name": voice_short_name,
+                    "rate": self.rate_combo.currentText(),
+                }
         except (OSError, RuntimeError, ValueError) as exc:
             self.tts_status.setText("Error.")
             self.show_error("Error", str(exc))
@@ -582,9 +696,7 @@ class TtsWorkflowMixin:
             segments.append(
                 {
                     "text": block,
-                    "voice_label": voice_label,
-                    "voice_short_name": voice_short_name,
-                    "rate": self.rate_combo.currentText(),
+                    **voice_fields,
                 }
             )
         self.tts_segments = segments
@@ -597,6 +709,9 @@ class TtsWorkflowMixin:
     def tts_segment_summary(index: int, segment: TtsSegment) -> str:
         voice = segment.get("voice_label") or segment.get("voice_short_name") or "No voice"
         voice = voice.split(" - ", 1)[0].strip()
+        if segment.get("voice_profile_id"):
+            language = language_name(segment.get("language_code") or "")
+            return f"{index + 1:02d}. {voice} | {language} | {len(segment.get('text', ''))} chars"
         return f"{index + 1:02d}. {voice} | {segment.get('rate', DEFAULT_RATE)} | {len(segment.get('text', ''))} chars"
 
     def refresh_tts_blocks_list(self):
@@ -614,7 +729,10 @@ class TtsWorkflowMixin:
             return
         self.selected_tts_segment_index = index
         segment = self.tts_segment_at(index)
-        self.block_voice_combo.setCurrentText(segment.get("voice_label", ""))
+        if self.tts_engine_key() == "local":
+            self.refresh_local_block_voice_combo(segment.get("voice_profile_id"))
+        else:
+            self.block_voice_combo.setCurrentText(segment.get("voice_label", ""))
         self.block_rate_combo.setCurrentText(segment.get("rate", DEFAULT_RATE))
         self.tts_block_preview.setPlainText(segment.get("text", ""))
 
@@ -637,6 +755,8 @@ class TtsWorkflowMixin:
             "voice_label": first_segment.get("voice_label", ""),
             "voice_short_name": first_segment.get("voice_short_name", ""),
             "rate": first_segment.get("rate", DEFAULT_RATE),
+            "voice_profile_id": first_segment.get("voice_profile_id", ""),
+            "language_code": first_segment.get("language_code", ""),
         }
         updated_segments: list[TtsSegment] = []
         last = selection[-1]
@@ -653,6 +773,16 @@ class TtsWorkflowMixin:
     def apply_block_settings_to_selected(self):
         index = self.selected_tts_segment_index
         if index is None or not (0 <= index < len(self.tts_segments)):
+            return
+        if self.tts_engine_key() == "local":
+            profile = self.selected_block_voice_profile()
+            if not profile:
+                self.show_error("Error", "Please select a valid block voice profile.")
+                return
+            self.tts_segments[index].update(self.local_tts_segment_voice_fields(profile))
+            self.refresh_tts_blocks_list()
+            self.tts_blocks_list.setCurrentRow(index)
+            self.tts_status.setText(f"Updated block {index + 1}.")
             return
         voice_label = self.block_voice_combo.currentText()
         voice_short_name = self.current_voice_map.get(voice_label, "")
@@ -673,6 +803,15 @@ class TtsWorkflowMixin:
         index = self.selected_tts_segment_index
         if index is None or not (0 <= index < len(self.tts_segments)):
             return
+        if self.tts_engine_key() == "local":
+            profile = self.selected_tts_voice_profile()
+            if not profile:
+                self.show_error("Error", "Please create and select a ready voice profile.")
+                return
+            self.tts_segments[index].update(self.local_tts_segment_voice_fields(profile))
+            self.refresh_tts_blocks_list()
+            self.tts_blocks_list.setCurrentRow(index)
+            return
         try:
             voice_label, voice_short_name = self.selected_voice_assignment()
         except ValueError as exc:
@@ -688,6 +827,19 @@ class TtsWorkflowMixin:
 
     def apply_current_voice_to_all_blocks(self):
         if not self.tts_segments:
+            return
+        if self.tts_engine_key() == "local":
+            profile = self.selected_tts_voice_profile()
+            if not profile:
+                self.show_error("Error", "Please create and select a ready voice profile.")
+                return
+            voice_fields = self.local_tts_segment_voice_fields(profile)
+            for segment in self.tts_segments:
+                segment.update(voice_fields)
+            self.refresh_tts_blocks_list()
+            if self.selected_tts_segment_index is not None:
+                self.tts_blocks_list.setCurrentRow(self.selected_tts_segment_index)
+            self.tts_status.setText(f"Applied current voice profile to {len(self.tts_segments)} block(s).")
             return
         try:
             voice_label, voice_short_name = self.selected_voice_assignment()
@@ -784,6 +936,45 @@ class TtsWorkflowMixin:
         self.save_user_settings()
         return save_path, segments
 
+    def collect_local_multi_tts_options(self):
+        save_path = self.tts_output_picker.text()
+        if not save_path:
+            raise ValueError("Please choose where to save the MP3.")
+        save_path = ensure_mp3_suffix(save_path)
+        if not os.path.isdir(os.path.dirname(os.path.abspath(save_path))):
+            raise ValueError("The output folder does not exist.")
+        if self.is_detecting_language:
+            raise ValueError("Language detection is still running. Please wait a moment.")
+        if self.input_file_error_message:
+            raise ValueError(self.input_file_error_message)
+        profiles = self.ready_tts_voice_profiles()
+        if len(profiles) < 2:
+            raise ValueError("Local multi-voice requires at least two ready voice profiles.")
+        if not local_tts_model_ready():
+            raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 first.")
+        if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
+            raise ValueError("CUDA is not available in the current ML runtime on this machine.")
+        if not self.tts_segments:
+            self.split_tts_document_into_blocks()
+        profiles_by_id = {profile["id"]: profile for profile in profiles}
+        segments = []
+        for index, segment in enumerate(self.tts_segments, start=1):
+            text = (segment.get("text") or "").strip()
+            profile_id = (segment.get("voice_profile_id") or "").strip()
+            if not text:
+                continue
+            if not profile_id:
+                raise ValueError(f"Block {index} has no local voice profile selected.")
+            profile = profiles_by_id.get(profile_id)
+            if not profile:
+                raise ValueError(f"Block {index} uses a voice profile that is no longer ready.")
+            segments.append({"text": text, "profile": profile})
+        if not segments:
+            raise ValueError("No text blocks are ready for generation.")
+        self.tts_output_picker.set_text(save_path)
+        self.save_user_settings()
+        return save_path, segments, self.tts_local_device_key(), self.tts_local_preset_key()
+
     @staticmethod
     def expand_multi_voice_segments(segments):
         expanded_segments = []
@@ -801,7 +992,10 @@ class TtsWorkflowMixin:
 
     def start_tts_conversion(self):
         if self.tts_engine_key() == "local":
-            self.start_local_tts_conversion()
+            if self.tts_mode_index() == 1:
+                self.start_local_multi_tts_conversion()
+            else:
+                self.start_local_tts_conversion()
             return
         if self.tts_mode_index() == 1:
             self.start_multi_voice_conversion()
@@ -830,6 +1024,30 @@ class TtsWorkflowMixin:
             return
         self.start_tts_busy("Generating multi-voice audio...", percent=True)
         threading.Thread(target=self.multi_voice_conversion_worker, args=(save_path, segments), daemon=True).start()
+
+    def start_local_multi_tts_conversion(self):
+        try:
+            save_path, segments, device, preset = self.collect_local_multi_tts_options()
+        except ValueError as exc:
+            self.tts_status.setText("Error.")
+            self.show_error("Local TTS", str(exc))
+            return
+        python_path = ml_python_path()
+        worker_path = local_tts_worker_path()
+        if not python_path.is_file():
+            self.tts_status.setText("Local TTS environment missing.")
+            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            return
+        if not worker_path.is_file():
+            self.tts_status.setText("Local TTS worker missing.")
+            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            return
+        self.start_tts_busy("Starting local multi-voice TTS...", percent=True)
+        threading.Thread(
+            target=self.local_multi_tts_conversion_worker,
+            args=(python_path, worker_path, save_path, segments, device, preset),
+            daemon=True,
+        ).start()
 
     def confirm_xtts_model_license(self):
         return self.ask_question(
@@ -955,6 +1173,71 @@ class TtsWorkflowMixin:
             daemon=True,
         ).start()
 
+    def local_tts_worker_command(self, python_path, worker_path, text_path, output_path, profile, device, preset):
+        command = [
+            str(python_path),
+            "-u",
+            str(worker_path),
+            "--text-file",
+            str(text_path),
+            "--output",
+            str(output_path),
+            "--language",
+            profile["language_code"],
+            "--device",
+            device,
+            "--preset",
+            preset,
+            "--model-dir",
+            str(local_tts_model_dir()),
+        ]
+        for reference_path in profile["reference_paths"]:
+            command.extend(["--speaker-wav", reference_path])
+        return command
+
+    def run_local_tts_worker_command(self, command, progress_start=0.0, progress_end=100.0):
+        recent_output = []
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(
+            command,
+            cwd=str(external_base_dir()),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=creationflags,
+        )
+        self.tts_process = process
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("PROGRESS: "):
+                    try:
+                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
+                    except ValueError:
+                        continue
+                    mapped_progress = progress_start + ((progress_end - progress_start) * (progress_percent / 100))
+                    self.post(self.update_tts_progress_percent, mapped_progress)
+                    continue
+                recent_output.append(line)
+                recent_output = recent_output[-12:]
+                if line.startswith("STATUS: "):
+                    self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
+                if self.tts_cancel_requested and process.poll() is None:
+                    process.terminate()
+            return_code = process.wait()
+            if self.tts_cancel_requested:
+                raise TtsCancelled()
+            if return_code != 0:
+                raise RuntimeError("\n".join(recent_output[-8:]) or f"Local TTS exited with code {return_code}.")
+        finally:
+            self.tts_process = None
+
     def local_tts_conversion_worker(
         self,
         python_path,
@@ -966,7 +1249,6 @@ class TtsWorkflowMixin:
         preset,
         cached_text,
     ):
-        recent_output = []
         try:
             text = cached_text if cached_text is not None else read_input_file(input_path)
             if self.tts_cancel_requested:
@@ -982,67 +1264,82 @@ class TtsWorkflowMixin:
                 wav_path = temp_dir / "local-tts.wav"
                 temp_mp3_path = temp_dir / Path(save_path).name
                 text_path.write_text(text.strip(), encoding="utf-8")
-                command = [
-                    str(python_path),
-                    "-u",
-                    str(worker_path),
-                    "--text-file",
-                    str(text_path),
-                    "--output",
-                    str(wav_path),
-                    "--language",
-                    profile["language_code"],
-                    "--device",
+                command = self.local_tts_worker_command(
+                    python_path,
+                    worker_path,
+                    text_path,
+                    wav_path,
+                    profile,
                     device,
-                    "--preset",
                     preset,
-                    "--model-dir",
-                    str(local_tts_model_dir()),
-                ]
-                for reference_path in profile["reference_paths"]:
-                    command.extend(["--speaker-wav", reference_path])
-                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                process = subprocess.Popen(
-                    command,
-                    cwd=str(external_base_dir()),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=creationflags,
                 )
-                self.tts_process = process
-                assert process.stdout is not None
-                for raw_line in process.stdout:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    if line.startswith("PROGRESS: "):
-                        try:
-                            progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                        except ValueError:
-                            continue
-                        self.post(self.update_tts_progress_percent, progress_percent)
-                        continue
-                    recent_output.append(line)
-                    recent_output = recent_output[-12:]
-                    if line.startswith("STATUS: "):
-                        self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
-                    if self.tts_cancel_requested and process.poll() is None:
-                        process.terminate()
-                return_code = process.wait()
-                if self.tts_cancel_requested:
-                    raise TtsCancelled()
-                if return_code != 0:
-                    raise RuntimeError("\n".join(recent_output[-8:]) or f"Local TTS exited with code {return_code}.")
+                self.run_local_tts_worker_command(command, progress_start=0, progress_end=95)
                 self.post(self.tts_status.setText, "Converting local TTS audio to MP3...")
                 self.post(self.update_tts_progress_percent, 96)
                 convert_audio_to_mp3(wav_path, temp_mp3_path)
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
                 os.replace(temp_mp3_path, save_path)
+                self.post(self.update_tts_progress_percent, 100)
+            self.post(self.conversion_succeeded, save_path)
+        except TtsCancelled:
+            self.post(self.conversion_cancelled)
+        except (OSError, RuntimeError, TimeoutError, ValueError, AssertionError) as exc:
+            self.post(self.conversion_failed, str(exc))
+        finally:
+            self.tts_process = None
+            self.post(self.finish_tts_conversion)
+
+    def local_multi_tts_conversion_worker(self, python_path, worker_path, save_path, segments, device, preset):
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="voicebridge-local-multi-tts-",
+                dir=Path(save_path).resolve().parent,
+            ) as temp_dir_name:
+                temp_dir = Path(temp_dir_name)
+                part_paths = []
+                total = max(1, len(segments))
+                for index, segment in enumerate(segments, start=1):
+                    if self.tts_cancel_requested:
+                        raise TtsCancelled()
+                    text = segment["text"].strip()
+                    if not text:
+                        continue
+                    text_path = temp_dir / f"block-{index:04d}.txt"
+                    wav_path = temp_dir / f"block-{index:04d}.wav"
+                    mp3_path = temp_dir / f"block-{index:04d}.mp3"
+                    text_path.write_text(text, encoding="utf-8")
+                    self.post(self.tts_status.setText, f"Generating local block {index}/{len(segments)}...")
+                    command = self.local_tts_worker_command(
+                        python_path,
+                        worker_path,
+                        text_path,
+                        wav_path,
+                        segment["profile"],
+                        device,
+                        preset,
+                    )
+                    progress_start = ((index - 1) / total) * 88
+                    progress_end = (index / total) * 88
+                    self.run_local_tts_worker_command(command, progress_start=progress_start, progress_end=progress_end)
+                    if self.tts_cancel_requested:
+                        raise TtsCancelled()
+                    self.post(self.tts_status.setText, f"Converting local block {index}/{len(segments)} to MP3...")
+                    convert_audio_to_mp3(wav_path, mp3_path)
+                    part_paths.append(mp3_path)
+                    self.post(self.update_tts_progress_percent, progress_end)
+                if not part_paths:
+                    raise ValueError("No text blocks are ready for generation.")
+                self.post(self.tts_status.setText, "Merging local voice blocks...")
+                self.post(self.update_tts_progress_percent, 94)
+                temp_output = temp_dir / Path(save_path).name
+                if len(part_paths) == 1:
+                    shutil.copy2(part_paths[0], temp_output)
+                else:
+                    concatenate_mp3_files(part_paths, temp_output)
+                if self.tts_cancel_requested:
+                    raise TtsCancelled()
+                os.replace(temp_output, save_path)
                 self.post(self.update_tts_progress_percent, 100)
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:
@@ -1418,18 +1715,36 @@ class TtsWorkflowMixin:
         index = 1 if index == 1 else 0
         if not hasattr(self, "tts_mode_stack"):
             return
+        if index == 1 and self.tts_engine_key() == "local" and not self.local_multi_voice_available():
+            index = 0
         self.tts_mode_stack.setCurrentIndex(index)
         self.tts_mode_stack.setVisible(index == 1)
         self.tts_single_mode_button.setChecked(index == 0)
         self.tts_multi_mode_button.setChecked(index == 1)
-        self.tts_mode_note.setText(
-            "Uses the selected voice and speed for the whole document."
-            if index == 0
-            else "Split the document into blocks and assign voice or speed per block."
-        )
+        self.update_tts_mode_note()
+        self.update_block_settings_controls()
+        self.refresh_block_voice_combo_for_engine()
         self.tts_mode_stack.updateGeometry()
         self.update_tts_button_state()
         self.save_user_settings()
+
+    def update_tts_mode_note(self):
+        if not hasattr(self, "tts_mode_note"):
+            return
+        index = self.tts_mode_index()
+        local = self.tts_engine_key() == "local"
+        if index == 0:
+            text = "Uses the selected voice and speed for the whole document."
+            if local:
+                text = "Uses the selected voice profile for the whole document."
+        elif local:
+            text = (
+                "Split the document into blocks and assign voice profiles per block. "
+                "Long local blocks keep the same profile when XTTS splits them internally."
+            )
+        else:
+            text = "Split the document into blocks and assign voice or speed per block."
+        self.tts_mode_note.setText(text)
 
     def build_multi_tts_tab(self):
         tab = QWidget()
@@ -1461,23 +1776,25 @@ class TtsWorkflowMixin:
         self.block_rate_combo = QComboBox()
         self.block_rate_combo.addItems(RATE_CHOICES)
         self.block_rate_combo.setCurrentText(DEFAULT_RATE)
-        right.content_layout.addWidget(QLabel("Block voice"))
+        self.block_voice_label = QLabel("Block voice")
+        right.content_layout.addWidget(self.block_voice_label)
         right.content_layout.addWidget(self.block_voice_combo)
         rate_row = QHBoxLayout()
-        rate_row.addWidget(QLabel("Block speed"))
+        self.block_rate_label = QLabel("Block speed")
+        rate_row.addWidget(self.block_rate_label)
         rate_row.addWidget(self.block_rate_combo)
         rate_row.addStretch(1)
         right.content_layout.addLayout(rate_row)
         settings_row = QHBoxLayout()
         apply_selected = QPushButton("Apply to block")
-        apply_current = QPushButton("Use current voice")
-        apply_all = QPushButton("Use current voice for all")
+        self.apply_current_block_button = QPushButton("Use current voice")
+        self.apply_all_blocks_button = QPushButton("Use current voice for all")
         apply_selected.clicked.connect(self.apply_block_settings_to_selected)
-        apply_current.clicked.connect(self.apply_current_voice_to_selected_block)
-        apply_all.clicked.connect(self.apply_current_voice_to_all_blocks)
+        self.apply_current_block_button.clicked.connect(self.apply_current_voice_to_selected_block)
+        self.apply_all_blocks_button.clicked.connect(self.apply_current_voice_to_all_blocks)
         settings_row.addWidget(apply_selected)
-        settings_row.addWidget(apply_current)
-        settings_row.addWidget(apply_all)
+        settings_row.addWidget(self.apply_current_block_button)
+        settings_row.addWidget(self.apply_all_blocks_button)
         right.content_layout.addLayout(settings_row)
         self.tts_block_preview = QPlainTextEdit()
         self.tts_block_preview.setReadOnly(True)

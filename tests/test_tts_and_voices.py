@@ -70,3 +70,25 @@ def test_expand_multi_voice_segments_keeps_voice_and_rate_on_internal_chunks() -
     assert all(segment["voice_short_name"] == "it-IT-IsabellaNeural" for segment in expanded)
     assert all(segment["rate"] == "+0%" for segment in expanded)
     assert expanded[0]["text"].startswith("1, Introduzione.")
+
+
+def test_local_tts_segment_fields_keep_profile_language() -> None:
+    profile = {
+        "id": "profile-1",
+        "name": "Marco",
+        "language_code": "it",
+        "profile_type": "reference",
+        "reference_paths": [r"C:\voices\marco.wav"],
+        "consent_confirmed": True,
+        "notes": "",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+
+    fields = TtsWorkflowMixin.local_tts_segment_voice_fields(profile)
+    summary = TtsWorkflowMixin.tts_segment_summary(0, {"text": "Ciao", **fields})
+
+    assert fields["voice_profile_id"] == "profile-1"
+    assert fields["language_code"] == "it"
+    assert "Marco (Italian)" in summary
+    assert "+0%" not in summary

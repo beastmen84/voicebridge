@@ -148,7 +148,7 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
-3. Se esiste un sidecar `nome.voicebridge-tts.json`, usare `TTS block` per agganciare subito il range a un blocco generato.
+3. Se esiste un sidecar `nome.voicebridge-tts.json`, usare la scheda `TTS blocks` sotto la waveform: click su un blocco per agganciare il range e leggere il testo associato.
 4. Usare la waveform, lo zoom o i campi `Start` / `End` per rifinire l'intervallo con passo da 10 ms e ascoltare la selezione.
 5. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
 6. Salvare un nuovo file audio e premere `Clean audio`.

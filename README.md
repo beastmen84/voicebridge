@@ -89,6 +89,9 @@ Questo workflow richiede connessione internet quando l'engine selezionato e' `Ed
 Il pulsante `Cancel` annulla la generazione TTS in corso. L'app scrive su file temporanei e sostituisce l'MP3 finale solo a generazione completata, quindi un annullamento non lascia output finali parziali.
 La modalita' multi-voce normalizza il testo, divide internamente i blocchi lunghi mantenendo la stessa voce/velocita'
 e unisce le parti temporanee in un unico MP3 finale; per l'unione usa `ffmpeg` dal bundle completo.
+Quando l'output viene generato a blocchi, l'app salva accanto all'MP3 anche `nome.voicebridge-tts.json` con la
+timeline dei blocchi effettivamente generati. Local TTS crea questa mappa anche in modalita' singola quando XTTS
+divide internamente il testo in chunk.
 Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani tecnici conviene preferire una voce nativa `it-IT`.
 
 ### Voice Profiles e Local TTS
@@ -145,9 +148,10 @@ CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file pi
 
 1. Aprire `Audio Cleanup`.
 2. Scegliere un file audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` o `.ogg`.
-3. Usare la waveform, lo zoom o i campi `Start` / `End` per impostare l'intervallo con passo da 10 ms e ascoltare la selezione.
-4. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
-5. Salvare un nuovo file audio e premere `Clean audio`.
+3. Se esiste un sidecar `nome.voicebridge-tts.json`, usare `TTS block` per agganciare subito il range a un blocco generato.
+4. Usare la waveform, lo zoom o i campi `Start` / `End` per rifinire l'intervallo con passo da 10 ms e ascoltare la selezione.
+5. Scegliere `Cut range`, `Replace with silence` o `Fade range to silence`.
+6. Salvare un nuovo file audio e premere `Clean audio`.
 
 Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche audio creati altrove. Durante l'anteprima della sorgente, la waveform mostra il punto di riproduzione corrente. Usa `ffmpeg` dal bundle completo.
 

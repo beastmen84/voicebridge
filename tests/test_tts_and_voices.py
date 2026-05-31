@@ -69,6 +69,8 @@ def test_expand_multi_voice_segments_keeps_voice_and_rate_on_internal_chunks() -
     assert len(expanded) > 1
     assert all(segment["voice_short_name"] == "it-IT-IsabellaNeural" for segment in expanded)
     assert all(segment["rate"] == "+0%" for segment in expanded)
+    assert all(segment["source_block_index"] == 1 for segment in expanded)
+    assert [segment["chunk_index"] for segment in expanded] == list(range(1, len(expanded) + 1))
     assert expanded[0]["text"].startswith("1, Introduzione.")
 
 

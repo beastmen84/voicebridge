@@ -380,6 +380,17 @@ def probe_audio_info(ffmpeg, media_path) -> AudioInfo:
     }
 
 
+def audio_duration_seconds(media_path, ffmpeg=None):
+    ffmpeg = ffmpeg or find_ffmpeg_exe()
+    if not ffmpeg:
+        raise RuntimeError("Could not find ffmpeg to inspect audio duration.")
+    info = probe_audio_info(ffmpeg, media_path)
+    duration = info.get("duration_seconds")
+    if not info.get("has_audio") or duration is None or duration <= 0:
+        raise ValueError("Could not detect the selected audio duration.")
+    return float(duration)
+
+
 def probe_video_info(ffmpeg, media_path) -> VideoInfo:
     output = _ffmpeg_input_info(ffmpeg, media_path)
     info: VideoInfo = {

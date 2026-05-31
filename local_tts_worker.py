@@ -20,6 +20,7 @@ from voicebridge.tts_text import (
 from voicebridge.tts_text import (
     normalize_tts_text as shared_normalize_tts_text,
 )
+from voicebridge.tts_timeline import write_local_tts_chunk_timeline
 
 DEFAULT_XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
@@ -117,6 +118,11 @@ def wav_audio_signature(params):
     return params.nchannels, params.sampwidth, params.framerate, params.comptype
 
 
+def wav_duration_seconds(path):
+    with wave.open(str(path), "rb") as wav_file:
+        return wav_file.getnframes() / max(1, wav_file.getframerate())
+
+
 def merge_wav_files(input_paths, output_path):
     input_paths = [Path(path) for path in input_paths]
     if not input_paths:
@@ -158,10 +164,24 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, infe
                 **settings,
             )
             progress(92)
-            return
+            duration = wav_duration_seconds(output_path)
+            return [
+                {
+                    "id": "block-0001",
+                    "index": 1,
+                    "source_block_index": 1,
+                    "chunk_index": 1,
+                    "start_seconds": 0.0,
+                    "end_seconds": duration,
+                    "duration_seconds": duration,
+                    "text": chunks[0],
+                }
+            ]
 
         generation_start = 35
         generation_end = 92
+        timeline_chunks = []
+        cursor = 0.0
         for index, chunk in enumerate(chunks, start=1):
             status(f"Generating local TTS audio chunk {index}/{len(chunks)}...")
             chunk_path = output_path.with_name(f"{output_path.stem}.part-{index:03d}{output_path.suffix}")
@@ -173,10 +193,27 @@ def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, infe
                 file_path=str(chunk_path),
                 **settings,
             )
+            duration = wav_duration_seconds(chunk_path)
+            timeline_chunks.append(
+                {
+                    "id": f"block-0001-chunk-{index:04d}",
+                    "index": index,
+                    "source_block_index": 1,
+                    "chunk_index": index,
+                    "start_seconds": cursor,
+                    "end_seconds": cursor + duration,
+                    "duration_seconds": duration,
+                    "text": chunk,
+                }
+            )
+            cursor += duration
+            if index < len(chunks):
+                cursor += XTTS_CHUNK_SILENCE_SECONDS
             progress(generation_start + ((generation_end - generation_start) * index / len(chunks)))
         status("Merging local TTS audio chunks...")
         merge_wav_files(chunk_paths, output_path)
         progress(94)
+        return timeline_chunks
     finally:
         for chunk_path in chunk_paths:
             with suppress(OSError):
@@ -268,10 +305,24 @@ def synthesize(args):
     preset_key = normalize_local_tts_preset_key(args.preset)
     status(f"Prepared {len(chunks)} local TTS chunk(s).")
     status(f"Using XTTS preset: {local_tts_preset_label(preset_key)}.")
-    synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, local_tts_preset_settings(preset_key))
+    timeline_chunks = synthesize_text_chunks(
+        tts,
+        chunks,
+        speaker_wav,
+        language,
+        output_path,
+        local_tts_preset_settings(preset_key),
+    )
     progress(95)
     if not output_path.is_file() or output_path.stat().st_size <= 0:
         raise RuntimeError("Local TTS did not create an audio file.")
+    if args.timeline_json:
+        write_local_tts_chunk_timeline(
+            args.timeline_json,
+            audio_path=output_path,
+            chunks=timeline_chunks,
+            total_duration_seconds=wav_duration_seconds(output_path),
+        )
     status(f"Done: {output_path}")
     progress(100)
 
@@ -288,6 +339,7 @@ def parse_args():
     parser.add_argument("--preset", default=DEFAULT_LOCAL_TTS_PRESET_KEY, choices=list(LOCAL_TTS_PRESETS))
     parser.add_argument("--model", default=DEFAULT_XTTS_MODEL)
     parser.add_argument("--model-dir")
+    parser.add_argument("--timeline-json")
     parser.add_argument("--offline", action="store_true")
     return parser.parse_args()
 

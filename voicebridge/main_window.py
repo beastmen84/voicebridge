@@ -211,6 +211,9 @@ class VoiceBridgeQt(
     audio_cleanup_start_spin: QDoubleSpinBox
     audio_cleanup_end_spin: QDoubleSpinBox
     audio_cleanup_selection_note: QLabel
+    audio_cleanup_tts_timeline: dict[str, Any] | None
+    audio_cleanup_tts_block_combo: QComboBox
+    audio_cleanup_tts_block_status: QLabel
     audio_cleanup_waveform: AudioWaveformWidget
     audio_cleanup_waveform_status: QLabel
     audio_cleanup_waveform_zoom_combo: QComboBox
@@ -393,6 +396,7 @@ class VoiceBridgeQt(
         self.audio_cleanup_last_auto_output_path = ""
         self.audio_cleanup_duration_seconds = 0.0
         self.audio_cleanup_log_lines = []
+        self.audio_cleanup_tts_timeline = None
         self.audio_cleanup_waveform_generation = 0
         self.audio_cleanup_waveform_syncing = False
         self.audio_cleanup_waveform_view_syncing = False

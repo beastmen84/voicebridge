@@ -61,7 +61,7 @@ from voicebridge.local_tts_presets import (
     local_tts_preset_description,
     normalize_local_tts_preset_key,
 )
-from voicebridge.media_tools import concatenate_mp3_files, convert_audio_to_mp3
+from voicebridge.media_tools import audio_duration_seconds, concatenate_mp3_files, convert_audio_to_mp3
 from voicebridge.models import TtsSegment
 from voicebridge.readers import (
     SUPPORTED_FILETYPES,
@@ -75,6 +75,7 @@ from voicebridge.readers import (
 )
 from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
 from voicebridge.tts_text import split_tts_text_for_tts
+from voicebridge.tts_timeline import load_local_tts_chunk_timeline, remove_tts_timeline, write_tts_timeline
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_profiles import (
@@ -912,6 +913,7 @@ class TtsWorkflowMixin:
         return input_path, save_path, profile, self.tts_local_device_key(), self.tts_local_preset_key()
 
     def collect_multi_tts_options(self):
+        source_path = self.tts_input_picker.text()
         save_path = self.tts_output_picker.text()
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
@@ -923,6 +925,7 @@ class TtsWorkflowMixin:
         segments = []
         for index, segment in enumerate(self.tts_segments, start=1):
             text = segment.get("text", "").strip()
+            voice_label = segment.get("voice_label", "").strip()
             voice_short_name = segment.get("voice_short_name", "").strip()
             rate = segment.get("rate", DEFAULT_RATE)
             if not text:
@@ -931,14 +934,21 @@ class TtsWorkflowMixin:
                 raise ValueError(f"Block {index} has no voice selected.")
             if rate not in RATE_CHOICES:
                 raise ValueError(f"Block {index} has an invalid speed.")
-            segments.append({"text": text, "voice_short_name": voice_short_name, "rate": rate})
+            segments.append({
+                "text": text,
+                "voice_label": voice_label,
+                "voice_short_name": voice_short_name,
+                "rate": rate,
+                "source_block_index": index,
+            })
         if not segments:
             raise ValueError("No text blocks are ready for generation.")
         self.tts_output_picker.set_text(save_path)
         self.save_user_settings()
-        return save_path, segments
+        return source_path, save_path, segments
 
     def collect_local_multi_tts_options(self):
+        source_path = self.tts_input_picker.text()
         save_path = self.tts_output_picker.text()
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
@@ -970,27 +980,89 @@ class TtsWorkflowMixin:
             profile = profiles_by_id.get(profile_id)
             if not profile:
                 raise ValueError(f"Block {index} uses a voice profile that is no longer ready.")
-            segments.append({"text": text, "profile": profile})
+            segments.append({"text": text, "profile": profile, "source_block_index": index})
         if not segments:
             raise ValueError("No text blocks are ready for generation.")
         self.tts_output_picker.set_text(save_path)
         self.save_user_settings()
-        return save_path, segments, self.tts_local_device_key(), self.tts_local_preset_key()
+        return source_path, save_path, segments, self.tts_local_device_key(), self.tts_local_preset_key()
 
     @staticmethod
     def expand_multi_voice_segments(segments):
         expanded_segments = []
-        for segment in segments:
+        for source_index, segment in enumerate(segments, start=1):
             chunks = split_tts_text_for_tts(segment["text"])
             if not chunks:
                 continue
-            for chunk in chunks:
+            for chunk_index, chunk in enumerate(chunks, start=1):
                 expanded_segments.append({
                     "text": chunk,
+                    "voice_label": segment.get("voice_label", ""),
                     "voice_short_name": segment["voice_short_name"],
                     "rate": segment["rate"],
+                    "source_block_index": segment.get("source_block_index", source_index),
+                    "chunk_index": chunk_index,
                 })
         return expanded_segments
+
+    @staticmethod
+    def tts_timeline_block(
+        *,
+        index,
+        source_block_index,
+        chunk_index,
+        start_seconds,
+        duration_seconds,
+        text,
+        voice_label="",
+        voice_short_name="",
+        voice_profile_id="",
+        language_code="",
+        rate="",
+    ):
+        end_seconds = start_seconds + max(0.0, duration_seconds)
+        block = {
+            "id": f"block-{source_block_index:04d}-chunk-{chunk_index:04d}",
+            "index": index,
+            "source_block_index": source_block_index,
+            "chunk_index": chunk_index,
+            "start_seconds": start_seconds,
+            "end_seconds": end_seconds,
+            "duration_seconds": duration_seconds,
+            "text": text,
+        }
+        for key, value in (
+            ("voice_label", voice_label),
+            ("voice_short_name", voice_short_name),
+            ("voice_profile_id", voice_profile_id),
+            ("language_code", language_code),
+            ("rate", rate),
+        ):
+            if value:
+                block[key] = value
+        return block
+
+    @classmethod
+    def local_tts_timeline_blocks(cls, chunks, profile, source_block_index=1, offset_seconds=0.0, start_index=1):
+        blocks = []
+        voice_label = voice_profile_display_label(profile)
+        for position, chunk in enumerate(chunks, start=start_index):
+            start_seconds = offset_seconds + float(chunk["start_seconds"])
+            duration_seconds = float(chunk["end_seconds"]) - float(chunk["start_seconds"])
+            blocks.append(
+                cls.tts_timeline_block(
+                    index=position,
+                    source_block_index=source_block_index,
+                    chunk_index=int(chunk.get("chunk_index") or position),
+                    start_seconds=start_seconds,
+                    duration_seconds=duration_seconds,
+                    text=chunk.get("text", ""),
+                    voice_label=voice_label,
+                    voice_profile_id=profile["id"],
+                    language_code=profile["language_code"],
+                )
+            )
+        return blocks
 
     def start_tts_conversion(self):
         if self.tts_engine_key() == "local":
@@ -1019,17 +1091,21 @@ class TtsWorkflowMixin:
 
     def start_multi_voice_conversion(self):
         try:
-            save_path, segments = self.collect_multi_tts_options()
+            source_path, save_path, segments = self.collect_multi_tts_options()
         except ValueError as exc:
             self.tts_status.setText("Error.")
             self.show_error("Error", str(exc))
             return
         self.start_tts_busy("Generating multi-voice audio...", percent=True)
-        threading.Thread(target=self.multi_voice_conversion_worker, args=(save_path, segments), daemon=True).start()
+        threading.Thread(
+            target=self.multi_voice_conversion_worker,
+            args=(source_path, save_path, segments),
+            daemon=True,
+        ).start()
 
     def start_local_multi_tts_conversion(self):
         try:
-            save_path, segments, device, preset = self.collect_local_multi_tts_options()
+            source_path, save_path, segments, device, preset = self.collect_local_multi_tts_options()
         except ValueError as exc:
             self.tts_status.setText("Error.")
             self.show_error("Local TTS", str(exc))
@@ -1047,7 +1123,7 @@ class TtsWorkflowMixin:
         self.start_tts_busy("Starting local multi-voice TTS...", percent=True)
         threading.Thread(
             target=self.local_multi_tts_conversion_worker,
-            args=(python_path, worker_path, save_path, segments, device, preset),
+            args=(python_path, worker_path, source_path, save_path, segments, device, preset),
             daemon=True,
         ).start()
 
@@ -1175,7 +1251,17 @@ class TtsWorkflowMixin:
             daemon=True,
         ).start()
 
-    def local_tts_worker_command(self, python_path, worker_path, text_path, output_path, profile, device, preset):
+    def local_tts_worker_command(
+        self,
+        python_path,
+        worker_path,
+        text_path,
+        output_path,
+        profile,
+        device,
+        preset,
+        timeline_path=None,
+    ):
         command = [
             str(python_path),
             "-u",
@@ -1193,6 +1279,8 @@ class TtsWorkflowMixin:
             "--model-dir",
             str(local_tts_model_dir()),
         ]
+        if timeline_path is not None:
+            command.extend(["--timeline-json", str(timeline_path)])
         for reference_path in profile["reference_paths"]:
             command.extend(["--speaker-wav", reference_path])
         return command
@@ -1252,6 +1340,7 @@ class TtsWorkflowMixin:
         cached_text,
     ):
         try:
+            remove_tts_timeline(save_path)
             text = cached_text if cached_text is not None else read_input_file(input_path)
             if self.tts_cancel_requested:
                 raise TtsCancelled()
@@ -1264,6 +1353,7 @@ class TtsWorkflowMixin:
                 temp_dir = Path(temp_dir_name)
                 text_path = temp_dir / "input.txt"
                 wav_path = temp_dir / "local-tts.wav"
+                worker_timeline_path = temp_dir / "local-tts.voicebridge-chunks.json"
                 temp_mp3_path = temp_dir / Path(save_path).name
                 text_path.write_text(text.strip(), encoding="utf-8")
                 command = self.local_tts_worker_command(
@@ -1274,6 +1364,7 @@ class TtsWorkflowMixin:
                     profile,
                     device,
                     preset,
+                    worker_timeline_path,
                 )
                 self.run_local_tts_worker_command(command, progress_start=0, progress_end=95)
                 self.post(self.tts_status.setText, "Converting local TTS audio to MP3...")
@@ -1281,7 +1372,33 @@ class TtsWorkflowMixin:
                 convert_audio_to_mp3(wav_path, temp_mp3_path)
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
+                chunks = load_local_tts_chunk_timeline(worker_timeline_path)
+                if chunks:
+                    timeline_blocks = self.local_tts_timeline_blocks(chunks, profile)
+                else:
+                    duration = audio_duration_seconds(temp_mp3_path)
+                    timeline_blocks = [
+                        self.tts_timeline_block(
+                            index=1,
+                            source_block_index=1,
+                            chunk_index=1,
+                            start_seconds=0.0,
+                            duration_seconds=duration,
+                            text=text.strip(),
+                            voice_label=voice_profile_display_label(profile),
+                            voice_profile_id=profile["id"],
+                            language_code=profile["language_code"],
+                        )
+                    ]
                 os.replace(temp_mp3_path, save_path)
+                write_tts_timeline(
+                    save_path,
+                    engine="local",
+                    mode="single",
+                    source_path=input_path,
+                    blocks=timeline_blocks,
+                    total_duration_seconds=audio_duration_seconds(save_path),
+                )
                 self.post(self.update_tts_progress_percent, 100)
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:
@@ -1292,14 +1409,26 @@ class TtsWorkflowMixin:
             self.tts_process = None
             self.post(self.finish_tts_conversion)
 
-    def local_multi_tts_conversion_worker(self, python_path, worker_path, save_path, segments, device, preset):
+    def local_multi_tts_conversion_worker(
+        self,
+        python_path,
+        worker_path,
+        source_path,
+        save_path,
+        segments,
+        device,
+        preset,
+    ):
         try:
+            remove_tts_timeline(save_path)
             with tempfile.TemporaryDirectory(
                 prefix="voicebridge-local-multi-tts-",
                 dir=Path(save_path).resolve().parent,
             ) as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 part_paths = []
+                timeline_blocks = []
+                timeline_cursor = 0.0
                 total = max(1, len(segments))
                 for index, segment in enumerate(segments, start=1):
                     if self.tts_cancel_requested:
@@ -1310,6 +1439,7 @@ class TtsWorkflowMixin:
                     text_path = temp_dir / f"block-{index:04d}.txt"
                     wav_path = temp_dir / f"block-{index:04d}.wav"
                     mp3_path = temp_dir / f"block-{index:04d}.mp3"
+                    worker_timeline_path = temp_dir / f"block-{index:04d}.voicebridge-chunks.json"
                     text_path.write_text(text, encoding="utf-8")
                     self.post(self.tts_status.setText, f"Generating local block {index}/{len(segments)}...")
                     command = self.local_tts_worker_command(
@@ -1320,6 +1450,7 @@ class TtsWorkflowMixin:
                         segment["profile"],
                         device,
                         preset,
+                        worker_timeline_path,
                     )
                     progress_start = ((index - 1) / total) * 88
                     progress_end = (index / total) * 88
@@ -1329,6 +1460,33 @@ class TtsWorkflowMixin:
                     self.post(self.tts_status.setText, f"Converting local block {index}/{len(segments)} to MP3...")
                     convert_audio_to_mp3(wav_path, mp3_path)
                     part_paths.append(mp3_path)
+                    part_duration = audio_duration_seconds(mp3_path)
+                    chunks = load_local_tts_chunk_timeline(worker_timeline_path)
+                    if chunks:
+                        timeline_blocks.extend(
+                            self.local_tts_timeline_blocks(
+                                chunks,
+                                segment["profile"],
+                                source_block_index=segment["source_block_index"],
+                                offset_seconds=timeline_cursor,
+                                start_index=len(timeline_blocks) + 1,
+                            )
+                        )
+                    else:
+                        timeline_blocks.append(
+                            self.tts_timeline_block(
+                                index=len(timeline_blocks) + 1,
+                                source_block_index=segment["source_block_index"],
+                                chunk_index=1,
+                                start_seconds=timeline_cursor,
+                                duration_seconds=part_duration,
+                                text=text,
+                                voice_label=voice_profile_display_label(segment["profile"]),
+                                voice_profile_id=segment["profile"]["id"],
+                                language_code=segment["profile"]["language_code"],
+                            )
+                        )
+                    timeline_cursor += part_duration
                     self.post(self.update_tts_progress_percent, progress_end)
                 if not part_paths:
                     raise ValueError("No text blocks are ready for generation.")
@@ -1342,6 +1500,14 @@ class TtsWorkflowMixin:
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
                 os.replace(temp_output, save_path)
+                write_tts_timeline(
+                    save_path,
+                    engine="local",
+                    mode="multi",
+                    source_path=source_path,
+                    blocks=timeline_blocks,
+                    total_duration_seconds=audio_duration_seconds(save_path),
+                )
                 self.post(self.update_tts_progress_percent, 100)
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:
@@ -1369,6 +1535,7 @@ class TtsWorkflowMixin:
 
     def conversion_worker(self, input_path, save_path, voice, rate, cached_text):
         try:
+            remove_tts_timeline(save_path)
             text = cached_text if cached_text is not None else read_input_file(input_path)
             if self.tts_cancel_requested:
                 raise TtsCancelled()
@@ -1400,14 +1567,17 @@ class TtsWorkflowMixin:
         finally:
             self.post(self.finish_tts_conversion)
 
-    def multi_voice_conversion_worker(self, save_path, segments):
+    def multi_voice_conversion_worker(self, source_path, save_path, segments):
         try:
+            remove_tts_timeline(save_path)
             with tempfile.TemporaryDirectory(
                 prefix="voicebridge-tts-",
                 dir=Path(save_path).resolve().parent,
             ) as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 part_paths = []
+                timeline_blocks = []
+                timeline_cursor = 0.0
                 generation_segments = self.expand_multi_voice_segments(segments)
                 if not generation_segments:
                     raise ValueError("No text blocks are ready for generation after cleanup.")
@@ -1430,6 +1600,21 @@ class TtsWorkflowMixin:
                     if self.tts_cancel_requested:
                         raise TtsCancelled()
                     part_paths.append(part_path)
+                    part_duration = audio_duration_seconds(part_path)
+                    timeline_blocks.append(
+                        self.tts_timeline_block(
+                            index=len(timeline_blocks) + 1,
+                            source_block_index=segment["source_block_index"],
+                            chunk_index=segment["chunk_index"],
+                            start_seconds=timeline_cursor,
+                            duration_seconds=part_duration,
+                            text=segment["text"],
+                            voice_label=segment.get("voice_label", ""),
+                            voice_short_name=segment["voice_short_name"],
+                            rate=segment["rate"],
+                        )
+                    )
+                    timeline_cursor += part_duration
                     self.post(self.update_tts_progress_percent, (index / total) * 90)
                 self.post(self.tts_status.setText, "Merging audio blocks...")
                 self.post(self.update_tts_progress_percent, 95)
@@ -1441,6 +1626,14 @@ class TtsWorkflowMixin:
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
                 os.replace(temp_output, save_path)
+                write_tts_timeline(
+                    save_path,
+                    engine="edge",
+                    mode="multi",
+                    source_path=source_path,
+                    blocks=timeline_blocks,
+                    total_duration_seconds=audio_duration_seconds(save_path),
+                )
                 self.post(self.update_tts_progress_percent, 100)
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:

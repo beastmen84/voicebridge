@@ -33,6 +33,7 @@ from voicebridge.media_tools import (
     probe_audio_info,
     suggest_audio_cleanup_output_path,
 )
+from voicebridge.tts_timeline import load_tts_timeline_for_audio
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import Card, FilePicker
@@ -159,6 +160,84 @@ class AudioCleanupWorkflowMixin:
             f"{self.format_audio_cleanup_time(end)}"
         )
 
+    def reset_audio_cleanup_tts_timeline(self, status="No TTS block JSON found."):
+        if not hasattr(self, "audio_cleanup_tts_block_combo"):
+            return
+        self.audio_cleanup_tts_timeline = None
+        self.audio_cleanup_tts_block_combo.blockSignals(True)
+        try:
+            self.audio_cleanup_tts_block_combo.clear()
+            self.audio_cleanup_tts_block_combo.addItem("No TTS block map loaded", None)
+            self.audio_cleanup_tts_block_combo.setEnabled(False)
+        finally:
+            self.audio_cleanup_tts_block_combo.blockSignals(False)
+        self.audio_cleanup_tts_block_status.setText(status)
+
+    def load_audio_cleanup_tts_timeline(self, audio_path, duration_seconds):
+        if not hasattr(self, "audio_cleanup_tts_block_combo"):
+            return
+        timeline = load_tts_timeline_for_audio(audio_path)
+        if not timeline:
+            self.reset_audio_cleanup_tts_timeline()
+            return
+        duration = max(0.0, float(duration_seconds))
+        blocks = [
+            block
+            for block in timeline["blocks"]
+            if block["start_seconds"] < duration and block["end_seconds"] <= duration + 0.5
+        ]
+        if not blocks:
+            self.reset_audio_cleanup_tts_timeline("TTS block JSON found, but no usable ranges were detected.")
+            return
+        self.audio_cleanup_tts_timeline = {**timeline, "blocks": blocks}
+        self.audio_cleanup_tts_block_combo.blockSignals(True)
+        try:
+            self.audio_cleanup_tts_block_combo.clear()
+            self.audio_cleanup_tts_block_combo.addItem("Select TTS block range...", None)
+            for block in blocks:
+                self.audio_cleanup_tts_block_combo.addItem(self.audio_cleanup_tts_block_label(block), block)
+            self.audio_cleanup_tts_block_combo.setEnabled(not self.is_audio_cleanup_running)
+        finally:
+            self.audio_cleanup_tts_block_combo.blockSignals(False)
+        engine = str(timeline.get("engine") or "TTS").title()
+        self.audio_cleanup_tts_block_status.setText(f"{engine} block map loaded: {len(blocks)} range(s).")
+
+    def audio_cleanup_tts_block_label(self, block):
+        source_index = int(block.get("source_block_index") or block.get("index") or 1)
+        chunk_index = int(block.get("chunk_index") or 1)
+        block_ref = f"{source_index:02d}" if chunk_index <= 1 else f"{source_index:02d}.{chunk_index:02d}"
+        voice = (block.get("voice_label") or block.get("voice_short_name") or "TTS").split(" - ", 1)[0].strip()
+        text = re.sub(r"\s+", " ", block.get("text", "")).strip()
+        if len(text) > 70:
+            text = f"{text[:67].rstrip()}..."
+        return (
+            f"{block_ref} | {self.format_audio_cleanup_time(block['start_seconds'])} - "
+            f"{self.format_audio_cleanup_time(block['end_seconds'])} | {voice} | {text}"
+        )
+
+    def audio_cleanup_tts_block_changed(self):
+        block = self.audio_cleanup_tts_block_combo.currentData()
+        if not isinstance(block, dict):
+            return
+        self.stop_audio_cleanup_playback()
+        start = max(0.0, min(self.audio_cleanup_duration_seconds, float(block["start_seconds"])))
+        end = max(start, min(self.audio_cleanup_duration_seconds, float(block["end_seconds"])))
+        if end <= start:
+            return
+        self.audio_cleanup_start_spin.blockSignals(True)
+        self.audio_cleanup_end_spin.blockSignals(True)
+        try:
+            self.audio_cleanup_start_spin.setValue(start)
+            self.audio_cleanup_end_spin.setValue(end)
+        finally:
+            self.audio_cleanup_start_spin.blockSignals(False)
+            self.audio_cleanup_end_spin.blockSignals(False)
+        self.update_audio_cleanup_selection_note()
+        if hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_selection(start, end)
+            self.audio_cleanup_waveform.center_on(start + ((end - start) / 2))
+        self.update_audio_cleanup_button_state()
+
     def update_audio_cleanup_output(self, force=False):
         if not hasattr(self, "audio_cleanup_output_picker"):
             return
@@ -247,18 +326,21 @@ class AudioCleanupWorkflowMixin:
         if not input_path:
             self.audio_cleanup_duration_label.setText("No audio selected.")
             self.reset_audio_cleanup_waveform("No audio selected.")
+            self.reset_audio_cleanup_tts_timeline("No audio selected.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         audio_path = Path(input_path)
         if not audio_path.is_file():
             self.audio_cleanup_duration_label.setText("Selected audio file does not exist.")
             self.reset_audio_cleanup_waveform("No waveform loaded.")
+            self.reset_audio_cleanup_tts_timeline("No TTS block JSON found.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
             self.audio_cleanup_duration_label.setText("ffmpeg missing.")
             self.reset_audio_cleanup_waveform("ffmpeg missing.")
+            self.reset_audio_cleanup_tts_timeline("ffmpeg missing.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         try:
@@ -266,17 +348,20 @@ class AudioCleanupWorkflowMixin:
         except (OSError, RuntimeError, ValueError) as exc:
             self.audio_cleanup_duration_label.setText(f"Could not inspect audio: {exc}")
             self.reset_audio_cleanup_waveform("Waveform unavailable.")
+            self.reset_audio_cleanup_tts_timeline("No TTS block JSON loaded.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         duration = float(info.get("duration_seconds") or 0.0)
         if not info.get("has_audio") or duration <= 0:
             self.audio_cleanup_duration_label.setText("Could not detect an audio stream.")
             self.reset_audio_cleanup_waveform("Waveform unavailable.")
+            self.reset_audio_cleanup_tts_timeline("No TTS block JSON loaded.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         self.audio_cleanup_duration_seconds = duration
         self.audio_cleanup_duration_label.setText(f"Duration: {self.format_audio_cleanup_time(duration)}")
         self.update_audio_cleanup_time_limits(duration)
+        self.load_audio_cleanup_tts_timeline(audio_path, duration)
         self.start_audio_cleanup_waveform_load(ffmpeg, audio_path, duration)
 
     def update_audio_cleanup_time_limits(self, duration):
@@ -566,10 +651,14 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_input_picker,
             self.audio_cleanup_output_picker,
             self.audio_cleanup_action_combo,
+            self.audio_cleanup_tts_block_combo,
             self.audio_cleanup_start_spin,
             self.audio_cleanup_end_spin,
         ):
             widget.setEnabled(not self.is_audio_cleanup_running)
+        self.audio_cleanup_tts_block_combo.setEnabled(
+            bool(self.audio_cleanup_tts_timeline) and not self.is_audio_cleanup_running
+        )
         if hasattr(self, "audio_cleanup_waveform"):
             has_waveform = self.audio_cleanup_waveform.has_waveform()
             self.audio_cleanup_waveform.setEnabled(
@@ -785,6 +874,16 @@ class AudioCleanupWorkflowMixin:
             spin.valueChanged.connect(lambda _value: self.audio_cleanup_time_changed())
         self.audio_cleanup_selection_note = QLabel("Selection: 0.000s")
         self.audio_cleanup_selection_note.setObjectName("Muted")
+        self.audio_cleanup_tts_timeline = None
+        self.audio_cleanup_tts_block_combo = QComboBox()
+        self.audio_cleanup_tts_block_combo.addItem("No TTS block map loaded", None)
+        self.audio_cleanup_tts_block_combo.setEnabled(False)
+        self.audio_cleanup_tts_block_combo.currentIndexChanged.connect(
+            lambda _index: self.audio_cleanup_tts_block_changed()
+        )
+        self.audio_cleanup_tts_block_status = QLabel("No TTS block JSON found.")
+        self.audio_cleanup_tts_block_status.setObjectName("Muted")
+        self.audio_cleanup_tts_block_status.setWordWrap(True)
         settings_grid = QGridLayout()
         settings_grid.setContentsMargins(0, 0, 0, 0)
         settings_grid.setHorizontalSpacing(8)
@@ -795,9 +894,12 @@ class AudioCleanupWorkflowMixin:
         settings_grid.addWidget(self.audio_cleanup_start_spin, 1, 1)
         settings_grid.addWidget(QLabel("End"), 1, 2)
         settings_grid.addWidget(self.audio_cleanup_end_spin, 1, 3)
+        settings_grid.addWidget(QLabel("TTS block"), 2, 0)
+        settings_grid.addWidget(self.audio_cleanup_tts_block_combo, 2, 1, 1, 3)
         settings_card.content_layout.addLayout(settings_grid)
         settings_card.content_layout.addWidget(self.audio_cleanup_action_description)
         settings_card.content_layout.addWidget(self.audio_cleanup_selection_note)
+        settings_card.content_layout.addWidget(self.audio_cleanup_tts_block_status)
 
         grid.addWidget(files_card, 0, 0)
         grid.addWidget(settings_card, 0, 1)

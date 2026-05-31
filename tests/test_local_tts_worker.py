@@ -101,6 +101,14 @@ def test_merge_wav_files_inserts_short_silence_between_chunks(tmp_path: Path) ->
         assert wav_file.readframes(5) == b"\x01\x01\x00\x02\x02"
 
 
+def write_fake_tts_wav(path: str | Path) -> None:
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(1)
+        wav_file.setframerate(4)
+        wav_file.writeframes(b"\x01" * 4)
+
+
 def test_synthesize_text_chunks_passes_stable_xtts_settings(tmp_path: Path) -> None:
     class FakeTts:
         def __init__(self) -> None:
@@ -108,12 +116,14 @@ def test_synthesize_text_chunks_passes_stable_xtts_settings(tmp_path: Path) -> N
 
         def tts_to_file(self, **kwargs) -> None:
             self.calls.append(kwargs)
+            write_fake_tts_wav(kwargs["file_path"])
 
     tts = FakeTts()
 
-    synthesize_text_chunks(tts, ["Ciao mondo."], ["voice.wav"], "it", tmp_path / "output.wav")
+    timeline = synthesize_text_chunks(tts, ["Ciao mondo."], ["voice.wav"], "it", tmp_path / "output.wav")
 
     assert tts.calls[0]["text"] == "Ciao mondo;"
+    assert timeline[0]["duration_seconds"] == 1.0
     for key, value in XTTS_STABLE_INFERENCE_SETTINGS.items():
         assert tts.calls[0][key] == value
 
@@ -125,6 +135,7 @@ def test_synthesize_text_chunks_accepts_selected_xtts_settings(tmp_path: Path) -
 
         def tts_to_file(self, **kwargs) -> None:
             self.calls.append(kwargs)
+            write_fake_tts_wav(kwargs["file_path"])
 
     tts = FakeTts()
     settings = local_tts_preset_settings("balanced")

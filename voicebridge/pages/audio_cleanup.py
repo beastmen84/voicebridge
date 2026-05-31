@@ -612,19 +612,40 @@ class AudioCleanupWorkflowMixin:
         start_ms = max(0, round(start_seconds * 1000))
         resolved_path = Path(path).resolve()
         tracks_waveform = self.audio_cleanup_path_matches_waveform_source(resolved_path)
-        self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(resolved_path)))
-        self.audio_cleanup_media_player.setPosition(start_ms)
+        self.audio_cleanup_preview_pending_start_ms = start_ms
+        self.audio_cleanup_preview_pending_timer_ms = (
+            max(10_000, round(stop_after_seconds * 1000) + 5000) if stop_after_seconds else None
+        )
         self.audio_cleanup_preview_tracks_waveform = tracks_waveform
         if tracks_waveform and hasattr(self, "audio_cleanup_waveform"):
             self.audio_cleanup_waveform.center_on(start_ms / 1000)
             self.audio_cleanup_waveform.set_playhead(start_ms / 1000)
         elif hasattr(self, "audio_cleanup_waveform"):
             self.audio_cleanup_waveform.set_playhead(None)
+        self.audio_cleanup_media_player.setSource(QUrl.fromLocalFile(str(resolved_path)))
         if stop_after_seconds:
             self.audio_cleanup_preview_end_ms = start_ms + max(1, round(stop_after_seconds * 1000))
+        self.audio_cleanup_start_pending_preview_if_ready(self.audio_cleanup_media_player.mediaStatus())
+
+    def audio_cleanup_start_pending_preview_if_ready(self, status):
+        if self.audio_cleanup_preview_pending_start_ms is None:
+            return
+        if status not in {
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferingMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        }:
+            return
+        start_ms = self.audio_cleanup_preview_pending_start_ms
+        timer_ms = self.audio_cleanup_preview_pending_timer_ms
+        self.audio_cleanup_preview_pending_start_ms = None
+        self.audio_cleanup_preview_pending_timer_ms = None
+        self.audio_cleanup_media_player.setPosition(start_ms)
+        if getattr(self, "audio_cleanup_preview_tracks_waveform", False) and hasattr(self, "audio_cleanup_waveform"):
+            self.audio_cleanup_waveform.set_playhead(start_ms / 1000)
         self.audio_cleanup_media_player.play()
-        if stop_after_seconds:
-            self.audio_cleanup_preview_timer.start(max(10_000, round(stop_after_seconds * 1000) + 5000))
+        if timer_ms is not None:
+            self.audio_cleanup_preview_timer.start(timer_ms)
 
     def audio_cleanup_path_matches_waveform_source(self, path):
         input_path = self.audio_cleanup_input_picker.text()
@@ -636,14 +657,27 @@ class AudioCleanupWorkflowMixin:
             return False
 
     def audio_cleanup_playback_position_changed(self, position_ms):
+        if self.audio_cleanup_preview_pending_start_ms is not None:
+            return
         if getattr(self, "audio_cleanup_preview_tracks_waveform", False) and hasattr(self, "audio_cleanup_waveform"):
             self.audio_cleanup_waveform.set_playhead(position_ms / 1000)
         target_ms = self.audio_cleanup_preview_end_ms
         if target_ms is not None and position_ms >= target_ms:
             self.stop_audio_cleanup_playback()
 
+    def audio_cleanup_media_status_changed(self, status):
+        self.audio_cleanup_start_pending_preview_if_ready(status)
+        if status in {
+            QMediaPlayer.MediaStatus.NoMedia,
+            QMediaPlayer.MediaStatus.InvalidMedia,
+        }:
+            self.audio_cleanup_preview_pending_start_ms = None
+            self.audio_cleanup_preview_pending_timer_ms = None
+
     def audio_cleanup_playback_state_changed(self, state):
         if state == QMediaPlayer.PlaybackState.PlayingState:
+            return
+        if self.audio_cleanup_preview_pending_start_ms is not None:
             return
         self.audio_cleanup_preview_tracks_waveform = False
         if hasattr(self, "audio_cleanup_waveform"):
@@ -661,6 +695,8 @@ class AudioCleanupWorkflowMixin:
         if not hasattr(self, "audio_cleanup_media_player"):
             return
         self.audio_cleanup_preview_end_ms = None
+        self.audio_cleanup_preview_pending_start_ms = None
+        self.audio_cleanup_preview_pending_timer_ms = None
         self.audio_cleanup_preview_tracks_waveform = False
         self.audio_cleanup_preview_timer.stop()
         self.audio_cleanup_media_player.stop()
@@ -851,8 +887,11 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_media_player = QMediaPlayer(self)
         self.audio_cleanup_media_player.setAudioOutput(self.audio_cleanup_audio_output)
         self.audio_cleanup_preview_end_ms = None
+        self.audio_cleanup_preview_pending_start_ms = None
+        self.audio_cleanup_preview_pending_timer_ms = None
         self.audio_cleanup_preview_tracks_waveform = False
         self.audio_cleanup_media_player.positionChanged.connect(self.audio_cleanup_playback_position_changed)
+        self.audio_cleanup_media_player.mediaStatusChanged.connect(self.audio_cleanup_media_status_changed)
         self.audio_cleanup_media_player.playbackStateChanged.connect(self.audio_cleanup_playback_state_changed)
         self.audio_cleanup_preview_timer = QTimer(self)
         self.audio_cleanup_preview_timer.setSingleShot(True)

@@ -212,42 +212,82 @@ def write_audio_cleanup_timeline(
     end_seconds: float,
     total_duration_seconds: float | None = None,
 ) -> Path | None:
+    return write_audio_cleanup_timeline_for_changes(
+        input_audio_path,
+        output_audio_path,
+        changes=[
+            {
+                "action": action,
+                "start_seconds": start_seconds,
+                "end_seconds": end_seconds,
+            }
+        ],
+        total_duration_seconds=total_duration_seconds,
+    )
+
+
+def write_audio_cleanup_timeline_for_changes(
+    input_audio_path: str | Path,
+    output_audio_path: str | Path,
+    *,
+    changes: list[dict[str, Any]],
+    total_duration_seconds: float | None = None,
+) -> Path | None:
     timeline = load_tts_timeline_for_audio(input_audio_path)
     if not timeline:
         remove_tts_timeline(output_audio_path)
         return None
 
-    start = _seconds(start_seconds)
-    end = _seconds(end_seconds)
-    if end <= start:
+    valid_changes = []
+    for change in changes:
+        action = _text(change.get("action"))
+        start = _seconds(change.get("start_seconds"))
+        end = _seconds(change.get("end_seconds"))
+        if not action or end <= start:
+            continue
+        valid_changes.append({**change, "action": action, "start_seconds": start, "end_seconds": end})
+    if not valid_changes:
         remove_tts_timeline(output_audio_path)
         return None
 
-    updated_blocks, removed_blocks = transform_tts_timeline_blocks_for_cleanup(
-        timeline["blocks"],
-        action=action,
-        start_seconds=start,
-        end_seconds=end,
-    )
-    if not updated_blocks:
-        remove_tts_timeline(output_audio_path)
-        return None
+    updated_blocks = timeline["blocks"]
+    removed_blocks_by_change = []
+    for change in valid_changes:
+        updated_blocks, removed_blocks = transform_tts_timeline_blocks_for_cleanup(
+            updated_blocks,
+            action=change["action"],
+            start_seconds=change["start_seconds"],
+            end_seconds=change["end_seconds"],
+        )
+        removed_blocks_by_change.append(removed_blocks)
+        if not updated_blocks:
+            remove_tts_timeline(output_audio_path)
+            return None
 
     input_audio = Path(input_audio_path)
     output_audio = Path(output_audio_path)
     previous_edits = timeline.get("edits")
     edits = list(previous_edits) if isinstance(previous_edits, list) else []
-    edit = {
-        "action": action,
-        "source_audio_path": str(input_audio.resolve()),
-        "start_seconds": start,
-        "end_seconds": end,
-        "duration_seconds": round(end - start, 6),
-        "text_policy": "Block text is preserved as an operational guide and is not rewritten after cleanup.",
-    }
-    if removed_blocks:
-        edit["removed_blocks"] = removed_blocks
-    edits.append(edit)
+    for change_index, change in enumerate(valid_changes):
+        edit = {
+            "index": len(edits) + 1,
+            "action": change["action"],
+            "source_audio_path": str(input_audio.resolve()),
+            "start_seconds": change["start_seconds"],
+            "end_seconds": change["end_seconds"],
+            "duration_seconds": round(change["end_seconds"] - change["start_seconds"], 6),
+            "text_policy": "Block text is preserved as an operational guide and is not rewritten after cleanup.",
+        }
+        for source_key, target_key in (
+            ("source_start_seconds", "original_source_start_seconds"),
+            ("source_end_seconds", "original_source_end_seconds"),
+        ):
+            if source_key in change:
+                edit[target_key] = _seconds(change[source_key])
+        removed_blocks = removed_blocks_by_change[change_index]
+        if removed_blocks:
+            edit["removed_blocks"] = removed_blocks
+        edits.append(edit)
 
     total_duration = _seconds(total_duration_seconds, updated_blocks[-1]["end_seconds"])
     data = {

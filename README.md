@@ -99,11 +99,12 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 1. Aprire `Voice Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
 3. In alternativa, registrare direttamente dal microfono con `Record`; l'app apre una registrazione guidata da 30 secondi con countdown, testo di lettura nella lingua scelta, ascolto del WAV pulito e scelta finale `Mantieni`, `Ritenta` o `Annulla`.
-4. Aprire `Text to Speech`.
-5. Selezionare engine `Local TTS`.
-6. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
-7. Scegliere profilo vocale, preset XTTS (`Stable`, `Balanced` o `Natural`) e device `Auto`, `CPU` o `CUDA`.
-8. Generare l'MP3.
+4. Per preparare un futuro training, creare invece un profilo `Modeling dataset`: non richiede audio reference nella scheda profilo e crea un dataset collegato in `Modeling Datasets`.
+5. Aprire `Text to Speech`.
+6. Selezionare engine `Local TTS`.
+7. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
+8. Scegliere profilo vocale, preset XTTS (`Stable`, `Balanced` o `Natural`) e device `Auto`, `CPU` o `CUDA`.
+9. Generare l'MP3.
 
 Local TTS usa `coqui-tts` nel runtime ML e il modello XTTS-v2. Il primo uso puo' scaricare il modello in `models\coqui`;
 dopo il download il modello resta disponibile localmente.
@@ -114,6 +115,18 @@ e concatena l'audio WAV prima della conversione MP3 finale. Il preset `Stable` p
 consigliato per i test, mentre `Natural` lascia piu' espressivita' al modello.
 Il modello XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale. Vedere `THIRD_PARTY_LICENSES`.
 Le registrazioni create dall'app sono file utente nella cartella `voice_profiles` e non vengono tracciate da git.
+
+### Modeling Datasets
+
+`Modeling Datasets` prepara coppie audio/testo autorizzate per un futuro voice modeling, ma non esegue ancora training.
+
+1. Creare prima un profilo in `Voice Profiles` con tipo `Modeling dataset`.
+2. Aprire `Modeling Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
+3. Per una clip guidata, caricare o incollare il testo esatto e usare `Record from text`; la finestra mostra il testo, registra dal microfono, pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
+4. Per una clip libera, usare `Free record`; la clip viene salvata come `Needs transcript`.
+5. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
+
+I dataset vengono salvati nella cartella `modeling_datasets`; ogni clip mantiene WAV pulito, testo sidecar `.txt` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
 
 ### Transcription
 

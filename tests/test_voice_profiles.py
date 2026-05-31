@@ -66,17 +66,16 @@ def test_profile_validation_rejects_missing_consent(tmp_path: Path) -> None:
 
 
 def test_modeling_profile_status(tmp_path: Path) -> None:
-    reference = tmp_path / "dataset.flac"
-    reference.write_bytes(b"fLaC")
     profile = build_voice_profile(
         name="Dataset",
         language_code="en",
         profile_type=VOICE_PROFILE_MODELING,
-        reference_paths=[str(reference)],
+        reference_paths=[],
         consent_confirmed=True,
     )
 
     assert voice_profile_status(profile) == "Modeling dataset"
+    validate_voice_profile(profile)
 
 
 def test_save_and_load_voice_profiles(tmp_path: Path) -> None:

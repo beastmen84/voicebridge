@@ -165,6 +165,8 @@ def normalized_reference_paths(value: Any) -> list[str]:
 def voice_profile_status(profile: VoiceProfile) -> str:
     if not profile.get("consent_confirmed"):
         return "Consent required"
+    if profile.get("profile_type") == VOICE_PROFILE_MODELING:
+        return "Modeling dataset"
     reference_paths = normalized_reference_paths(profile.get("reference_paths", []))
     if not reference_paths:
         return "Missing reference audio"
@@ -177,8 +179,6 @@ def voice_profile_status(profile: VoiceProfile) -> str:
     ]
     if unsupported:
         return "Unsupported audio format"
-    if profile.get("profile_type") == VOICE_PROFILE_MODELING:
-        return "Modeling dataset"
     return "Ready"
 
 

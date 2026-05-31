@@ -29,6 +29,7 @@ from voicebridge.voice_profile_recording_dialog import VoiceProfileRecordingDial
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_AUDIO_SUFFIXES,
     VOICE_PROFILE_LANGUAGES,
+    VOICE_PROFILE_MODELING,
     VOICE_PROFILE_REFERENCE,
     VOICE_PROFILE_TYPES,
     VoiceProfile,
@@ -123,6 +124,13 @@ class VoiceProfilesWorkflowMixin:
         self.profile_notes_edit.clear()
         self.profile_status_label.setText("New profile.")
         self.profile_record_status_label.setText("Record a guided 30s voice sample for the selected profile.")
+        self.update_voice_profile_buttons()
+
+    def voice_profile_type_changed(self) -> None:
+        if self.voice_profile_type() == VOICE_PROFILE_MODELING:
+            self.profile_record_status_label.setText("Use Modeling Datasets to collect clips for this voice.")
+        else:
+            self.profile_record_status_label.setText("Record a guided 30s voice sample for the selected profile.")
         self.update_voice_profile_buttons()
 
     def select_voice_profile_reference(self) -> None:
@@ -236,6 +244,7 @@ class VoiceProfilesWorkflowMixin:
         if not updated:
             self.voice_profiles.append(profile)
         save_voice_profiles(self.voice_profiles)
+        self.sync_modeling_datasets_with_profiles()
         self.selected_voice_profile_id = profile["id"]
         self.profile_status_label.setText(voice_profile_status(profile))
         self.refresh_voice_profiles_list()
@@ -250,6 +259,7 @@ class VoiceProfilesWorkflowMixin:
             return
         self.voice_profiles = [entry for entry in self.voice_profiles if entry["id"] != profile["id"]]
         save_voice_profiles(self.voice_profiles)
+        self.sync_modeling_datasets_with_profiles()
         deleted_paths, failed_paths = delete_voice_profile_audio_files(profile)
         self.new_voice_profile()
         self.refresh_voice_profiles_list()
@@ -279,15 +289,20 @@ class VoiceProfilesWorkflowMixin:
         has_reference = bool(reference_path and Path(reference_path).is_file())
         has_selection = bool(self.selected_voice_profile())
         is_recording = self.voice_profile_is_recording()
+        is_modeling_profile = self.voice_profile_type() == VOICE_PROFILE_MODELING
         self.voice_profiles_list.setEnabled(not is_recording)
         self.profile_new_button.setEnabled(not is_recording)
         self.profile_delete_button.setEnabled(has_selection and not is_recording)
         self.profile_save_button.setEnabled(not is_recording)
-        self.profile_open_reference_button.setEnabled(has_reference and not is_recording)
-        self.profile_open_folder_button.setEnabled(has_reference and not is_recording)
+        self.profile_reference_picker.setEnabled(not is_recording and not is_modeling_profile)
+        self.profile_open_reference_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
+        self.profile_open_folder_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
         if hasattr(self, "profile_record_button"):
-            self.profile_record_button.setEnabled(not is_recording and self.profile_microphone_combo.count() > 0)
-            self.profile_play_button.setEnabled(has_reference and not is_recording)
+            self.profile_microphone_combo.setEnabled(not is_recording and not is_modeling_profile)
+            self.profile_record_button.setEnabled(
+                not is_recording and not is_modeling_profile and self.profile_microphone_combo.count() > 0
+            )
+            self.profile_play_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
 
     def build_voice_profiles_page(self):
         page, layout = self.page_container()
@@ -327,6 +342,7 @@ class VoiceProfilesWorkflowMixin:
         self.profile_type_combo = QComboBox()
         for label, profile_type in VOICE_PROFILE_TYPES.items():
             self.profile_type_combo.addItem(label, profile_type)
+        self.profile_type_combo.currentIndexChanged.connect(lambda _index: self.voice_profile_type_changed())
         self.profile_language_combo = QComboBox()
         for language_code in VOICE_PROFILE_LANGUAGES:
             self.profile_language_combo.addItem(language_name(language_code), language_code)

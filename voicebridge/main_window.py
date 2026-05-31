@@ -55,10 +55,12 @@ from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.media_tools import (
     BlackFrame,
 )
+from voicebridge.modeling_datasets import ModelingDataset
 from voicebridge.models import JobHistoryEntry, TtsSegment
 from voicebridge.pages.audio_cleanup import AudioCleanupWorkflowMixin
 from voicebridge.pages.builders import PageBuilderMixin
 from voicebridge.pages.cleanup import VideoCleanupWorkflowMixin
+from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
 from voicebridge.pages.stt import SttWorkflowMixin
 from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
@@ -78,6 +80,7 @@ class VoiceBridgeQt(
     SubtitlesWorkflowMixin,
     SttWorkflowMixin,
     TtsWorkflowMixin,
+    ModelingDatasetsWorkflowMixin,
     VoiceProfilesWorkflowMixin,
     PageBuilderMixin,
     QMainWindow,
@@ -86,6 +89,7 @@ class VoiceBridgeQt(
     nav_home: QPushButton
     nav_tts: QPushButton
     nav_profiles: QPushButton
+    nav_modeling: QPushButton
     nav_stt: QPushButton
     nav_video: QPushButton
     nav_audio_cleanup: QPushButton
@@ -159,6 +163,27 @@ class VoiceBridgeQt(
     profile_open_folder_button: QPushButton
     profile_audio_output: Any
     profile_media_player: Any
+
+    modeling_datasets: list[ModelingDataset]
+    selected_modeling_dataset_id: str
+    selected_modeling_clip_id: str
+    modeling_datasets_list: QListWidget
+    modeling_clips_list: QListWidget
+    modeling_clip_text_edit: QPlainTextEdit
+    modeling_clip_details: QPlainTextEdit
+    modeling_dataset_status: QLabel
+    modeling_refresh_button: QPushButton
+    modeling_open_dataset_folder_button: QPushButton
+    modeling_load_text_button: QPushButton
+    modeling_record_text_button: QPushButton
+    modeling_record_free_button: QPushButton
+    modeling_save_text_button: QPushButton
+    modeling_play_clip_button: QPushButton
+    modeling_open_clip_button: QPushButton
+    modeling_delete_clip_button: QPushButton
+    modeling_transcribe_clip_button: QPushButton
+    modeling_clip_audio_output: Any
+    modeling_clip_media_player: Any
 
     stt_media_picker: FilePicker
     stt_text_picker: FilePicker
@@ -367,6 +392,7 @@ class VoiceBridgeQt(
         self.selected_tts_segment_index = None
         self.status_tiles: dict[str, QLabel] = {}
         self.load_voice_profile_store()
+        self.load_modeling_dataset_store()
         self.job_history: list[JobHistoryEntry] = self.validated_job_history(
             self.app_settings.get("job_history", [])
         )
@@ -462,13 +488,15 @@ class VoiceBridgeQt(
         self.nav_home = self.nav_button("Dashboard", lambda: self.show_page(0))
         self.nav_tts = self.nav_button("Text to Speech", lambda: self.show_page(1))
         self.nav_profiles = self.nav_button("Voice Profiles", lambda: self.show_page(2))
-        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(3))
-        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(4))
-        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(5))
-        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(6))
+        self.nav_modeling = self.nav_button("Modeling Datasets", lambda: self.show_page(3))
+        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(4))
+        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(5))
+        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(6))
+        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(7))
         side_layout.addWidget(self.nav_home)
         side_layout.addWidget(self.nav_tts)
         side_layout.addWidget(self.nav_profiles)
+        side_layout.addWidget(self.nav_modeling)
         side_layout.addWidget(self.nav_stt)
         side_layout.addWidget(self.nav_video)
         side_layout.addWidget(self.nav_audio_cleanup)
@@ -503,6 +531,7 @@ class VoiceBridgeQt(
         self.stack.addWidget(self.build_home_page())
         self.stack.addWidget(self.build_tts_page())
         self.stack.addWidget(self.build_voice_profiles_page())
+        self.stack.addWidget(self.build_modeling_datasets_page())
         self.stack.addWidget(self.build_stt_page())
         self.stack.addWidget(self.build_video_subtitle_page())
         self.stack.addWidget(self.build_audio_cleanup_page())

@@ -166,7 +166,6 @@ class VoiceBridgeQt(
     stt_cancel_button: QPushButton
     stt_open_output_button: QPushButton
     stt_open_folder_button: QPushButton
-    stt_video_button: QPushButton
     stt_details_button: QPushButton
     stt_progress: QProgressBar
     stt_status: QLabel

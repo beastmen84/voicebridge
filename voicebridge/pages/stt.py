@@ -193,9 +193,6 @@ class SttWorkflowMixin:
         output_ready = bool(self.stt_last_output_path and Path(self.stt_last_output_path).is_file())
         self.stt_open_output_button.setEnabled(output_ready)
         self.stt_open_folder_button.setEnabled(output_ready)
-        self.stt_video_button.setEnabled(
-            not self.is_stt_running and not self.is_video_running and not self.is_converting
-        )
         self.update_navigation_state()
 
     def update_stt_model_status(self):
@@ -781,20 +778,17 @@ class SttWorkflowMixin:
         self.stt_cancel_button = QPushButton("Cancel")
         self.stt_open_output_button = QPushButton("Open output")
         self.stt_open_folder_button = QPushButton("Open folder")
-        self.stt_video_button = QPushButton("Open Subtitles")
         self.stt_details_button = QPushButton("Show details")
         self.stt_generate_button.clicked.connect(self.start_stt_job)
         self.stt_cancel_button.clicked.connect(self.cancel_stt_job)
         self.stt_open_output_button.clicked.connect(self.open_stt_output)
         self.stt_open_folder_button.clicked.connect(self.open_stt_output_folder)
         self.stt_details_button.clicked.connect(self.toggle_stt_details)
-        self.stt_video_button.clicked.connect(lambda: self.show_page(4))
         actions.addWidget(self.stt_generate_button)
         actions.addWidget(self.stt_cancel_button)
         actions.addStretch(1)
         actions.addWidget(self.stt_open_output_button)
         actions.addWidget(self.stt_open_folder_button)
-        actions.addWidget(self.stt_video_button)
         actions.addWidget(self.stt_details_button)
         action_card.content_layout.addLayout(actions)
         self.stt_progress = QProgressBar()

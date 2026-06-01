@@ -40,7 +40,7 @@ class HomePageMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "VOICEBRIDGE",
+            "DASHBOARD",
             "Convert, transcribe and subtitle",
             "Online text-to-speech, offline speech-to-text and practical video subtitle tools in one workspace.",
             "BadgeBlue",
@@ -62,7 +62,7 @@ class HomePageMixin:
             "BadgeBlue",
         )
         local_voices_card = self.home_card(
-            "LOCAL",
+            "VOICES",
             "Local Voices",
             "Prepare reference profiles, modeling datasets and XTTS-v2 training configuration.",
             "Profiles, datasets, training setup",
@@ -90,7 +90,7 @@ class HomePageMixin:
             "BadgeGreen",
         )
         cleanup_card = self.home_card(
-            "FIX",
+            "VIDEO",
             "Video Cleanup",
             "Detect isolated black-frame glitches and repair them without shortening the video.",
             "Frame repair/removal",

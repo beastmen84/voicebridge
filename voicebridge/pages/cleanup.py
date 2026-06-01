@@ -794,7 +794,7 @@ class VideoCleanupWorkflowMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "CLEANUP",
+            "VIDEO",
             "Video Cleanup",
             "Detect isolated black-frame glitches and clean selected frames before export or subtitling.",
             "BadgeGreen",

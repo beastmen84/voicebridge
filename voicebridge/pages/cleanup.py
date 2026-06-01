@@ -3,25 +3,25 @@ import subprocess
 import tempfile
 import threading
 from contextlib import suppress
-from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QAbstractItemView,
     QComboBox,
-    QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -50,12 +50,22 @@ from voicebridge.media_tools import (
     probe_video_info,
     suggest_video_cleanup_output_path,
     video_cleanup_repair_commands,
+    video_filmstrip_frame_numbers,
     video_frame_preview_command,
 )
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 
 VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
+VIDEO_CLEANUP_FILMSTRIP_ITEMS = 36
+VIDEO_CLEANUP_FILMSTRIP_ZOOM_WINDOWS = (0, 720, 240, 96, 36)
+VIDEO_CLEANUP_FILMSTRIP_ICON_SIZES = (
+    QSize(118, 66),
+    QSize(138, 78),
+    QSize(160, 90),
+    QSize(184, 104),
+    QSize(212, 120),
+)
 
 
 class VideoCleanupWorkflowMixin:
@@ -70,9 +80,22 @@ class VideoCleanupWorkflowMixin:
         self.cleanup_detected_frames = []
         self.cleanup_detected_media_path = ""
         self.cleanup_repairable_frame_map = {}
-        self.cleanup_frame_checkboxes = {}
+        self.cleanup_detected_frame_map = {}
+        self.cleanup_marked_frame_numbers = set()
+        self.cleanup_video_fps = 0.0
+        self.cleanup_video_duration_seconds = 0.0
+        self.cleanup_video_total_frames = 0
+        self.cleanup_filmstrip_zoom_level = 0
+        self.cleanup_filmstrip_generation = getattr(self, "cleanup_filmstrip_generation", 0) + 1
         if hasattr(self, "cleanup_results"):
             self.cleanup_results.clear()
+        if hasattr(self, "cleanup_filmstrip_list"):
+            self.cleanup_filmstrip_list.clear()
+        if hasattr(self, "cleanup_filmstrip_status"):
+            self.cleanup_filmstrip_status.setText("Run detection to load frame review.")
+        if hasattr(self, "cleanup_filmstrip_scroll"):
+            self.cleanup_filmstrip_scroll.setEnabled(False)
+            self.cleanup_filmstrip_scroll.setValue(0)
         if hasattr(self, "cleanup_repair_options"):
             self.cleanup_repair_options.hide()
         if hasattr(self, "cleanup_repair_button"):
@@ -160,18 +183,26 @@ class VideoCleanupWorkflowMixin:
         return media_path
 
     def selected_cleanup_frame_numbers(self) -> list[int]:
-        selected: list[int] = []
-        for frame_number, checkbox in self.cleanup_frame_checkboxes.items():
-            if frame_number in self.cleanup_repairable_frame_map and checkbox.isChecked():
-                selected.append(frame_number)
-        return sorted(selected)
+        return sorted(
+            int(frame_number)
+            for frame_number in getattr(self, "cleanup_marked_frame_numbers", set())
+            if int(frame_number) > 0
+        )
+
+    def cleanup_frame_time_seconds(self, frame_number: int) -> float:
+        frame_number = int(frame_number)
+        frame_info = self.cleanup_detected_frame_map.get(frame_number) or self.cleanup_repairable_frame_map.get(
+            frame_number
+        )
+        if frame_info:
+            return float(frame_info["time"])
+        fps = float(getattr(self, "cleanup_video_fps", 0.0) or 0.0)
+        if fps > 0:
+            return frame_number / fps
+        return 0.0
 
     def selected_cleanup_frame_times(self, selected_frames: list[int]) -> list[float]:
-        return [
-            self.cleanup_repairable_frame_map[frame_number]["time"]
-            for frame_number in selected_frames
-            if frame_number in self.cleanup_repairable_frame_map
-        ]
+        return [self.cleanup_frame_time_seconds(frame_number) for frame_number in selected_frames]
 
     def collect_video_cleanup_repair_options(self):
         media_path = self.collect_video_cleanup_media()
@@ -179,7 +210,7 @@ class VideoCleanupWorkflowMixin:
             raise ValueError("Run detection on this video before repairing frames.")
         selected_frames = self.selected_cleanup_frame_numbers()
         if not selected_frames:
-            raise ValueError("Select at least one repairable frame to repair.")
+            raise ValueError("Mark at least one frame to clean.")
 
         output_path = self.cleanup_output_picker.text()
         if not output_path:
@@ -301,7 +332,14 @@ class VideoCleanupWorkflowMixin:
                 self.post(self.video_cleanup_job_cancelled)
                 return
             isolated_frames, longer_runs = isolated_black_frame_numbers(black_frames, max_run_length=1)
-            self.post(self.cleanup_detection_finished, media_path, black_frames, isolated_frames, longer_runs)
+            self.post(
+                self.cleanup_detection_finished,
+                media_path,
+                source_video_info,
+                black_frames,
+                isolated_frames,
+                longer_runs,
+            )
             self.post(self.video_cleanup_detect_succeeded, black_frames, isolated_frames, longer_runs)
         except (OSError, RuntimeError, ValueError) as exc:
             self.post(self.video_cleanup_job_failed, str(exc))
@@ -506,52 +544,299 @@ class VideoCleanupWorkflowMixin:
                 reasons[frame_number] = reason
         return reasons
 
+    def cleanup_filmstrip_window_frames(self) -> int:
+        zoom_level = max(0, min(self.cleanup_filmstrip_zoom_level, len(VIDEO_CLEANUP_FILMSTRIP_ZOOM_WINDOWS) - 1))
+        return VIDEO_CLEANUP_FILMSTRIP_ZOOM_WINDOWS[zoom_level]
+
+    def cleanup_filmstrip_icon_size(self) -> QSize:
+        zoom_level = max(0, min(self.cleanup_filmstrip_zoom_level, len(VIDEO_CLEANUP_FILMSTRIP_ICON_SIZES) - 1))
+        return VIDEO_CLEANUP_FILMSTRIP_ICON_SIZES[zoom_level]
+
+    def cleanup_filmstrip_selected_frames(self) -> list[int]:
+        if not hasattr(self, "cleanup_filmstrip_list"):
+            return []
+        frames = []
+        for item in self.cleanup_filmstrip_list.selectedItems():
+            frame_number = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(frame_number, int):
+                frames.append(frame_number)
+        return sorted(set(frames))
+
+    def configure_cleanup_filmstrip_scroll(self) -> None:
+        if not hasattr(self, "cleanup_filmstrip_scroll"):
+            return
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        window_frames = self.cleanup_filmstrip_window_frames() or total_frames
+        enabled = total_frames > 0 and window_frames < total_frames
+        self.cleanup_filmstrip_scroll.blockSignals(True)
+        try:
+            self.cleanup_filmstrip_scroll.setEnabled(enabled and not self.is_cleanup_running)
+            self.cleanup_filmstrip_scroll.setRange(0, max(0, total_frames - window_frames))
+            self.cleanup_filmstrip_scroll.setPageStep(max(1, window_frames // 2))
+            self.cleanup_filmstrip_scroll.setSingleStep(max(1, window_frames // 12))
+            if not enabled:
+                self.cleanup_filmstrip_scroll.setValue(0)
+        finally:
+            self.cleanup_filmstrip_scroll.blockSignals(False)
+
+    def cleanup_filmstrip_frame_numbers(self) -> list[int]:
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        if total_frames <= 0:
+            return []
+        window_frames = self.cleanup_filmstrip_window_frames() or total_frames
+        start_frame = self.cleanup_filmstrip_scroll.value() if hasattr(self, "cleanup_filmstrip_scroll") else 0
+        return video_filmstrip_frame_numbers(
+            total_frames,
+            start_frame=start_frame,
+            window_frames=window_frames,
+            max_items=VIDEO_CLEANUP_FILMSTRIP_ITEMS,
+        )
+
+    def refresh_cleanup_filmstrip(self) -> None:
+        if not hasattr(self, "cleanup_filmstrip_list"):
+            return
+        media_path = self.cleanup_detected_media_path
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        if not media_path or total_frames <= 0:
+            self.cleanup_filmstrip_list.clear()
+            self.cleanup_filmstrip_status.setText("Run detection to load frame review.")
+            return
+        ffmpeg = find_ffmpeg_exe()
+        if not ffmpeg:
+            self.cleanup_filmstrip_status.setText("ffmpeg unavailable for frame review.")
+            return
+        frame_numbers = self.cleanup_filmstrip_frame_numbers()
+        if not frame_numbers:
+            self.cleanup_filmstrip_status.setText("No frames available for review.")
+            return
+        self.cleanup_filmstrip_generation += 1
+        generation = self.cleanup_filmstrip_generation
+        icon_size = self.cleanup_filmstrip_icon_size()
+        self.cleanup_filmstrip_list.setIconSize(icon_size)
+        self.cleanup_filmstrip_list.clear()
+        self.cleanup_filmstrip_status.setText("Loading frame review...")
+        self.update_video_cleanup_button_state()
+        threading.Thread(
+            target=self.video_cleanup_filmstrip_worker,
+            args=(generation, str(ffmpeg), media_path, frame_numbers, icon_size.width()),
+            daemon=True,
+        ).start()
+
+    def video_cleanup_filmstrip_worker(
+        self,
+        generation: int,
+        ffmpeg: str,
+        media_path: str,
+        frame_numbers: list[int],
+        thumb_width: int,
+    ) -> None:
+        thumbnails: list[tuple[int, bytes]] = []
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            with tempfile.TemporaryDirectory(prefix="voicebridge-filmstrip-") as temp_dir:
+                for frame_number in frame_numbers:
+                    if self.cleanup_cancel_requested or generation != self.cleanup_filmstrip_generation:
+                        return
+                    output_path = Path(temp_dir) / f"frame_{frame_number}.jpg"
+                    command = video_frame_preview_command(
+                        ffmpeg,
+                        media_path,
+                        frame_number,
+                        str(output_path),
+                        thumb_width,
+                    )
+                    result = subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        creationflags=creationflags,
+                        timeout=45,
+                        check=False,
+                    )
+                    if result.returncode == 0 and output_path.is_file():
+                        thumbnails.append((frame_number, output_path.read_bytes()))
+        except (OSError, RuntimeError, TimeoutError):
+            thumbnails = []
+        self.post(self.cleanup_filmstrip_loaded, generation, thumbnails)
+
+    def cleanup_filmstrip_loaded(self, generation: int, thumbnails: list[tuple[int, bytes]]) -> None:
+        if generation != self.cleanup_filmstrip_generation:
+            return
+        self.cleanup_filmstrip_list.clear()
+        if not thumbnails:
+            self.cleanup_filmstrip_status.setText("Frame review unavailable.")
+            self.update_video_cleanup_button_state()
+            return
+        for frame_number, image_data in thumbnails:
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+            item = QListWidgetItem(QIcon(pixmap), self.cleanup_filmstrip_item_text(frame_number))
+            item.setData(Qt.ItemDataRole.UserRole, frame_number)
+            item.setToolTip(self.cleanup_filmstrip_item_tooltip(frame_number))
+            self.apply_cleanup_filmstrip_item_style(item, frame_number)
+            self.cleanup_filmstrip_list.addItem(item)
+        self.update_cleanup_filmstrip_status()
+        self.update_video_cleanup_button_state()
+
+    def cleanup_filmstrip_item_text(self, frame_number: int) -> str:
+        time_seconds = self.cleanup_frame_time_seconds(frame_number)
+        marker = "Marked" if frame_number in self.cleanup_marked_frame_numbers else ""
+        marker_suffix = f"\n{marker}" if marker else ""
+        return f"#{frame_number}\n{time_seconds:.3f}s{marker_suffix}"
+
+    def cleanup_filmstrip_item_tooltip(self, frame_number: int) -> str:
+        status = "Marked for cleanup" if frame_number in self.cleanup_marked_frame_numbers else "Not marked"
+        if frame_number in self.cleanup_repairable_frame_map:
+            status += "; auto-detected isolated black frame"
+        elif frame_number in self.cleanup_detected_frame_map:
+            status += "; auto-detected black frame"
+        return f"Frame {frame_number} at {self.cleanup_frame_time_seconds(frame_number):.3f}s\n{status}"
+
+    def apply_cleanup_filmstrip_item_style(self, item: QListWidgetItem, frame_number: int) -> None:
+        if frame_number in self.cleanup_marked_frame_numbers:
+            item.setBackground(QBrush(QColor("#fee2e2")))
+            item.setForeground(QBrush(QColor("#7f1d1d")))
+        elif frame_number in self.cleanup_detected_frame_map:
+            item.setBackground(QBrush(QColor("#fff7e6")))
+            item.setForeground(QBrush(QColor("#7a4b00")))
+        else:
+            item.setBackground(QBrush(QColor("#ffffff")))
+            item.setForeground(QBrush(QColor("#111827")))
+
+    def update_cleanup_filmstrip_item_styles(self) -> None:
+        if not hasattr(self, "cleanup_filmstrip_list"):
+            return
+        for index in range(self.cleanup_filmstrip_list.count()):
+            item = self.cleanup_filmstrip_list.item(index)
+            frame_number = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(frame_number, int):
+                item.setText(self.cleanup_filmstrip_item_text(frame_number))
+                item.setToolTip(self.cleanup_filmstrip_item_tooltip(frame_number))
+                self.apply_cleanup_filmstrip_item_style(item, frame_number)
+        self.update_cleanup_filmstrip_status()
+
+    def update_cleanup_filmstrip_status(self) -> None:
+        if not hasattr(self, "cleanup_filmstrip_status"):
+            return
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        marked_count = len(self.selected_cleanup_frame_numbers())
+        selected = self.cleanup_filmstrip_selected_frames()
+        selected_text = f" | selected #{selected[0]}" if len(selected) == 1 else ""
+        self.cleanup_filmstrip_status.setText(
+            f"Frame review ready: {total_frames} frame(s), {marked_count} marked{selected_text}."
+        )
+
+    def cleanup_filmstrip_selection_changed(self) -> None:
+        self.update_cleanup_filmstrip_status()
+        self.update_video_cleanup_button_state()
+
+    def cleanup_filmstrip_scroll_changed(self, _value: int) -> None:
+        self.refresh_cleanup_filmstrip()
+
+    def set_cleanup_filmstrip_zoom(self, zoom_level: int) -> None:
+        zoom_level = max(0, min(int(zoom_level), len(VIDEO_CLEANUP_FILMSTRIP_ZOOM_WINDOWS) - 1))
+        if zoom_level == self.cleanup_filmstrip_zoom_level:
+            return
+        center_frame = self.cleanup_current_filmstrip_center_frame()
+        self.cleanup_filmstrip_zoom_level = zoom_level
+        self.configure_cleanup_filmstrip_scroll()
+        self.center_cleanup_filmstrip_on_frame(center_frame, refresh=False)
+        self.refresh_cleanup_filmstrip()
+
+    def cleanup_current_filmstrip_center_frame(self) -> int:
+        selected = self.cleanup_filmstrip_selected_frames()
+        if selected:
+            return selected[0]
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        window_frames = self.cleanup_filmstrip_window_frames() or total_frames
+        start_frame = self.cleanup_filmstrip_scroll.value() if hasattr(self, "cleanup_filmstrip_scroll") else 0
+        return min(max(0, total_frames - 1), start_frame + max(0, window_frames // 2))
+
+    def center_cleanup_filmstrip_on_frame(self, frame_number: int, *, refresh: bool = True) -> None:
+        if not hasattr(self, "cleanup_filmstrip_scroll"):
+            return
+        total_frames = int(getattr(self, "cleanup_video_total_frames", 0) or 0)
+        if total_frames <= 0:
+            return
+        window_frames = self.cleanup_filmstrip_window_frames() or total_frames
+        start_frame = max(0, min(int(frame_number) - (window_frames // 2), max(0, total_frames - window_frames)))
+        self.cleanup_filmstrip_scroll.blockSignals(True)
+        try:
+            self.cleanup_filmstrip_scroll.setValue(start_frame)
+        finally:
+            self.cleanup_filmstrip_scroll.blockSignals(False)
+        if refresh:
+            self.refresh_cleanup_filmstrip()
+
+    def mark_selected_cleanup_filmstrip_frames(self) -> None:
+        selected = [frame for frame in self.cleanup_filmstrip_selected_frames() if frame > 0]
+        if not selected:
+            self.cleanup_status.setText("Select one or more frames in the frame review first.")
+            return
+        self.cleanup_marked_frame_numbers.update(selected)
+        self.update_cleanup_filmstrip_item_styles()
+        self.update_video_cleanup_button_state()
+
+    def unmark_selected_cleanup_filmstrip_frames(self) -> None:
+        selected = self.cleanup_filmstrip_selected_frames()
+        if not selected:
+            self.cleanup_status.setText("Select one or more frames in the frame review first.")
+            return
+        for frame_number in selected:
+            self.cleanup_marked_frame_numbers.discard(frame_number)
+        self.update_cleanup_filmstrip_item_styles()
+        self.update_video_cleanup_button_state()
+
+    def clear_cleanup_marked_frames(self) -> None:
+        self.cleanup_marked_frame_numbers.clear()
+        self.update_cleanup_filmstrip_item_styles()
+        self.update_video_cleanup_button_state()
+
+    def cleanup_result_item_clicked(self, item: QListWidgetItem) -> None:
+        frame_number = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(frame_number, int):
+            if self.cleanup_filmstrip_zoom_level == 0:
+                self.cleanup_filmstrip_zoom_level = 3
+                self.configure_cleanup_filmstrip_scroll()
+            self.center_cleanup_filmstrip_on_frame(frame_number)
+
     def add_cleanup_result_row(self, frame: BlackFrame, repairable: bool, reason: str) -> None:
         frame_number = frame["frame"]
         item = QListWidgetItem()
-        item.setSizeHint(QSize(0, 46))
-        row = QWidget()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(8, 4, 8, 4)
-        row_layout.setSpacing(10)
-
-        checkbox = QCheckBox()
-        checkbox.setChecked(repairable)
-        checkbox.setEnabled(repairable and not self.is_cleanup_running)
-        checkbox.stateChanged.connect(lambda _state: self.update_video_cleanup_button_state())
-        self.cleanup_frame_checkboxes[frame_number] = checkbox
-
-        title = QLabel(f"Frame {frame_number} | {frame['time']:.3f}s | {frame['pblack']}% black")
-        title.setWordWrap(True)
-        title.setMinimumWidth(260)
-        state = QLabel("Repairable" if repairable else reason)
-        state.setObjectName("Muted")
-        state.setWordWrap(True)
-        detail_button = QPushButton("Details")
-        detail_button.setEnabled(repairable)
-        detail_button.clicked.connect(partial(self.show_cleanup_frame_details_from_button, frame))
-
-        row_layout.addWidget(checkbox)
-        row_layout.addWidget(title, 2)
-        row_layout.addWidget(state, 2)
-        row_layout.addWidget(detail_button)
+        item.setText(f"Frame {frame_number} | {frame['time']:.3f}s | {frame['pblack']}% black | {reason}")
+        item.setData(Qt.ItemDataRole.UserRole, frame_number)
+        if repairable:
+            item.setBackground(QBrush(QColor("#fee2e2")))
         self.cleanup_results.addItem(item)
-        self.cleanup_results.setItemWidget(item, row)
 
     def cleanup_detection_finished(
         self,
         media_path: str,
+        source_video_info: dict,
         black_frames: list[BlackFrame],
         isolated_frames: list[int],
         longer_runs: list[list[BlackFrame]],
     ) -> None:
         self.cleanup_detected_frames = black_frames
         self.cleanup_detected_media_path = media_path
+        self.cleanup_detected_frame_map = {frame["frame"]: frame for frame in black_frames}
         self.cleanup_repairable_frame_map = {
             frame["frame"]: frame for frame in black_frames if frame["frame"] in set(isolated_frames)
         }
-        self.cleanup_frame_checkboxes = {}
+        self.cleanup_marked_frame_numbers = set(self.cleanup_repairable_frame_map)
+        self.cleanup_video_fps = float(source_video_info.get("fps") or 0.0)
+        self.cleanup_video_duration_seconds = float(source_video_info.get("duration_seconds") or 0.0)
+        self.cleanup_video_total_frames = 0
+        if self.cleanup_video_fps > 0 and self.cleanup_video_duration_seconds > 0:
+            self.cleanup_video_total_frames = max(
+                1,
+                round(self.cleanup_video_fps * self.cleanup_video_duration_seconds),
+            )
         self.cleanup_results.clear()
+        self.configure_cleanup_filmstrip_scroll()
+        self.refresh_cleanup_filmstrip()
         if not black_frames:
             self.cleanup_results.addItem("No black-frame candidates found.")
             self.update_video_cleanup_button_state()
@@ -564,104 +849,19 @@ class VideoCleanupWorkflowMixin:
         isolated_set = set(isolated_frames)
         for frame in black_frames[:120]:
             repairable = frame["frame"] in isolated_set
-            reason = reason_by_frame.get(frame["frame"], "Skipped: not an isolated one-frame glitch")
+            reason = "Auto-marked" if repairable else reason_by_frame.get(
+                frame["frame"],
+                "Skipped: not an isolated one-frame glitch",
+            )
             self.add_cleanup_result_row(frame, repairable, reason)
         if len(black_frames) > 120:
-            self.cleanup_results.addItem(f"...and {len(black_frames) - 120} more candidates. See details.")
+            self.cleanup_results.addItem(f"...and {len(black_frames) - 120} more candidates in the log.")
         self.update_video_cleanup_button_state()
-
-    def show_cleanup_frame_details_from_button(self, frame: BlackFrame, _checked: bool = False) -> None:
-        self.show_cleanup_frame_details(frame)
-
-    def show_cleanup_frame_details(self, frame: BlackFrame) -> None:
-        media_path = self.cleanup_detected_media_path or self.cleanup_media_picker.text()
-        if not media_path:
-            self.show_error("Frame details", "Select a video and run detection first.")
-            return
-        ffmpeg = find_ffmpeg_exe()
-        if not ffmpeg:
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
-            return
-
-        frame_number = int(frame["frame"])
-        preview_specs = [
-            ("Previous frame", max(0, frame_number - 1)),
-            ("Problem frame", frame_number),
-            ("Next frame", frame_number + 1),
-        ]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        with tempfile.TemporaryDirectory(prefix="voicebridge-frame-preview-") as temp_dir:
-            preview_paths = []
-            for title, preview_frame in preview_specs:
-                output_path = str(Path(temp_dir) / f"frame_{preview_frame}.png")
-                command = video_frame_preview_command(ffmpeg, media_path, preview_frame, output_path)
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=creationflags,
-                    timeout=60,
-                    check=False,
-                )
-                preview_path = (
-                    output_path
-                    if result.returncode == 0 and Path(output_path).is_file()
-                    else ""
-                )
-                preview_paths.append((title, preview_frame, preview_path))
-
-            dialog = QDialog(self)
-            dialog.setWindowTitle(f"Frame {frame_number} details")
-            dialog.setMinimumWidth(980)
-            layout = QVBoxLayout(dialog)
-            header = QLabel(f"Frame {frame_number} at {frame['time']:.3f}s")
-            header.setObjectName("CardTitle")
-            layout.addWidget(header)
-            row = QHBoxLayout()
-            row.setSpacing(12)
-            layout.addLayout(row)
-
-            for title, preview_frame, preview_path in preview_paths:
-                panel = QVBoxLayout()
-                label = QLabel(f"{title}\n#{preview_frame}")
-                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                image = QLabel()
-                image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                image.setMinimumSize(300, 170)
-                image.setStyleSheet("background: #0f172a; border-radius: 6px; color: #e5e7eb;")
-                if preview_path:
-                    pixmap = QPixmap(preview_path)
-                    if not pixmap.isNull():
-                        image.setPixmap(
-                            pixmap.scaled(
-                                300,
-                                170,
-                                Qt.AspectRatioMode.KeepAspectRatio,
-                                Qt.TransformationMode.SmoothTransformation,
-                            )
-                        )
-                    else:
-                        image.setText("Preview unavailable")
-                else:
-                    image.setText("Preview unavailable")
-                panel.addWidget(label)
-                panel.addWidget(image)
-                row.addLayout(panel)
-
-            close_button = QPushButton("Close")
-            close_button.clicked.connect(dialog.accept)
-            footer = QHBoxLayout()
-            footer.addStretch(1)
-            footer.addWidget(close_button)
-            layout.addLayout(footer)
-            dialog.exec()
 
     def video_cleanup_detect_succeeded(self, black_frames, isolated_frames, longer_runs):
         if black_frames:
             self.cleanup_status.setText(
-                f"Detected {len(black_frames)} black-frame candidate(s); {len(isolated_frames)} repairable."
+                f"Detected {len(black_frames)} black-frame candidate(s); {len(isolated_frames)} auto-marked."
             )
         else:
             self.cleanup_status.setText("No black-frame candidates found.")
@@ -672,8 +872,8 @@ class VideoCleanupWorkflowMixin:
             )
 
     def video_cleanup_no_repair_needed(self):
-        self.cleanup_status.setText("No isolated black frames to clean.")
-        self.append_cleanup_log("No one-frame black glitches were selected. No output video was created.")
+        self.cleanup_status.setText("No marked frames to clean.")
+        self.append_cleanup_log("No frames were marked. No output video was created.")
 
     def video_cleanup_repair_succeeded(self, output_path, repaired_count, cleanup_method):
         self.cleanup_last_output_path = output_path
@@ -746,7 +946,7 @@ class VideoCleanupWorkflowMixin:
         detection_ready = bool(
             self.cleanup_detected_media_path
             and self.cleanup_detected_media_path == current_media
-            and self.cleanup_repairable_frame_map
+            and self.cleanup_video_total_frames
         )
         selected_frames = self.selected_cleanup_frame_numbers() if detection_ready else []
         self.cleanup_start_button.setEnabled(not self.is_cleanup_running and not busy_elsewhere)
@@ -769,12 +969,34 @@ class VideoCleanupWorkflowMixin:
             self.cleanup_quality_combo,
         ):
             widget.setEnabled(not self.is_cleanup_running)
-        for frame_number, checkbox in self.cleanup_frame_checkboxes.items():
-            checkbox.setEnabled(
-                detection_ready
-                and frame_number in self.cleanup_repairable_frame_map
-                and not self.is_cleanup_running
-            )
+        for widget in (
+            self.cleanup_filmstrip_list,
+            self.cleanup_filmstrip_scroll,
+            self.cleanup_mark_frame_button,
+            self.cleanup_unmark_frame_button,
+            self.cleanup_clear_marks_button,
+            self.cleanup_filmstrip_fit_button,
+            self.cleanup_filmstrip_zoom_in_button,
+            self.cleanup_filmstrip_zoom_out_button,
+        ):
+            widget.setEnabled(detection_ready and not self.is_cleanup_running)
+        self.cleanup_filmstrip_zoom_out_button.setEnabled(
+            detection_ready and not self.is_cleanup_running and self.cleanup_filmstrip_zoom_level > 0
+        )
+        self.cleanup_filmstrip_zoom_in_button.setEnabled(
+            detection_ready
+            and not self.is_cleanup_running
+            and self.cleanup_filmstrip_zoom_level < len(VIDEO_CLEANUP_FILMSTRIP_ZOOM_WINDOWS) - 1
+        )
+        self.cleanup_mark_frame_button.setEnabled(
+            detection_ready and bool(self.cleanup_filmstrip_selected_frames()) and not self.is_cleanup_running
+        )
+        self.cleanup_unmark_frame_button.setEnabled(
+            detection_ready and bool(self.cleanup_filmstrip_selected_frames()) and not self.is_cleanup_running
+        )
+        self.cleanup_clear_marks_button.setEnabled(
+            detection_ready and bool(self.cleanup_marked_frame_numbers) and not self.is_cleanup_running
+        )
         self.update_navigation_state()
 
     def append_cleanup_log(self, line):
@@ -801,7 +1023,7 @@ class VideoCleanupWorkflowMixin:
         self.page_header(
             layout,
             "Video Cleanup",
-            "Detect isolated black-frame glitches and clean selected frames before export or subtitling.",
+            "Detect black-frame glitches, review frames manually and clean marked frames before export or subtitling.",
         )
 
         grid = QGridLayout()
@@ -820,8 +1042,8 @@ class VideoCleanupWorkflowMixin:
         settings_card = Card("Detection")
         settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.cleanup_rule_note = QLabel(
-            "Only isolated one-frame black glitches are repairable. "
-            "Longer runs, including black heads/tails, are reported and left untouched."
+            "Detection auto-marks isolated black-frame glitches. "
+            "Use frame review to mark or unmark any frame before cleanup."
         )
         self.cleanup_rule_note.setObjectName("Muted")
         self.cleanup_rule_note.setWordWrap(True)
@@ -860,9 +1082,59 @@ class VideoCleanupWorkflowMixin:
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
-        results_card = Card("Results")
+        filmstrip_card = Card("Frame review")
+        filmstrip_toolbar = QHBoxLayout()
+        filmstrip_toolbar.setContentsMargins(0, 0, 0, 0)
+        self.cleanup_filmstrip_status = QLabel("Run detection to load frame review.")
+        self.cleanup_filmstrip_status.setObjectName("Muted")
+        self.cleanup_filmstrip_status.setWordWrap(True)
+        self.cleanup_filmstrip_fit_button = QPushButton("Fit")
+        self.cleanup_filmstrip_zoom_out_button = QPushButton("Zoom -")
+        self.cleanup_filmstrip_zoom_in_button = QPushButton("Zoom +")
+        self.cleanup_mark_frame_button = QPushButton("Mark selected")
+        self.cleanup_unmark_frame_button = QPushButton("Unmark selected")
+        self.cleanup_clear_marks_button = QPushButton("Clear marks")
+        self.cleanup_filmstrip_fit_button.clicked.connect(lambda: self.set_cleanup_filmstrip_zoom(0))
+        self.cleanup_filmstrip_zoom_out_button.clicked.connect(
+            lambda: self.set_cleanup_filmstrip_zoom(self.cleanup_filmstrip_zoom_level - 1)
+        )
+        self.cleanup_filmstrip_zoom_in_button.clicked.connect(
+            lambda: self.set_cleanup_filmstrip_zoom(self.cleanup_filmstrip_zoom_level + 1)
+        )
+        self.cleanup_mark_frame_button.clicked.connect(self.mark_selected_cleanup_filmstrip_frames)
+        self.cleanup_unmark_frame_button.clicked.connect(self.unmark_selected_cleanup_filmstrip_frames)
+        self.cleanup_clear_marks_button.clicked.connect(self.clear_cleanup_marked_frames)
+        filmstrip_toolbar.addWidget(self.cleanup_filmstrip_status, 1)
+        filmstrip_toolbar.addWidget(self.cleanup_filmstrip_fit_button)
+        filmstrip_toolbar.addWidget(self.cleanup_filmstrip_zoom_out_button)
+        filmstrip_toolbar.addWidget(self.cleanup_filmstrip_zoom_in_button)
+        filmstrip_toolbar.addWidget(self.cleanup_mark_frame_button)
+        filmstrip_toolbar.addWidget(self.cleanup_unmark_frame_button)
+        filmstrip_toolbar.addWidget(self.cleanup_clear_marks_button)
+        self.cleanup_filmstrip_list = QListWidget()
+        self.cleanup_filmstrip_list.setViewMode(QListView.ViewMode.IconMode)
+        self.cleanup_filmstrip_list.setFlow(QListView.Flow.LeftToRight)
+        self.cleanup_filmstrip_list.setWrapping(False)
+        self.cleanup_filmstrip_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self.cleanup_filmstrip_list.setMovement(QListView.Movement.Static)
+        self.cleanup_filmstrip_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.cleanup_filmstrip_list.setIconSize(VIDEO_CLEANUP_FILMSTRIP_ICON_SIZES[0])
+        self.cleanup_filmstrip_list.setSpacing(8)
+        self.cleanup_filmstrip_list.setMinimumHeight(152)
+        self.cleanup_filmstrip_list.itemSelectionChanged.connect(self.cleanup_filmstrip_selection_changed)
+        self.cleanup_filmstrip_scroll = QSlider(Qt.Orientation.Horizontal)
+        self.cleanup_filmstrip_scroll.setEnabled(False)
+        self.cleanup_filmstrip_scroll.setTracking(False)
+        self.cleanup_filmstrip_scroll.valueChanged.connect(self.cleanup_filmstrip_scroll_changed)
+        filmstrip_card.content_layout.addLayout(filmstrip_toolbar)
+        filmstrip_card.content_layout.addWidget(self.cleanup_filmstrip_list)
+        filmstrip_card.content_layout.addWidget(self.cleanup_filmstrip_scroll)
+        layout.addWidget(filmstrip_card)
+
+        results_card = Card("Detected frames")
         self.cleanup_results = QListWidget()
         self.cleanup_results.setMinimumHeight(160)
+        self.cleanup_results.itemClicked.connect(self.cleanup_result_item_clicked)
         results_card.content_layout.addWidget(self.cleanup_results)
         layout.addWidget(results_card)
 

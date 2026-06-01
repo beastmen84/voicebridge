@@ -17,7 +17,7 @@ Guida operativa per usare VoiceBridge dal pacchetto Windows distribuito.
 - Creazione `.srt` da transcript fornito, con allineamento al video/audio.
 - Aggiunta sottotitoli `.srt` al video come traccia selezionabile oppure impressi nel video.
 - Cleanup manuale di file audio con taglio, silenziamento o fade di un intervallo selezionato.
-- Rilevamento di frame neri isolati nei video, con riparazione conservativa o rimozione dei frame selezionati.
+- Rilevamento di frame neri nei video, review manuale su filmstrip e riparazione/rimozione dei frame marcati.
 - Transcript fornito per allineamento da `.txt`, `.md`, `.docx` o `.doc`.
 
 ## Pacchetto distribuito
@@ -240,12 +240,12 @@ Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche aud
 1. Aprire `Video Cleanup`.
 2. Scegliere il video sorgente.
 3. Usare `Detect black frames` per analizzare il video senza modificarlo.
-4. Controllare i frame marcati come riparabili. Ogni candidato ha un checkbox e un pulsante `Details`.
-5. In `Details` si vedono frame precedente, frame problematico e frame successivo.
-6. Selezionare solo i frame da correggere, scegliere metodo/qualita' e usare `Clean selected frames`.
+4. Usare `Frame review` per controllare la filmstrip: i glitch isolati rilevati automaticamente sono gia' marcati.
+5. Se serve, selezionare manualmente anche frame non neri e usare `Mark selected`; usare `Unmark selected` o `Clear marks` per correggere la selezione.
+6. Scegliere metodo/qualita' e usare `Clean selected frames`.
 
-Il metodo `Freeze previous frame` e' conservativo: corregge solo frame neri isolati di un singolo frame, sostituendoli con il frame precedente. Il video mantiene la durata originale e l'audio viene copiato quando possibile.
-Il metodo `Remove selected frames` elimina i frame selezionati e le micro-porzioni audio corrispondenti. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
+Il metodo `Freeze previous frame` e' conservativo: corregge i frame marcati sostituendoli con il frame precedente. Il video mantiene la durata originale e l'audio viene copiato quando possibile.
+Il metodo `Remove selected frames` elimina i frame marcati e le micro-porzioni audio corrispondenti. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
 Le sequenze nere piu' lunghe, incluse parti nere all'inizio o alla fine del video, vengono segnalate e lasciate intatte, per evitare di alterare dissolvenze, fade o parti nere intenzionali.
 La qualita' di output puo' essere scelta nella sezione `Output quality`:
 

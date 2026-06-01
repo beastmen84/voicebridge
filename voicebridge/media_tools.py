@@ -573,6 +573,26 @@ def video_frame_preview_command(ffmpeg, media_path, frame_number, output_path, w
     ]
 
 
+def video_filmstrip_frame_numbers(total_frames, start_frame=0, window_frames=None, max_items=36) -> list[int]:
+    total_frames = max(0, int(total_frames or 0))
+    if total_frames <= 0:
+        return []
+    max_items = max(1, int(max_items or 1))
+    if window_frames is None or int(window_frames) <= 0:
+        window_frames = total_frames
+    window_frames = min(total_frames, max(1, int(window_frames)))
+    start_frame = max(0, min(int(start_frame or 0), total_frames - window_frames))
+    if window_frames <= max_items:
+        return list(range(start_frame, start_frame + window_frames))
+    if max_items == 1:
+        return [start_frame]
+    end_frame = start_frame + window_frames - 1
+    return sorted({
+        round(start_frame + ((end_frame - start_frame) * index / (max_items - 1)))
+        for index in range(max_items)
+    })
+
+
 def video_subtitle_preview_command(
     ffmpeg,
     media_path,
@@ -635,10 +655,10 @@ def isolated_black_frame_numbers(
 def freezeframes_filter_complex(frame_numbers):
     frame_numbers = sorted(set(int(frame) for frame in frame_numbers if int(frame) > 0))
     if not frame_numbers:
-        raise ValueError("No repairable frame numbers were provided.")
+        raise ValueError("No marked frame numbers were provided.")
     if len(frame_numbers) > VIDEO_CLEANUP_MAX_REPAIR_FRAMES:
         raise ValueError(
-            f"Too many isolated frames to repair at once ({len(frame_numbers)}). "
+            f"Too many marked frames to repair at once ({len(frame_numbers)}). "
             f"Limit: {VIDEO_CLEANUP_MAX_REPAIR_FRAMES}."
         )
 
@@ -664,7 +684,7 @@ def removeframes_filter_complex(frame_numbers, frame_times_seconds=None, fps=Non
         raise ValueError("No removable frame numbers were provided.")
     if len(frame_numbers) > VIDEO_CLEANUP_MAX_REPAIR_FRAMES:
         raise ValueError(
-            f"Too many isolated frames to remove at once ({len(frame_numbers)}). "
+            f"Too many marked frames to remove at once ({len(frame_numbers)}). "
             f"Limit: {VIDEO_CLEANUP_MAX_REPAIR_FRAMES}."
         )
 

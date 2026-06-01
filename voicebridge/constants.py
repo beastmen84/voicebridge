@@ -155,10 +155,10 @@ VIDEO_CLEANUP_METHOD_BY_LABEL = {
 }
 VIDEO_CLEANUP_METHOD_DESCRIPTIONS = {
     VIDEO_CLEANUP_FREEZE_LABEL: (
-        "Replaces each selected black frame with the previous frame. Keeps video duration and timing unchanged."
+        "Replaces each marked frame with the previous frame. Keeps video duration and timing unchanged."
     ),
     VIDEO_CLEANUP_REMOVE_LABEL: (
-        "Deletes selected black frames and the matching audio slices. Useful before creating subtitles, "
+        "Deletes marked frames and the matching audio slices. Useful before creating subtitles, "
         "but it shortens the timeline."
     ),
 }

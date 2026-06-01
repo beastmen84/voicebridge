@@ -22,6 +22,7 @@ from voicebridge.media_tools import (
     suggest_audio_cleanup_output_path,
     suggest_video_cleanup_output_path,
     suggest_video_subtitle_output_path,
+    video_filmstrip_frame_numbers,
 )
 
 
@@ -135,6 +136,16 @@ def test_removeframes_filter_complex_can_include_audio_slice_removal() -> None:
 
     assert "[0:v]select=not(eq(n\\,10)),setpts=N/FRAME_RATE/TB[vclean]" in graph
     assert "[0:a]aselect=not(between(t\\,0.400000\\,0.440000)),asetpts=N/SR/TB[aclean]" in graph
+
+
+def test_video_filmstrip_frame_numbers_samples_fit_and_zoom_windows() -> None:
+    assert video_filmstrip_frame_numbers(10, max_items=20) == list(range(10))
+
+    fit = video_filmstrip_frame_numbers(1000, max_items=5)
+    assert fit == [0, 250, 500, 749, 999]
+
+    zoomed = video_filmstrip_frame_numbers(1000, start_frame=100, window_frames=10, max_items=20)
+    assert zoomed == list(range(100, 110))
 
 
 def test_auto_burn_quality_prefers_high_for_large_or_high_bitrate_sources() -> None:

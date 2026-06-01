@@ -345,7 +345,8 @@ class VoiceBridgeQt(
     selected_voice_profile_id: str
     cleanup_detected_frames: list[BlackFrame]
     cleanup_repairable_frame_map: dict[int, BlackFrame]
-    cleanup_frame_checkboxes: dict[int, QCheckBox]
+    cleanup_detected_frame_map: dict[int, BlackFrame]
+    cleanup_marked_frame_numbers: set[int]
 
     def setting_section(self, key: str) -> dict[str, Any]:
         value = self.app_settings.get(key, {})
@@ -489,7 +490,13 @@ class VoiceBridgeQt(
         self.cleanup_detected_frames: list[BlackFrame] = []
         self.cleanup_detected_media_path = ""
         self.cleanup_repairable_frame_map: dict[int, BlackFrame] = {}
-        self.cleanup_frame_checkboxes: dict[int, QCheckBox] = {}
+        self.cleanup_detected_frame_map: dict[int, BlackFrame] = {}
+        self.cleanup_marked_frame_numbers: set[int] = set()
+        self.cleanup_video_fps = 0.0
+        self.cleanup_video_duration_seconds = 0.0
+        self.cleanup_video_total_frames = 0
+        self.cleanup_filmstrip_zoom_level = 0
+        self.cleanup_filmstrip_generation = 0
         self.cleanup_log_lines = []
         self._stt_preflight_refreshing = False
         self._voice_modeling_preflight_refreshing = False

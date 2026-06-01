@@ -124,8 +124,10 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 
 1. Creare prima un profilo in `Voice Profiles` con tipo `Modeling dataset`.
 2. Aprire `Modeling Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
-3. Per una clip guidata, caricare o incollare il testo esatto e usare `Record from text`; la finestra mostra il testo, registra dal microfono, pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
-4. Per una clip libera, usare `Free record`; la clip viene salvata come `Needs transcript`.
+3. Per una clip guidata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una singola clip
+   e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi, pulisce il WAV
+   e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
+4. Per una clip libera, usare `Free record`; registra per massimo 60 secondi e la clip viene salvata come `Needs transcript`.
 5. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
 
 I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,

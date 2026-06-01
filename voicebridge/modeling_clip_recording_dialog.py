@@ -32,7 +32,7 @@ MODELING_CLIP_RECORD_SAMPLE_RATE = 24_000
 MODELING_CLIP_RECORD_CHANNELS = 1
 MODELING_CLIP_START_COUNTDOWN_SECONDS = 3
 MODELING_CLIP_TICK_MS = 200
-MODELING_CLIP_MAX_SECONDS = 300
+MODELING_CLIP_DEFAULT_MAX_SECONDS = 60
 
 
 class ModelingClipRecordingDialog(QDialog):
@@ -43,12 +43,14 @@ class ModelingClipRecordingDialog(QDialog):
         output_path: Path,
         device_index: int,
         prompt_text: str = "",
+        max_seconds: int = MODELING_CLIP_DEFAULT_MAX_SECONDS,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.output_path = output_path
         self.device_index = device_index
         self.prompt_text = prompt_text.strip()
+        self.max_seconds = max(1, int(max_seconds))
         self.recording_path: Path | None = None
         self.status_message = ""
         self.quality_details = ""
@@ -58,7 +60,7 @@ class ModelingClipRecordingDialog(QDialog):
         self._recorder: SoundDevicePcmRecorder | None = None
         self._record_started_at = 0.0
         self._phase = "idle"
-        self._target_seconds = self.estimated_target_seconds(self.prompt_text)
+        self._target_seconds = self.estimated_target_seconds(self.prompt_text, self.max_seconds)
         self._countdown_remaining = MODELING_CLIP_START_COUNTDOWN_SECONDS
 
         self.setWindowTitle(title)
@@ -122,7 +124,7 @@ class ModelingClipRecordingDialog(QDialog):
         layout.addWidget(self.status_label)
 
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, self._target_seconds * 1000)
+        self.progress_bar.setRange(0, self.max_seconds * 1000)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%p%")
         layout.addWidget(self.progress_bar)
@@ -132,7 +134,9 @@ class ModelingClipRecordingDialog(QDialog):
         self.script_box.setWidgetResizable(True)
         self.script_box.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.script_box.setMinimumHeight(300)
-        display_text = self.prompt_text or "Free recording. Speak naturally, then press Stop when the clip is complete."
+        display_text = self.prompt_text or (
+            f"Free recording. Speak naturally, then press Stop. Maximum length: {format_duration(self.max_seconds)}."
+        )
         self.script_text = QLabel(display_text)
         self.script_text.setObjectName("RecordingScriptText")
         self.script_text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -187,16 +191,15 @@ class ModelingClipRecordingDialog(QDialog):
         self.media_player.setAudioOutput(self.audio_output)
 
     @staticmethod
-    def estimated_target_seconds(text: str) -> int:
+    def estimated_target_seconds(text: str, max_seconds: int = MODELING_CLIP_DEFAULT_MAX_SECONDS) -> int:
+        if not text.strip():
+            return max(1, int(max_seconds))
         word_count = max(1, len(text.split()))
-        return min(MODELING_CLIP_MAX_SECONDS, max(12, math.ceil(word_count / 2.2) + 5))
+        return min(max(1, int(max_seconds)), max(12, math.ceil(word_count / 2.2) + 5))
 
     def start_or_stop(self) -> None:
         if self._phase == "idle":
-            if self.prompt_text:
-                self.start_countdown()
-            else:
-                self.start_recording()
+            self.start_countdown()
             return
         if self._phase == "recording":
             self.complete_recording()
@@ -206,7 +209,10 @@ class ModelingClipRecordingDialog(QDialog):
         self._phase = "countdown"
         self._countdown_remaining = MODELING_CLIP_START_COUNTDOWN_SECONDS
         self.counter_label.setText(str(self._countdown_remaining))
-        self.status_label.setText("Prepare to read at a natural pace.")
+        if self.prompt_text:
+            self.status_label.setText("Prepare to read at a natural pace.")
+        else:
+            self.status_label.setText("Prepare to speak naturally.")
         self.progress_bar.setValue(0)
         self.scroll_script_to_percent(0.0, animated=False)
         self.details_box.setVisible(False)
@@ -231,8 +237,8 @@ class ModelingClipRecordingDialog(QDialog):
         elapsed = max(0.0, time.monotonic() - self._record_started_at)
         self.progress_bar.setValue(min(self.progress_bar.maximum(), int(elapsed * 1000)))
         self.counter_label.setText("REC")
-        self.status_label.setText(f"Recording... {format_duration(elapsed)}")
-        if elapsed >= MODELING_CLIP_MAX_SECONDS:
+        self.status_label.setText(f"Recording... {format_duration(elapsed)} / {format_duration(self.max_seconds)}")
+        if elapsed >= self.max_seconds:
             self.complete_recording(auto_stopped=True)
 
     def start_recording(self) -> None:

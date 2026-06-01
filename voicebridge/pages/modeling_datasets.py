@@ -38,6 +38,9 @@ from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
+MODELING_GUIDED_TEXT_MAX_CHARS = 450
+MODELING_RECORD_MAX_SECONDS = 60
+
 
 class ModelingDatasetsWorkflowMixin:
     def load_modeling_dataset_store(self) -> None:
@@ -170,6 +173,7 @@ class ModelingDatasetsWorkflowMixin:
         )
         self.modeling_clip_text_edit.setPlainText(clip.get("transcript_text", ""))
         self.modeling_clip_details.setPlainText(clip.get("quality_details", ""))
+        self.update_modeling_text_counter()
 
     def selected_modeling_audio_device(self) -> int | None:
         try:
@@ -197,6 +201,15 @@ class ModelingDatasetsWorkflowMixin:
         except OSError as exc:
             self.show_error("Modeling Datasets", str(exc))
             return
+        if len(text) > MODELING_GUIDED_TEXT_MAX_CHARS:
+            self.show_error(
+                "Modeling Datasets",
+                (
+                    f"The selected text is {len(text)} characters. "
+                    f"Use up to {MODELING_GUIDED_TEXT_MAX_CHARS} characters for one guided clip."
+                ),
+            )
+            return
         self.modeling_clip_text_edit.setPlainText(text)
         self.modeling_dataset_status.setText(f"Loaded text: {Path(path).name}")
 
@@ -208,6 +221,12 @@ class ModelingDatasetsWorkflowMixin:
         text = self.modeling_clip_text_edit.toPlainText().strip()
         if not text:
             self.show_error("Modeling Datasets", "Load or paste the text to read before recording.")
+            return
+        if len(text) > MODELING_GUIDED_TEXT_MAX_CHARS:
+            self.show_error(
+                "Modeling Datasets",
+                f"Guided clips support up to {MODELING_GUIDED_TEXT_MAX_CHARS} characters. Split this text first.",
+            )
             return
         self.record_modeling_clip(dataset, mode=MODELING_CLIP_TEXT_GUIDED, transcript_text=text)
 
@@ -230,6 +249,7 @@ class ModelingDatasetsWorkflowMixin:
             output_path=audio_path,
             device_index=device_index,
             prompt_text=transcript_text if mode == MODELING_CLIP_TEXT_GUIDED else "",
+            max_seconds=MODELING_RECORD_MAX_SECONDS,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.recording_path is None:
@@ -269,6 +289,23 @@ class ModelingDatasetsWorkflowMixin:
         self.selected_modeling_clip_id = updated_clip["id"]
         self.refresh_modeling_datasets_page()
         self.modeling_dataset_status.setText("Transcript saved.")
+
+    def update_modeling_text_counter(self) -> None:
+        if not hasattr(self, "modeling_clip_text_counter"):
+            return
+        character_count = len(self.modeling_clip_text_edit.toPlainText().strip())
+        remaining = MODELING_GUIDED_TEXT_MAX_CHARS - character_count
+        if remaining < 0:
+            self.modeling_clip_text_counter.setText(
+                f"{character_count}/{MODELING_GUIDED_TEXT_MAX_CHARS} characters | split into more clips"
+            )
+            self.modeling_clip_text_counter.setStyleSheet("color: #b42318;")
+        else:
+            self.modeling_clip_text_counter.setText(
+                f"{character_count}/{MODELING_GUIDED_TEXT_MAX_CHARS} characters for guided recording"
+            )
+            self.modeling_clip_text_counter.setStyleSheet("color: #617083;")
+        self.update_modeling_dataset_buttons()
 
     def delete_selected_modeling_clip(self) -> None:
         dataset = self.selected_modeling_dataset()
@@ -319,7 +356,9 @@ class ModelingDatasetsWorkflowMixin:
         clip = self.selected_modeling_clip()
         has_dataset = dataset is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
-        self.modeling_record_text_button.setEnabled(has_dataset)
+        text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
+        can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
+        self.modeling_record_text_button.setEnabled(can_record_from_text)
         self.modeling_record_free_button.setEnabled(has_dataset)
         self.modeling_load_text_button.setEnabled(has_dataset)
         self.modeling_save_text_button.setEnabled(clip is not None)
@@ -386,7 +425,14 @@ class ModelingDatasetsWorkflowMixin:
         editor_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.modeling_clip_text_edit = QPlainTextEdit()
         self.modeling_clip_text_edit.setMinimumHeight(220)
-        self.modeling_clip_text_edit.setPlaceholderText("Paste or load the exact text read in this clip.")
+        self.modeling_clip_text_edit.setPlaceholderText(
+            f"Paste or load the exact text read in this clip. Max {MODELING_GUIDED_TEXT_MAX_CHARS} characters."
+        )
+        self.modeling_clip_text_edit.textChanged.connect(self.update_modeling_text_counter)
+        self.modeling_clip_text_counter = QLabel(
+            f"0/{MODELING_GUIDED_TEXT_MAX_CHARS} characters for guided recording"
+        )
+        self.modeling_clip_text_counter.setObjectName("Muted")
         self.modeling_clip_details = QPlainTextEdit()
         self.modeling_clip_details.setObjectName("LogBox")
         self.modeling_clip_details.setReadOnly(True)
@@ -411,6 +457,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_status = QLabel("Ready.")
         self.modeling_dataset_status.setObjectName("StatusText")
         editor_card.content_layout.addWidget(self.modeling_clip_text_edit)
+        editor_card.content_layout.addWidget(self.modeling_clip_text_counter)
         editor_card.content_layout.addLayout(text_actions)
         editor_card.content_layout.addWidget(self.modeling_clip_details)
         editor_card.content_layout.addWidget(self.modeling_dataset_status)

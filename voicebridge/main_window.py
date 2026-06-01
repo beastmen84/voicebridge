@@ -534,10 +534,6 @@ class VoiceBridgeQt(
         side_layout.addWidget(subtitle)
         side_layout.addSpacing(18)
 
-        workflow_label = QLabel("WORKFLOWS")
-        workflow_label.setObjectName("SidebarSection")
-        side_layout.addWidget(workflow_label)
-
         self.nav_home = self.nav_button("Dashboard", lambda: self.show_page(0))
         self.nav_tts = self.nav_button("Text to Speech", lambda: self.show_page(1))
         self.nav_local_voices = self.nav_button("Local Voices", lambda: self.show_page(2))
@@ -546,9 +542,24 @@ class VoiceBridgeQt(
         self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(5))
         self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(6))
         side_layout.addWidget(self.nav_home)
+
+        main_tools_label = QLabel("MAIN TOOLS")
+        main_tools_label.setObjectName("SidebarSection")
+        side_layout.addSpacing(8)
+        side_layout.addWidget(main_tools_label)
         side_layout.addWidget(self.nav_tts)
-        side_layout.addWidget(self.nav_local_voices)
         side_layout.addWidget(self.nav_stt)
+
+        advanced_tools_label = QLabel("ADVANCED TOOLS")
+        advanced_tools_label.setObjectName("SidebarSection")
+        side_layout.addSpacing(8)
+        side_layout.addWidget(advanced_tools_label)
+        side_layout.addWidget(self.nav_local_voices)
+
+        support_tools_label = QLabel("SUPPORT TOOLS")
+        support_tools_label.setObjectName("SidebarSection")
+        side_layout.addSpacing(8)
+        side_layout.addWidget(support_tools_label)
         side_layout.addWidget(self.nav_video)
         side_layout.addWidget(self.nav_audio_cleanup)
         side_layout.addWidget(self.nav_cleanup)

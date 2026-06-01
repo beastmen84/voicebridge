@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
-    QWidget,
 )
 
 from voicebridge.constants import (
@@ -663,12 +662,11 @@ class SubtitlesWorkflowMixin:
         self.video_quality_description = QLabel(BURN_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
         self.video_quality_description.setObjectName("Muted")
         self.video_quality_description.setWordWrap(True)
-        self.video_style_panel = QWidget()
-        self.video_style_panel.setObjectName("InlinePanel")
-        style_layout = QGridLayout(self.video_style_panel)
-        style_layout.setContentsMargins(0, 4, 0, 0)
-        style_layout.setHorizontalSpacing(10)
-        style_layout.setVerticalSpacing(8)
+        self.video_style_panel = Card("Burn-in font")
+        self.video_style_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        style_layout = QHBoxLayout()
+        style_layout.setContentsMargins(0, 0, 0, 0)
+        style_layout.setSpacing(10)
         self.video_font_size_spin = QSpinBox()
         self.video_font_size_spin.setRange(14, 72)
         self.video_font_size_spin.setValue(28)
@@ -689,14 +687,17 @@ class SubtitlesWorkflowMixin:
         self.video_outline_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_margin_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_position_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
-        style_layout.addWidget(QLabel("Font size"), 0, 0)
-        style_layout.addWidget(self.video_font_size_spin, 0, 1)
-        style_layout.addWidget(QLabel("Outline"), 0, 2)
-        style_layout.addWidget(self.video_outline_spin, 0, 3)
-        style_layout.addWidget(QLabel("Position"), 1, 0)
-        style_layout.addWidget(self.video_position_combo, 1, 1)
-        style_layout.addWidget(QLabel("Vertical margin"), 1, 2)
-        style_layout.addWidget(self.video_margin_spin, 1, 3)
+        style_layout.addWidget(QLabel("Font size"))
+        style_layout.addWidget(self.video_font_size_spin)
+        style_layout.addWidget(QLabel("Outline"))
+        style_layout.addWidget(self.video_outline_spin)
+        style_layout.addSpacing(8)
+        style_layout.addWidget(QLabel("Position"))
+        style_layout.addWidget(self.video_position_combo)
+        style_layout.addWidget(QLabel("Vertical margin"))
+        style_layout.addWidget(self.video_margin_spin)
+        style_layout.addStretch(1)
+        self.video_style_panel.content_layout.addLayout(style_layout)
         settings_card.content_layout.addWidget(QLabel("Mode"))
         settings_card.content_layout.addLayout(mode_row)
         settings_card.content_layout.addWidget(self.video_mode_note)
@@ -704,12 +705,13 @@ class SubtitlesWorkflowMixin:
         settings_card.content_layout.addWidget(self.video_quality_combo)
         settings_card.content_layout.addWidget(self.video_crf_note)
         settings_card.content_layout.addWidget(self.video_quality_description)
-        settings_card.content_layout.addWidget(self.video_style_panel)
 
         grid.addWidget(files_card, 0, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(settings_card, 0, 1, Qt.AlignmentFlag.AlignTop)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
+
+        layout.addWidget(self.video_style_panel)
 
         action_card = Card()
         action_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)

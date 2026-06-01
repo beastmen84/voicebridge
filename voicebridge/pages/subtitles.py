@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -33,11 +34,17 @@ from voicebridge.constants import (
     BURN_QUALITY_LABELS,
     BURN_QUALITY_ORIGINAL_BITRATE,
     BURN_QUALITY_STANDARD,
+    VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL,
+    VIDEO_SUBTITLE_BOX_COLOR_LABELS,
     VIDEO_SUBTITLE_BURN_LABEL,
     VIDEO_SUBTITLE_EMBED_LABEL,
     VIDEO_SUBTITLE_MODE_BY_LABEL,
     VIDEO_SUBTITLE_MODE_DESCRIPTIONS,
+    VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL,
+    VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS,
     VIDEO_SUBTITLE_POSITION_LABELS,
+    VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL,
+    VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
 )
 from voicebridge.file_checks import ensure_free_space
 from voicebridge.media_tools import (
@@ -121,7 +128,27 @@ class SubtitlesWorkflowMixin:
             "outline": self.video_outline_spin.value(),
             "margin_v": self.video_margin_spin.value(),
             "alignment": VIDEO_SUBTITLE_POSITION_LABELS.get(self.video_position_combo.currentText(), 2),
+            "text_color": VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL.get(
+                self.video_text_color_combo.currentText(),
+                VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL["White"],
+            ),
+            "outline_color": VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL.get(
+                self.video_outline_color_combo.currentText(),
+                VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL["Black"],
+            ),
+            "shadow": self.video_shadow_spin.value(),
+            "background_box": self.video_background_box_check.isChecked(),
+            "box_color": VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL.get(
+                self.video_box_color_combo.currentText(),
+                VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL["Black 70%"],
+            ),
         }
+
+    def update_video_subtitle_style_options(self):
+        if not hasattr(self, "video_box_color_combo"):
+            return
+        self.video_box_color_combo.setEnabled(self.video_background_box_check.isChecked())
+        self.save_user_settings()
 
     def suggested_video_subtitle_output_path(self):
         media_path = self.video_media_picker.text()
@@ -576,10 +603,18 @@ class SubtitlesWorkflowMixin:
             self.video_quality_combo,
             self.video_font_size_spin,
             self.video_outline_spin,
+            self.video_shadow_spin,
             self.video_margin_spin,
             self.video_position_combo,
+            self.video_text_color_combo,
+            self.video_outline_color_combo,
+            self.video_background_box_check,
+            self.video_box_color_combo,
         ):
             widget.setEnabled(not self.is_video_running)
+        self.video_box_color_combo.setEnabled(
+            not self.is_video_running and self.video_background_box_check.isChecked()
+        )
         self.update_navigation_state()
 
     def append_video_log(self, line):
@@ -664,9 +699,10 @@ class SubtitlesWorkflowMixin:
         self.video_quality_description.setWordWrap(True)
         self.video_style_panel = Card("Burn-in font")
         self.video_style_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        style_layout = QHBoxLayout()
+        style_layout = QGridLayout()
         style_layout.setContentsMargins(0, 0, 0, 0)
-        style_layout.setSpacing(10)
+        style_layout.setHorizontalSpacing(10)
+        style_layout.setVerticalSpacing(8)
         self.video_font_size_spin = QSpinBox()
         self.video_font_size_spin.setRange(14, 72)
         self.video_font_size_spin.setValue(28)
@@ -676,27 +712,67 @@ class SubtitlesWorkflowMixin:
         self.video_margin_spin = QSpinBox()
         self.video_margin_spin.setRange(0, 160)
         self.video_margin_spin.setValue(36)
+        self.video_shadow_spin = QSpinBox()
+        self.video_shadow_spin.setRange(0, 4)
+        self.video_shadow_spin.setValue(0)
         self.video_position_combo = QComboBox()
         self.video_position_combo.addItems(list(VIDEO_SUBTITLE_POSITION_LABELS))
-        for spinbox in (self.video_font_size_spin, self.video_outline_spin, self.video_margin_spin):
+        self.video_text_color_combo = QComboBox()
+        self.video_text_color_combo.addItems(VIDEO_SUBTITLE_TEXT_COLOR_LABELS)
+        self.video_outline_color_combo = QComboBox()
+        self.video_outline_color_combo.addItems(VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS)
+        self.video_background_box_check = QCheckBox("Background box")
+        self.video_box_color_combo = QComboBox()
+        self.video_box_color_combo.addItems(VIDEO_SUBTITLE_BOX_COLOR_LABELS)
+        for spinbox in (
+            self.video_font_size_spin,
+            self.video_outline_spin,
+            self.video_shadow_spin,
+            self.video_margin_spin,
+        ):
             spinbox.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
             spinbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
             spinbox.setFixedWidth(82)
         self.video_position_combo.setMinimumWidth(180)
+        self.video_text_color_combo.setMinimumWidth(150)
+        self.video_outline_color_combo.setMinimumWidth(130)
+        self.video_box_color_combo.setMinimumWidth(150)
         self.video_font_size_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_outline_spin.valueChanged.connect(lambda _value: self.save_user_settings())
+        self.video_shadow_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_margin_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_position_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
-        style_layout.addWidget(QLabel("Font size"))
-        style_layout.addWidget(self.video_font_size_spin)
-        style_layout.addWidget(QLabel("Outline"))
-        style_layout.addWidget(self.video_outline_spin)
-        style_layout.addSpacing(8)
-        style_layout.addWidget(QLabel("Position"))
-        style_layout.addWidget(self.video_position_combo)
-        style_layout.addWidget(QLabel("Vertical margin"))
-        style_layout.addWidget(self.video_margin_spin)
-        style_layout.addStretch(1)
+        self.video_text_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.video_outline_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.video_background_box_check.toggled.connect(lambda _checked: self.update_video_subtitle_style_options())
+        self.video_box_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        layout_label = QLabel("Layout")
+        layout_label.setObjectName("Muted")
+        legibility_label = QLabel("Legibility")
+        legibility_label.setObjectName("Muted")
+        colors_label = QLabel("Colors")
+        colors_label.setObjectName("Muted")
+        style_layout.addWidget(layout_label, 0, 0)
+        style_layout.addWidget(QLabel("Position"), 0, 1)
+        style_layout.addWidget(self.video_position_combo, 0, 2)
+        style_layout.addWidget(QLabel("Vertical margin"), 0, 3)
+        style_layout.addWidget(self.video_margin_spin, 0, 4)
+        style_layout.addWidget(QLabel("Font size"), 0, 5)
+        style_layout.addWidget(self.video_font_size_spin, 0, 6)
+        style_layout.addWidget(legibility_label, 1, 0)
+        style_layout.addWidget(QLabel("Outline"), 1, 1)
+        style_layout.addWidget(self.video_outline_spin, 1, 2)
+        style_layout.addWidget(QLabel("Shadow"), 1, 3)
+        style_layout.addWidget(self.video_shadow_spin, 1, 4)
+        style_layout.addWidget(self.video_background_box_check, 1, 5, 1, 2)
+        style_layout.addWidget(colors_label, 2, 0)
+        style_layout.addWidget(QLabel("Text"), 2, 1)
+        style_layout.addWidget(self.video_text_color_combo, 2, 2)
+        style_layout.addWidget(QLabel("Outline"), 2, 3)
+        style_layout.addWidget(self.video_outline_color_combo, 2, 4)
+        style_layout.addWidget(QLabel("Box"), 2, 5)
+        style_layout.addWidget(self.video_box_color_combo, 2, 6)
+        style_layout.setColumnStretch(7, 1)
         self.video_style_panel.content_layout.addLayout(style_layout)
         settings_card.content_layout.addWidget(QLabel("Mode"))
         settings_card.content_layout.addLayout(mode_row)
@@ -755,6 +831,7 @@ class SubtitlesWorkflowMixin:
         layout.addStretch(1)
 
         self.video_subtitle_mode_changed()
+        self.update_video_subtitle_style_options()
         self.update_video_subtitle_button_state()
         return page
 

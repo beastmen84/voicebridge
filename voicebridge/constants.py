@@ -122,6 +122,32 @@ VIDEO_SUBTITLE_POSITION_LABELS = {
     "Middle center": 5,
     "Top center": 8,
 }
+VIDEO_SUBTITLE_TEXT_COLOR_LABELS = [
+    "White",
+    "Warm yellow",
+    "Light cyan",
+]
+VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL = {
+    "White": "&H00FFFFFF",
+    "Warm yellow": "&H0066E0FF",
+    "Light cyan": "&H00FEFACF",
+}
+VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS = [
+    "Black",
+    "Dark gray",
+]
+VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL = {
+    "Black": "&H00000000",
+    "Dark gray": "&H00202020",
+}
+VIDEO_SUBTITLE_BOX_COLOR_LABELS = [
+    "Black 70%",
+    "Dark gray 70%",
+]
+VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL = {
+    "Black 70%": "&H4D000000",
+    "Dark gray 70%": "&H4D202020",
+}
 VIDEO_CLEANUP_QUALITY_LABELS = [
     BURN_QUALITY_AUTO_LABEL,
     BURN_QUALITY_STANDARD_LABEL,

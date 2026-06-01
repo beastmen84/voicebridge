@@ -214,6 +214,8 @@ Nel burn-in si puo' scegliere la qualita' di ricodifica:
 - `Original bitrate`: ricodifica puntando al bitrate video sorgente; non e' lossless.
 
 CRF significa qualita' costante: numeri piu' bassi danno piu' qualita' e file piu' grandi.
+La card `Burn-in font` permette di regolare posizione, margine verticale, dimensione, outline, ombra, colori e box di sfondo.
+Queste opzioni usano parametri ASS/ffmpeg portabili e non dipendono da font specifici installati sul PC.
 
 ### Audio Cleanup
 

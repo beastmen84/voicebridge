@@ -19,6 +19,7 @@ from voicebridge.media_tools import (
     parse_srt_timestamp,
     pcm_s16le_peak_bins,
     removeframes_filter_complex,
+    subtitle_force_style,
     suggest_audio_cleanup_output_path,
     suggest_video_cleanup_output_path,
     suggest_video_subtitle_output_path,
@@ -156,3 +157,24 @@ def test_auto_burn_quality_prefers_high_for_large_or_high_bitrate_sources() -> N
     assert auto_burn_quality(source_video_bitrate_kbps=6000, source_video_width=1920, source_video_height=1080) == (
         BURN_QUALITY_STANDARD
     )
+
+
+def test_subtitle_force_style_includes_portable_burn_in_options() -> None:
+    style = subtitle_force_style({
+        "font_size": 30,
+        "outline": 3,
+        "margin_v": 42,
+        "alignment": 2,
+        "text_color": "&H0066E0FF",
+        "outline_color": "&H00000000",
+        "shadow": 2,
+        "background_box": True,
+        "box_color": "&H4D000000",
+    })
+
+    assert "Fontsize=30" in style
+    assert "PrimaryColour=&H0066E0FF" in style
+    assert "OutlineColour=&H00000000" in style
+    assert "BackColour=&H4D000000" in style
+    assert "BorderStyle=3" in style
+    assert "Shadow=2" in style

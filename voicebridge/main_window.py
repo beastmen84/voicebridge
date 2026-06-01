@@ -49,7 +49,10 @@ from voicebridge.constants import (
     TTS_SPLIT_PARAGRAPHS,
     UI_QUEUE_POLL_MS,
     VIDEO_CLEANUP_QUALITY_LABELS,
+    VIDEO_SUBTITLE_BOX_COLOR_LABELS,
+    VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS,
     VIDEO_SUBTITLE_POSITION_LABELS,
+    VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
 )
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.media_tools import (
@@ -260,8 +263,13 @@ class VoiceBridgeQt(
     video_style_panel: QWidget
     video_font_size_spin: QSpinBox
     video_outline_spin: QSpinBox
+    video_shadow_spin: QSpinBox
     video_margin_spin: QSpinBox
     video_position_combo: QComboBox
+    video_text_color_combo: QComboBox
+    video_outline_color_combo: QComboBox
+    video_background_box_check: QCheckBox
+    video_box_color_combo: QComboBox
     video_start_button: QPushButton
     video_preview_button: QPushButton
     video_cancel_button: QPushButton
@@ -678,7 +686,24 @@ class VoiceBridgeQt(
             )
             self.video_font_size_spin.setValue(self.safe_int(video_settings.get("font_size"), 28, 14, 72))
             self.video_outline_spin.setValue(self.safe_int(video_settings.get("outline"), 2, 0, 8))
+            self.video_shadow_spin.setValue(self.safe_int(video_settings.get("shadow"), 0, 0, 4))
             self.video_margin_spin.setValue(self.safe_int(video_settings.get("margin_v"), 36, 0, 160))
+            self.set_combo_text(
+                self.video_text_color_combo,
+                video_settings.get("text_color_label"),
+                VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
+            )
+            self.set_combo_text(
+                self.video_outline_color_combo,
+                video_settings.get("outline_color_label"),
+                VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS,
+            )
+            self.video_background_box_check.setChecked(bool(video_settings.get("background_box", False)))
+            self.set_combo_text(
+                self.video_box_color_combo,
+                video_settings.get("box_color_label"),
+                VIDEO_SUBTITLE_BOX_COLOR_LABELS,
+            )
 
             cleanup_settings = self.setting_section("video_cleanup")
             self.set_combo_text(
@@ -692,6 +717,7 @@ class VoiceBridgeQt(
         self.set_tts_mode(self.tts_mode_index())
         self.stt_mode_changed()
         self.video_subtitle_mode_changed()
+        self.update_video_subtitle_style_options()
         self.update_video_quality_description(self.video_quality_combo.currentText())
         self.refresh_audio_cleanup_input_info()
         self.cleanup_media_changed()
@@ -743,8 +769,13 @@ class VoiceBridgeQt(
                 "quality_label": self.video_quality_combo.currentText(),
                 "font_size": self.video_font_size_spin.value(),
                 "outline": self.video_outline_spin.value(),
+                "shadow": self.video_shadow_spin.value(),
                 "margin_v": self.video_margin_spin.value(),
                 "position_label": self.video_position_combo.currentText(),
+                "text_color_label": self.video_text_color_combo.currentText(),
+                "outline_color_label": self.video_outline_color_combo.currentText(),
+                "background_box": self.video_background_box_check.isChecked(),
+                "box_color_label": self.video_box_color_combo.currentText(),
             }
 
         if hasattr(self, "cleanup_quality_combo"):

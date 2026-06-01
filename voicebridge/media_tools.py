@@ -61,6 +61,11 @@ class SubtitleStyle(TypedDict):
     outline: int
     margin_v: int
     alignment: int
+    text_color: str
+    outline_color: str
+    shadow: int
+    background_box: bool
+    box_color: str
 
 
 def ffmpeg_candidates():
@@ -112,14 +117,20 @@ def escape_ffmpeg_filter_path(path):
 def subtitle_force_style(subtitle_style: SubtitleStyle | None = None):
     if not subtitle_style:
         return ""
+    background_box = bool(subtitle_style.get("background_box", False))
+    outline_color = subtitle_style.get("outline_color", "&H00000000")
+    back_color = subtitle_style.get("box_color", "&H4D000000") if background_box else outline_color
     return ",".join(
         (
             f"Fontsize={int(subtitle_style.get('font_size', 28))}",
             f"Outline={int(subtitle_style.get('outline', 2))}",
             f"MarginV={int(subtitle_style.get('margin_v', 36))}",
             f"Alignment={int(subtitle_style.get('alignment', 2))}",
-            "BorderStyle=1",
-            "Shadow=0",
+            f"PrimaryColour={subtitle_style.get('text_color', '&H00FFFFFF')}",
+            f"OutlineColour={outline_color}",
+            f"BackColour={back_color}",
+            f"BorderStyle={3 if background_box else 1}",
+            f"Shadow={int(subtitle_style.get('shadow', 0))}",
         )
     )
 

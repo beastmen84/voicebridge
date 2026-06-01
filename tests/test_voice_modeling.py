@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -12,16 +13,23 @@ from voicebridge.modeling_datasets import (
 from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
     default_voice_modeling_output_dir,
+    list_voice_modeling_exports,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
+    voice_modeling_export_label,
     voice_modeling_export_summary_text,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, build_voice_profile
 
 
-def exported_dataset(tmp_path: Path) -> Path:
+def exported_dataset(
+    tmp_path: Path,
+    *,
+    name: str = "Dataset Voice",
+    timestamp: str = "20260601-120000",
+) -> Path:
     profile = build_voice_profile(
-        name="Dataset Voice",
+        name=name,
         language_code="en",
         profile_type=VOICE_PROFILE_MODELING,
         reference_paths=[],
@@ -42,7 +50,7 @@ def exported_dataset(tmp_path: Path) -> Path:
                 clip_id=f"clip-{index}",
             )
         )
-    result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+    result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp=timestamp)
     return Path(result["export_dir"])
 
 
@@ -65,6 +73,21 @@ def test_validate_voice_modeling_export_rejects_bad_metadata(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="wav_path\\|text"):
         validate_voice_modeling_export(export_dir)
+
+
+def test_list_voice_modeling_exports_returns_valid_exports_first(tmp_path: Path) -> None:
+    older_export = exported_dataset(tmp_path, name="Older Voice", timestamp="20260601-120000")
+    newer_export = exported_dataset(tmp_path, name="Newer Voice", timestamp="20260601-130000")
+    invalid_export = tmp_path / "exports" / "broken-export"
+    invalid_export.mkdir(parents=True)
+    os.utime(older_export, (1_000_000, 1_000_000))
+    os.utime(newer_export, (2_000_000, 2_000_000))
+
+    exports = list_voice_modeling_exports(tmp_path / "exports")
+
+    assert [export["name"] for export in exports] == ["Newer Voice", "Older Voice"]
+    assert "Newer Voice" in voice_modeling_export_label(exports[0])
+    assert "Usable" in voice_modeling_export_label(exports[0])
 
 
 def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

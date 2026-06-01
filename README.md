@@ -150,8 +150,8 @@ file di lavoro.
 `Local Voices > Modeling` prepara il job di training XTTS-v2, ma non avvia ancora il training.
 
 1. Esportare prima un dataset dalla sezione `Local Voices > Datasets`.
-2. Aprire `Local Voices > Modeling` e selezionare la cartella export in `modeling_exports`.
-3. Usare `Validate` per controllare `metadata.csv`, `dataset.json` e i WAV collegati.
+2. Aprire `Local Voices > Modeling` e scegliere il dataset export dal dropdown popolato da `modeling_exports`.
+3. Usare `Refresh` se si e' appena creato un export; `Browse external...` serve solo per dataset validi fuori cartella.
 4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
 5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.
 6. Usare `Save training config` per creare `job_config.json` nella cartella output.

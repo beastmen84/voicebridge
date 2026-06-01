@@ -1,7 +1,6 @@
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
-from voicebridge.modeling_datasets import modeling_dataset_exports_root
-from voicebridge.voice_modeling import validate_voice_modeling_export
+from voicebridge.voice_modeling import list_voice_modeling_exports
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
 LOCAL_VOICES_TAB_PROFILES = 0
@@ -21,22 +20,7 @@ class LocalVoicesWorkflowMixin:
         return any(profile.get("profile_type") == VOICE_PROFILE_MODELING for profile in self.voice_profiles)
 
     def has_voice_modeling_exports(self) -> bool:
-        exports_root = modeling_dataset_exports_root()
-        if not exports_root.is_dir():
-            return False
-        try:
-            export_dirs = list(exports_root.iterdir())
-        except OSError:
-            return False
-        for export_dir in export_dirs:
-            if not export_dir.is_dir():
-                continue
-            try:
-                validate_voice_modeling_export(export_dir)
-            except (OSError, ValueError):
-                continue
-            return True
-        return False
+        return bool(list_voice_modeling_exports())
 
     def update_local_voice_tabs(self) -> None:
         if not hasattr(self, "local_voice_tabs"):
@@ -57,6 +41,10 @@ class LocalVoicesWorkflowMixin:
             fallback_tab = LOCAL_VOICES_TAB_DATASETS if datasets_enabled else LOCAL_VOICES_TAB_PROFILES
             self.local_voice_tabs.setCurrentIndex(fallback_tab)
 
+    def local_voice_tab_changed(self, tab_index: int) -> None:
+        if tab_index == LOCAL_VOICES_TAB_MODELING:
+            self.refresh_voice_modeling_exports()
+
     def build_local_voices_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -75,6 +63,7 @@ class LocalVoicesWorkflowMixin:
         self.local_voice_tabs.addTab(self.build_voice_profiles_page(include_header=False), "Profiles")
         self.local_voice_tabs.addTab(self.build_modeling_datasets_page(include_header=False), "Datasets")
         self.local_voice_tabs.addTab(self.build_voice_modeling_page(include_header=False), "Modeling")
+        self.local_voice_tabs.currentChanged.connect(self.local_voice_tab_changed)
         layout.addWidget(self.local_voice_tabs, 1)
         self.update_local_voice_tabs()
         return page

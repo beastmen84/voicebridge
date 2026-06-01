@@ -369,6 +369,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_status.setText(
             f"Exported {result['exported_clips']} ready clip(s) to {export_dir}."
         )
+        self.refresh_voice_modeling_exports(export_dir)
         self.update_local_voice_tabs()
         self.show_info("Modeling Datasets", f"Dataset exported:\n{export_dir}")
         open_path(export_dir)

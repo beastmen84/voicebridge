@@ -21,8 +21,10 @@ from voicebridge.voice_modeling import (
     VoiceModelingExportInfo,
     build_voice_modeling_job_config,
     default_voice_modeling_output_dir,
+    list_voice_modeling_exports,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
+    voice_modeling_export_label,
     voice_modeling_export_summary_text,
 )
 
@@ -71,18 +73,95 @@ class VoiceModelingWorkflowMixin:
         finally:
             self.voice_modeling_device_combo.blockSignals(False)
 
+    def selected_voice_modeling_export_path(self) -> str:
+        export_path = self.voice_modeling_export_combo.currentData(Qt.ItemDataRole.UserRole)
+        return export_path if isinstance(export_path, str) else ""
+
+    def refresh_voice_modeling_exports(self, selected_path: str = "") -> None:
+        if not hasattr(self, "voice_modeling_export_combo"):
+            return
+        selected_path = selected_path if isinstance(selected_path, str) else ""
+        selected_path = selected_path or self.selected_voice_modeling_export_path()
+        if selected_path:
+            selected_path = str(Path(selected_path).expanduser().resolve())
+        exports = list_voice_modeling_exports()
+        self.voice_modeling_export_combo.blockSignals(True)
+        try:
+            self.voice_modeling_export_combo.clear()
+            if not exports:
+                self.voice_modeling_export_combo.addItem("No valid dataset exports found.", "")
+                item = self.voice_modeling_export_combo.model().item(0)
+                if item is not None:
+                    item.setEnabled(False)
+                self.voice_modeling_export_info = None
+                self.voice_modeling_dataset_info.setPlainText(
+                    "Export a Usable or Good dataset from Local Voices > Datasets first."
+                )
+                self.voice_modeling_output_picker.set_text("")
+                self.voice_modeling_status.setText("No valid dataset export found.")
+                self.update_voice_modeling_buttons()
+                return
+            selected_index = 0
+            for export_info in exports:
+                self.voice_modeling_export_combo.addItem(
+                    voice_modeling_export_label(export_info),
+                    export_info["dataset_dir"],
+                )
+                index = self.voice_modeling_export_combo.count() - 1
+                self.voice_modeling_export_combo.setItemData(
+                    index,
+                    export_info["dataset_dir"],
+                    Qt.ItemDataRole.ToolTipRole,
+                )
+                if selected_path and export_info["dataset_dir"] == selected_path:
+                    selected_index = index
+            self.voice_modeling_export_combo.setCurrentIndex(selected_index)
+        finally:
+            self.voice_modeling_export_combo.blockSignals(False)
+        self.validate_voice_modeling_dataset()
+
     def select_voice_modeling_dataset_folder(self) -> None:
-        initial = self.voice_modeling_dataset_picker.text() or str(modeling_dataset_exports_root())
+        initial = self.selected_voice_modeling_export_path() or str(modeling_dataset_exports_root())
         path = QFileDialog.getExistingDirectory(self, "Select exported dataset", initial)
         if path:
-            self.voice_modeling_dataset_picker.set_text(path)
-            self.validate_voice_modeling_dataset()
+            self.set_external_voice_modeling_export(path)
+
+    def set_external_voice_modeling_export(self, dataset_dir: str) -> None:
+        try:
+            export_info = validate_voice_modeling_export(dataset_dir)
+        except ValueError as exc:
+            self.voice_modeling_export_info = None
+            self.voice_modeling_dataset_info.setPlainText(str(exc))
+            self.voice_modeling_output_picker.set_text("")
+            self.voice_modeling_status.setText("Dataset not ready.")
+            self.update_voice_modeling_buttons()
+            return
+        export_path = export_info["dataset_dir"]
+        self.voice_modeling_export_combo.blockSignals(True)
+        try:
+            for index in range(self.voice_modeling_export_combo.count()):
+                if self.voice_modeling_export_combo.itemData(index, Qt.ItemDataRole.UserRole) == export_path:
+                    self.voice_modeling_export_combo.setCurrentIndex(index)
+                    break
+            else:
+                self.voice_modeling_export_combo.addItem(
+                    f"External | {voice_modeling_export_label(export_info)}",
+                    export_path,
+                )
+                index = self.voice_modeling_export_combo.count() - 1
+                self.voice_modeling_export_combo.setItemData(index, export_path, Qt.ItemDataRole.ToolTipRole)
+                self.voice_modeling_export_combo.setCurrentIndex(index)
+        finally:
+            self.voice_modeling_export_combo.blockSignals(False)
+        self.apply_voice_modeling_export(export_info)
 
     def validate_voice_modeling_dataset(self) -> VoiceModelingExportInfo | None:
-        dataset_dir = self.voice_modeling_dataset_picker.text()
+        dataset_dir = self.selected_voice_modeling_export_path()
         if not dataset_dir:
             self.voice_modeling_export_info = None
-            self.voice_modeling_dataset_info.setPlainText("Select an exported dataset folder.")
+            self.voice_modeling_dataset_info.setPlainText("Select an exported dataset.")
+            self.voice_modeling_output_picker.set_text("")
+            self.voice_modeling_status.setText("No dataset selected.")
             self.update_voice_modeling_buttons()
             return None
         try:
@@ -90,15 +169,22 @@ class VoiceModelingWorkflowMixin:
         except ValueError as exc:
             self.voice_modeling_export_info = None
             self.voice_modeling_dataset_info.setPlainText(str(exc))
+            self.voice_modeling_output_picker.set_text("")
             self.voice_modeling_status.setText("Dataset not ready.")
             self.update_voice_modeling_buttons()
             return None
+        self.apply_voice_modeling_export(export_info)
+        return export_info
+
+    def voice_modeling_export_changed(self) -> None:
+        self.validate_voice_modeling_dataset()
+
+    def apply_voice_modeling_export(self, export_info: VoiceModelingExportInfo) -> None:
         self.voice_modeling_export_info = export_info
         self.voice_modeling_dataset_info.setPlainText(voice_modeling_export_summary_text(export_info))
         self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
         self.voice_modeling_status.setText("Dataset export validated.")
         self.update_voice_modeling_buttons()
-        return export_info
 
     def select_voice_modeling_output_folder(self) -> None:
         initial = self.voice_modeling_output_picker.text() or str(Path.home())
@@ -176,18 +262,27 @@ class VoiceModelingWorkflowMixin:
 
         dataset_card = Card("Exported dataset")
         dataset_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self.voice_modeling_dataset_picker = FilePicker("Dataset export folder")
-        self.voice_modeling_dataset_picker.button.clicked.connect(self.select_voice_modeling_dataset_folder)
-        self.voice_modeling_dataset_picker.edit.textChanged.connect(lambda _text: self.update_voice_modeling_buttons())
-        self.voice_modeling_validate_button = QPushButton("Validate")
-        self.voice_modeling_validate_button.clicked.connect(self.validate_voice_modeling_dataset)
+        self.voice_modeling_export_combo = QComboBox()
+        self.voice_modeling_export_combo.currentIndexChanged.connect(
+            lambda _index: self.voice_modeling_export_changed()
+        )
+        export_actions = QHBoxLayout()
+        export_actions.setContentsMargins(0, 0, 0, 0)
+        self.voice_modeling_refresh_exports_button = QPushButton("Refresh")
+        self.voice_modeling_browse_export_button = QPushButton("Browse external...")
+        self.voice_modeling_refresh_exports_button.clicked.connect(self.refresh_voice_modeling_exports)
+        self.voice_modeling_browse_export_button.clicked.connect(self.select_voice_modeling_dataset_folder)
+        export_actions.addWidget(self.voice_modeling_refresh_exports_button)
+        export_actions.addStretch(1)
+        export_actions.addWidget(self.voice_modeling_browse_export_button)
         self.voice_modeling_dataset_info = QPlainTextEdit()
         self.voice_modeling_dataset_info.setObjectName("LogBox")
         self.voice_modeling_dataset_info.setReadOnly(True)
         self.voice_modeling_dataset_info.setMinimumHeight(240)
-        self.voice_modeling_dataset_info.setPlainText("Select an exported dataset folder.")
-        dataset_card.content_layout.addWidget(self.voice_modeling_dataset_picker)
-        dataset_card.content_layout.addWidget(self.voice_modeling_validate_button)
+        self.voice_modeling_dataset_info.setPlainText("Select an exported dataset.")
+        dataset_card.content_layout.addWidget(QLabel("Dataset export"))
+        dataset_card.content_layout.addWidget(self.voice_modeling_export_combo)
+        dataset_card.content_layout.addLayout(export_actions)
         dataset_card.content_layout.addWidget(self.voice_modeling_dataset_info)
 
         config_card = Card("Training configuration")
@@ -252,5 +347,6 @@ class VoiceModelingWorkflowMixin:
 
         self.voice_modeling_export_info = None
         self.update_voice_modeling_device_options()
+        self.refresh_voice_modeling_exports()
         self.update_voice_modeling_buttons()
         return page

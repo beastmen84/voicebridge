@@ -192,7 +192,7 @@ class VoiceBridgeQt(
     modeling_clip_media_player: Any
 
     voice_modeling_export_info: VoiceModelingExportInfo | None
-    voice_modeling_dataset_picker: FilePicker
+    voice_modeling_export_combo: QComboBox
     voice_modeling_output_picker: FilePicker
     voice_modeling_resume_picker: FilePicker
     voice_modeling_dataset_info: QPlainTextEdit
@@ -200,7 +200,8 @@ class VoiceBridgeQt(
     voice_modeling_device_combo: QComboBox
     voice_modeling_epochs_spin: QSpinBox
     voice_modeling_batch_spin: QSpinBox
-    voice_modeling_validate_button: QPushButton
+    voice_modeling_refresh_exports_button: QPushButton
+    voice_modeling_browse_export_button: QPushButton
     voice_modeling_clear_resume_button: QPushButton
     voice_modeling_save_config_button: QPushButton
     voice_modeling_open_output_button: QPushButton

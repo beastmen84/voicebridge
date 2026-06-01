@@ -9,6 +9,7 @@ from voicebridge.modeling_datasets import (
     MODELING_DATASET_GOOD,
     MODELING_DATASET_USABLE,
     format_modeling_dataset_duration,
+    modeling_dataset_exports_root,
 )
 from voicebridge.voice_profiles import safe_voice_profile_audio_stem
 
@@ -110,6 +111,34 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
     }
 
 
+def list_voice_modeling_exports(exports_root: str | Path | None = None) -> list[VoiceModelingExportInfo]:
+    root = Path(exports_root).expanduser() if exports_root else modeling_dataset_exports_root()
+    if not root.is_dir():
+        return []
+    try:
+        export_dirs = list(root.iterdir())
+    except OSError:
+        return []
+    exports: list[tuple[float, VoiceModelingExportInfo]] = []
+    for export_dir in export_dirs:
+        if not export_dir.is_dir():
+            continue
+        try:
+            export_info = validate_voice_modeling_export(export_dir)
+            modified_at = export_dir.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        exports.append((modified_at, export_info))
+    return [
+        export_info
+        for _modified_at, export_info in sorted(
+            exports,
+            key=lambda item: (item[0], item[1]["dataset_dir"]),
+            reverse=True,
+        )
+    ]
+
+
 def parse_voice_modeling_metadata(metadata_path: Path, export_dir: Path) -> list[tuple[str, str]]:
     rows = []
     for line_number, raw_line in enumerate(metadata_path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -196,6 +225,16 @@ def voice_modeling_export_summary_text(export_info: VoiceModelingExportInfo) -> 
             f"Ready duration: {format_modeling_dataset_duration(export_info['ready_duration_seconds'])}",
             f"Folder: {export_info['dataset_dir']}",
         ]
+    )
+
+
+def voice_modeling_export_label(export_info: VoiceModelingExportInfo) -> str:
+    folder_name = Path(export_info["dataset_dir"]).name
+    readiness = export_info["readiness"].replace("_", " ").title()
+    duration = format_modeling_dataset_duration(export_info["ready_duration_seconds"])
+    return (
+        f"{export_info['name']} | {folder_name} | {export_info['language_code']} | "
+        f"{readiness} | {export_info['ready_clips']} clip(s), {duration}"
     )
 
 

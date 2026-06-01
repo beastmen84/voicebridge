@@ -134,7 +134,8 @@ I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; o
 testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
 La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata utile, clip senza transcript, audio mancanti
 e segnali come clip troppo corte/lunghe, volume basso o clipping. `Usable` richiede almeno 5 clip pronte e 60 secondi
-di audio; `Good` richiede almeno 20 clip pronte e 10 minuti senza warning qualita'.
+di audio; `Good` richiede almeno 20 clip pronte e 10 minuti senza warning qualita'. Il target consigliato per una voce
+da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 
 ### Transcription
 

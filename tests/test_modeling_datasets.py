@@ -173,8 +173,10 @@ def test_modeling_dataset_summary_uses_ready_clip_subset(tmp_path: Path) -> None
     assert summary["ready_duration_seconds"] == 60.0
     assert summary["pending_transcript_clips"] == 1
     assert summary["missing_audio_clips"] == 1
+    assert summary["target_reached"] is False
     assert any("need transcript" in issue for issue in summary["issues"])
     assert any("missing their WAV" in issue for issue in summary["issues"])
+    assert any("Usable for pipeline tests" in recommendation for recommendation in summary["recommendations"])
 
 
 def test_modeling_dataset_summary_flags_clip_quality(tmp_path: Path) -> None:
@@ -242,7 +244,48 @@ def test_modeling_dataset_summary_reports_good_dataset(tmp_path: Path) -> None:
 
     assert summary["readiness"] == MODELING_DATASET_GOOD
     assert summary["ready_duration_seconds"] == 600.0
+    assert summary["target_reached"] is False
+    assert summary["target_clips_percent"] == 33
+    assert summary["target_duration_percent"] == 33
     assert summary["issues"] == []
+    assert any("production target" in recommendation for recommendation in summary["recommendations"])
+
+
+def test_modeling_dataset_summary_reports_target_dataset(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(60):
+        audio_path = tmp_path / f"target-{index}.wav"
+        audio_path.write_bytes(b"RIFF")
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"Target clip {index}",
+                duration_seconds=30.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"target-{index}",
+            )
+        )
+
+    summary = modeling_dataset_summary(dataset)
+    summary_text = modeling_dataset_summary_text(dataset)
+
+    assert summary["readiness"] == MODELING_DATASET_GOOD
+    assert summary["target_reached"] is True
+    assert summary["target_clips_percent"] == 100
+    assert summary["target_duration_percent"] == 100
+    assert summary["issues"] == []
+    assert any("Recommended target reached" in recommendation for recommendation in summary["recommendations"])
+    assert "Target progress: 60/60 clips, 30m 00s/30m 00s" in summary_text
+    assert "Recommended target: 60-120 ready clips, 30m 00s-60m 00s clean audio" in summary_text
 
 
 def test_save_and_load_modeling_datasets(tmp_path: Path) -> None:

@@ -27,6 +27,10 @@ MODELING_MIN_READY_CLIPS = 5
 MODELING_MIN_READY_SECONDS = 60.0
 MODELING_GOOD_READY_CLIPS = 20
 MODELING_GOOD_READY_SECONDS = 600.0
+MODELING_TARGET_READY_CLIPS = 60
+MODELING_TARGET_READY_SECONDS = 1800.0
+MODELING_STRETCH_READY_CLIPS = 120
+MODELING_STRETCH_READY_SECONDS = 3600.0
 MODELING_MIN_READY_CLIP_SECONDS = 5.0
 MODELING_MAX_READY_CLIP_SECONDS = 60.0
 MODELING_LOW_RMS_PERCENT = 3.0
@@ -70,7 +74,11 @@ class ModelingDatasetSummary(TypedDict):
     low_level_clips: int
     clipping_clips: int
     readiness: str
+    target_reached: bool
+    target_clips_percent: int
+    target_duration_percent: int
     issues: list[str]
+    recommendations: list[str]
 
 
 def utc_timestamp() -> str:
@@ -185,6 +193,15 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         clipping_clips=clipping_clips,
         readiness=readiness,
     )
+    recommendations = modeling_dataset_summary_recommendations(
+        ready_clips=ready_clips,
+        ready_duration_seconds=ready_duration_seconds,
+        readiness=readiness,
+    )
+    target_reached = (
+        ready_clips >= MODELING_TARGET_READY_CLIPS
+        and ready_duration_seconds >= MODELING_TARGET_READY_SECONDS
+    )
     return {
         "total_clips": len(dataset["clips"]),
         "ready_clips": ready_clips,
@@ -197,7 +214,11 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         "low_level_clips": low_level_clips,
         "clipping_clips": clipping_clips,
         "readiness": readiness,
+        "target_reached": target_reached,
+        "target_clips_percent": _progress_percent(ready_clips, MODELING_TARGET_READY_CLIPS),
+        "target_duration_percent": _progress_percent(ready_duration_seconds, MODELING_TARGET_READY_SECONDS),
         "issues": issues,
+        "recommendations": recommendations,
     }
 
 
@@ -209,6 +230,16 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
         f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
+        (
+            f"Target progress: {summary['ready_clips']}/{MODELING_TARGET_READY_CLIPS} clips, "
+            f"{format_modeling_dataset_duration(summary['ready_duration_seconds'])}/"
+            f"{format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS)}"
+        ),
+        (
+            f"Recommended target: {MODELING_TARGET_READY_CLIPS}-{MODELING_STRETCH_READY_CLIPS} ready clips, "
+            f"{format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS)}-"
+            f"{format_modeling_dataset_duration(MODELING_STRETCH_READY_SECONDS)} clean audio"
+        ),
     ]
     if summary["issues"]:
         lines.append("")
@@ -217,6 +248,10 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
     else:
         lines.append("")
         lines.append("No blocking dataset issues detected.")
+    if summary["recommendations"]:
+        lines.append("")
+        lines.append("Recommendations:")
+        lines.extend(f"- {recommendation}" for recommendation in summary["recommendations"])
     return "\n".join(lines)
 
 
@@ -253,13 +288,32 @@ def modeling_dataset_summary_issues(
         issues.append(f"{low_level_clips} ready clip(s) have low RMS level.")
     if clipping_clips:
         issues.append(f"{clipping_clips} ready clip(s) show input clipping.")
-    if readiness == MODELING_DATASET_USABLE:
-        issues.append(
-            "For stronger modeling, aim for "
-            f"{MODELING_GOOD_READY_CLIPS}+ ready clips and "
-            f"{format_modeling_dataset_duration(MODELING_GOOD_READY_SECONDS)}+ of audio."
-        )
     return issues
+
+
+def modeling_dataset_summary_recommendations(
+    *,
+    ready_clips: int,
+    ready_duration_seconds: float,
+    readiness: str,
+) -> list[str]:
+    if ready_clips <= 0:
+        return []
+    if ready_clips >= MODELING_STRETCH_READY_CLIPS and ready_duration_seconds >= MODELING_STRETCH_READY_SECONDS:
+        return ["Extended target reached; prioritize transcript accuracy and recording consistency."]
+    if ready_clips >= MODELING_TARGET_READY_CLIPS and ready_duration_seconds >= MODELING_TARGET_READY_SECONDS:
+        return [
+            "Recommended target reached; more clean variety up to 120 clips and 60 minutes can still help."
+        ]
+    if readiness == MODELING_DATASET_GOOD:
+        return [
+            "Good for a first serious fine-tuning run; production target is 60-120 ready clips and 30-60 minutes."
+        ]
+    if readiness == MODELING_DATASET_USABLE:
+        return [
+            "Usable for pipeline tests; next aim for 20 ready clips and 10 minutes, then the 30-60 minute target."
+        ]
+    return []
 
 
 def format_modeling_dataset_duration(seconds: float) -> str:
@@ -268,6 +322,12 @@ def format_modeling_dataset_duration(seconds: float) -> str:
     if minutes:
         return f"{minutes}m {seconds:02d}s"
     return f"{seconds}s"
+
+
+def _progress_percent(value: float, target: float) -> int:
+    if target <= 0:
+        return 0
+    return min(100, max(0, round((float(value) / target) * 100)))
 
 
 def build_modeling_dataset_for_profile(

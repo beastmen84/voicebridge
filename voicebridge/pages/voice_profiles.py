@@ -307,6 +307,8 @@ class VoiceProfilesWorkflowMixin:
 
     def build_voice_profiles_page(self, include_header: bool = True):
         page, layout = self.page_container()
+        if not include_header:
+            layout.setContentsMargins(0, 26, 0, 24)
         if include_header:
             self.page_header(
                 layout,

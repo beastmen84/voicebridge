@@ -63,8 +63,6 @@ class HomePageMixin:
             "Prepare reference profiles, modeling datasets and XTTS-v2 training configuration.",
             "Profiles, datasets, training setup",
             "BadgeGreen",
-            "Open Local Voices",
-            self.show_local_voices_tab,
         )
         stt_card = self.home_card(
             "STT",

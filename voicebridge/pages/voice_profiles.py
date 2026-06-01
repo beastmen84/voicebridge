@@ -128,7 +128,7 @@ class VoiceProfilesWorkflowMixin:
 
     def voice_profile_type_changed(self) -> None:
         if self.voice_profile_type() == VOICE_PROFILE_MODELING:
-            self.profile_record_status_label.setText("Use Modeling Datasets to collect clips for this voice.")
+            self.profile_record_status_label.setText("Use Local Voices > Datasets to collect clips for this voice.")
         else:
             self.profile_record_status_label.setText("Record a guided 30s voice sample for the selected profile.")
         self.update_voice_profile_buttons()
@@ -305,15 +305,16 @@ class VoiceProfilesWorkflowMixin:
             )
             self.profile_play_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
 
-    def build_voice_profiles_page(self):
+    def build_voice_profiles_page(self, include_header: bool = True):
         page, layout = self.page_container()
-        self.page_header(
-            layout,
-            "PROFILES",
-            "Voice Profiles",
-            "Manage local reference voices for future Local TTS generation.",
-            "BadgeGreen",
-        )
+        if include_header:
+            self.page_header(
+                layout,
+                "PROFILES",
+                "Voice Profiles",
+                "Manage local reference voices for future Local TTS generation.",
+                "BadgeGreen",
+            )
 
         grid = QGridLayout()
         grid.setSpacing(16)

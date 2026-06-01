@@ -94,12 +94,14 @@ timeline dei blocchi effettivamente generati. Local TTS crea questa mappa anche 
 divide internamente il testo in chunk.
 Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani tecnici conviene preferire una voce nativa `it-IT`.
 
-### Voice Profiles e Local TTS
+### Local Voices, Voice Profiles e Local TTS
 
-1. Aprire `Voice Profiles`.
+Le funzioni locali per la voce sono raccolte in `Local Voices`, con tab `Profiles`, `Datasets` e `Modeling`.
+
+1. Aprire `Local Voices > Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
 3. In alternativa, registrare direttamente dal microfono con `Record`; l'app apre una registrazione guidata da 30 secondi con countdown, testo di lettura nella lingua scelta, ascolto del WAV pulito e scelta finale `Mantieni`, `Ritenta` o `Annulla`.
-4. Per preparare un futuro training, creare invece un profilo `Modeling dataset`: non richiede audio reference nella scheda profilo e crea un dataset collegato in `Modeling Datasets`.
+4. Per preparare un futuro training, creare invece un profilo `Modeling dataset`: non richiede audio reference nella scheda profilo e crea un dataset collegato in `Local Voices > Datasets`.
 5. Aprire `Text to Speech`.
 6. Selezionare engine `Local TTS`.
 7. Se necessario, usare `Download XTTS-v2` per scaricare il modello locale una sola volta.
@@ -118,12 +120,12 @@ Il tipo profilo si sceglie alla creazione e resta bloccato dopo il salvataggio. 
 file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sample rapidi finiscono in
 `voice_profiles\reference_clone\<nome profilo>`, mentre i dataset futuri usano `voice_profiles\modeling_dataset\<nome profilo>`.
 
-### Modeling Datasets
+### Local Voices > Datasets
 
-`Modeling Datasets` prepara coppie audio/testo autorizzate per un futuro voice modeling, ma non esegue ancora training.
+`Local Voices > Datasets` prepara coppie audio/testo autorizzate per un futuro voice modeling, ma non esegue ancora training.
 
-1. Creare prima un profilo in `Voice Profiles` con tipo `Modeling dataset`.
-2. Aprire `Modeling Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
+1. Creare prima un profilo in `Local Voices > Profiles` con tipo `Modeling dataset`.
+2. Aprire `Local Voices > Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
 3. Per una clip guidata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una singola clip
    e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi, pulisce il WAV
    e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
@@ -141,12 +143,12 @@ da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 `dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente e non modifica i
 file di lavoro.
 
-### Voice Modeling
+### Local Voices > Modeling
 
-`Voice Modeling` prepara il job di training XTTS-v2, ma non avvia ancora il training.
+`Local Voices > Modeling` prepara il job di training XTTS-v2, ma non avvia ancora il training.
 
-1. Esportare prima un dataset dalla sezione `Modeling Datasets`.
-2. Aprire `Voice Modeling` e selezionare la cartella export in `modeling_exports`.
+1. Esportare prima un dataset dalla sezione `Local Voices > Datasets`.
+2. Aprire `Local Voices > Modeling` e selezionare la cartella export in `modeling_exports`.
 3. Usare `Validate` per controllare `metadata.csv`, `dataset.json` e i WAV collegati.
 4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
 5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.

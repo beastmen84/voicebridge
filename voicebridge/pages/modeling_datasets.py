@@ -378,7 +378,7 @@ class ModelingDatasetsWorkflowMixin:
         self.stt_media_picker.set_text(clip["audio_path"])
         output_path = str(Path(clip["audio_path"]).with_suffix(".md"))
         self.stt_output_picker.set_text(output_path)
-        self.show_page(5)
+        self.show_page(3)
 
     def update_modeling_dataset_buttons(self) -> None:
         if not hasattr(self, "modeling_record_text_button"):
@@ -401,15 +401,16 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_open_dataset_folder_button.setEnabled(has_dataset)
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
 
-    def build_modeling_datasets_page(self):
+    def build_modeling_datasets_page(self, include_header: bool = True):
         page, layout = self.page_container()
-        self.page_header(
-            layout,
-            "MODELING",
-            "Modeling Datasets",
-            "Collect authorized audio clips and exact text pairs before future voice model training.",
-            "BadgeGreen",
-        )
+        if include_header:
+            self.page_header(
+                layout,
+                "MODELING",
+                "Modeling Datasets",
+                "Collect authorized audio clips and exact text pairs before future voice model training.",
+                "BadgeGreen",
+            )
 
         grid = QGridLayout()
         grid.setSpacing(16)

@@ -157,15 +157,16 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_save_config_button.setEnabled(has_dataset and has_output)
         self.voice_modeling_open_output_button.setEnabled(has_output)
 
-    def build_voice_modeling_page(self):
+    def build_voice_modeling_page(self, include_header: bool = True):
         page, layout = self.page_container()
-        self.page_header(
-            layout,
-            "TRAINING",
-            "Voice Modeling",
-            "Validate an exported dataset and prepare a controlled XTTS-v2 training job configuration.",
-            "BadgeGreen",
-        )
+        if include_header:
+            self.page_header(
+                layout,
+                "TRAINING",
+                "Voice Modeling",
+                "Validate an exported dataset and prepare a controlled XTTS-v2 training job configuration.",
+                "BadgeGreen",
+            )
 
         grid = QGridLayout()
         grid.setSpacing(16)

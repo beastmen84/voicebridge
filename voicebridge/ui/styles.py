@@ -116,6 +116,27 @@ def apply_app_style(widget, check_icon, chevron_icon):
         #NavButton { color: #d5dce8; background: transparent; border: 0; text-align: left; padding: 10px 12px; }
         #NavButton:hover { background: #1c2637; }
         #NavButton[active="true"] { background: #2f6fed; color: white; font-weight: 600; }
+        QTabWidget#WorkspaceTabs::pane { border: 0; background: transparent; top: -1px; }
+        QTabWidget#WorkspaceTabs QTabBar::tab {
+            background: #ffffff;
+            border: 1px solid #cfd6e2;
+            border-bottom-color: #d8dee8;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            padding: 8px 18px;
+            margin-right: 4px;
+            font-weight: 650;
+            color: #617083;
+        }
+        QTabWidget#WorkspaceTabs QTabBar::tab:hover {
+            background: #f1f5fb;
+            color: #1f2937;
+        }
+        QTabWidget#WorkspaceTabs QTabBar::tab:selected {
+            background: #eef8f5;
+            border-color: #b8ddd5;
+            color: #1f5f54;
+        }
         #Card { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; }
         #HomeCard { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; }
         #Card QLabel, #HomeCard QLabel, #InlinePanel { background: transparent; }

@@ -57,26 +57,14 @@ class HomePageMixin:
             "Online TTS",
             "BadgeBlue",
         )
-        profiles_card = self.home_card(
-            "VOICE",
-            "Voice Profiles",
-            "Prepare authorized local voice references for Local TTS.",
-            "Reference voices",
+        local_voices_card = self.home_card(
+            "LOCAL",
+            "Local Voices",
+            "Prepare reference profiles, modeling datasets and XTTS-v2 training configuration.",
+            "Profiles, datasets, training setup",
             "BadgeGreen",
-        )
-        modeling_card = self.home_card(
-            "MODEL",
-            "Modeling Datasets",
-            "Collect authorized audio and text clip pairs for future voice model training.",
-            "Dataset preparation",
-            "BadgeGreen",
-        )
-        voice_modeling_card = self.home_card(
-            "TRAIN",
-            "Voice Modeling",
-            "Validate an exported dataset and prepare training configuration.",
-            "Training setup",
-            "BadgeGreen",
+            "Open Local Voices",
+            self.show_local_voices_tab,
         )
         stt_card = self.home_card(
             "STT",
@@ -108,9 +96,7 @@ class HomePageMixin:
         )
         for card in (
             tts_card,
-            profiles_card,
-            modeling_card,
-            voice_modeling_card,
+            local_voices_card,
             stt_card,
             video_card,
             audio_cleanup_card,
@@ -118,7 +104,7 @@ class HomePageMixin:
         ):
             modules_layout.addWidget(card)
 
-        note = QLabel("TTS requires internet. Local voice profiles are prepared separately.")
+        note = QLabel("TTS requires internet. Local voice tools are grouped under Local Voices.")
         note.setObjectName("Muted")
         note.setWordWrap(True)
         modules_layout.addWidget(note)

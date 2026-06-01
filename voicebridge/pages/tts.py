@@ -248,7 +248,7 @@ class TtsWorkflowMixin:
                 f"{voice_profile_status(profile)} | {Path(profile['reference_paths'][0]).name}"
             )
         else:
-            self.local_voice_profile_status.setText("Create a ready reference profile in Voice Profiles.")
+            self.local_voice_profile_status.setText("Create a ready reference profile in Local Voices > Profiles.")
         self.update_tts_button_state()
 
     def update_local_tts_model_status(self):
@@ -1692,7 +1692,7 @@ class TtsWorkflowMixin:
         except ValueError as exc:
             self.show_error("Audio Cleanup", str(exc))
             return
-        self.show_page(7)
+        self.show_page(5)
 
     def build_tts_page(self):
         page, layout = self.page_container()
@@ -1806,12 +1806,12 @@ class TtsWorkflowMixin:
         self.local_voice_profile_combo = QComboBox()
         self.local_voice_profile_combo.currentTextChanged.connect(lambda _text: self.local_voice_profile_changed())
         manage_profiles_button = QPushButton("Manage profiles")
-        manage_profiles_button.clicked.connect(lambda _checked=False: self.show_page(2))
+        manage_profiles_button.clicked.connect(lambda _checked=False: self.show_local_voices_tab(0))
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.addWidget(self.local_voice_profile_combo, 1)
         profile_row.addWidget(manage_profiles_button)
-        self.local_voice_profile_status = QLabel("Create a ready reference profile in Voice Profiles.")
+        self.local_voice_profile_status = QLabel("Create a ready reference profile in Local Voices > Profiles.")
         self.local_voice_profile_status.setObjectName("Muted")
         self.local_voice_profile_status.setWordWrap(True)
         self.tts_local_device_combo = QComboBox()

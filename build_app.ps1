@@ -70,6 +70,7 @@ if (!(Test-Path $bundleDir)) {
 
 Copy-Item -Path (Join-Path $PSScriptRoot "stt_worker.py") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "local_tts_worker.py") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "voice_modeling_worker.py") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force

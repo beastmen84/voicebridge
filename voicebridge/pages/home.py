@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 from voicebridge.app_paths import (
     local_tts_dvae_path,
     local_tts_dvae_ready,
+    local_tts_mel_stats_path,
+    local_tts_mel_stats_ready,
     local_tts_model_cache_dir,
     local_tts_model_ready,
     local_tts_worker_path,
@@ -248,13 +250,23 @@ class HomePageMixin:
         local_state, local_detail = self.local_tts_diagnostic_detail()
         self.set_status_tile("LOCAL", local_state, local_detail, display_label="LOCAL")
 
-        if local_tts_dvae_ready():
-            self.set_status_tile("DVAE", "ok", f"XTTS-v2 DVAE ready: {local_tts_dvae_path()}", display_label="DVAE")
+        if local_tts_dvae_ready() and local_tts_mel_stats_ready():
+            self.set_status_tile(
+                "DVAE",
+                "ok",
+                f"XTTS-v2 training assets ready: {local_tts_dvae_path()} | {local_tts_mel_stats_path()}",
+                display_label="DVAE",
+            )
         else:
+            missing = []
+            if not local_tts_dvae_ready():
+                missing.append(str(local_tts_dvae_path()))
+            if not local_tts_mel_stats_ready():
+                missing.append(str(local_tts_mel_stats_path()))
             self.set_status_tile(
                 "DVAE",
                 "warn",
-                f"XTTS-v2 DVAE checkpoint missing for voice modeling: {local_tts_dvae_path()}",
+                f"XTTS-v2 training asset(s) missing for voice modeling: {' | '.join(missing)}",
                 display_label="DVAE",
             )
 

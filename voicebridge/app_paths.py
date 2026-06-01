@@ -97,6 +97,18 @@ def local_tts_dvae_ready():
     return local_tts_dvae_path().is_file()
 
 
+def local_tts_mel_stats_path():
+    return local_tts_model_cache_dir() / "mel_stats.pth"
+
+
+def local_tts_mel_stats_ready():
+    return local_tts_mel_stats_path().is_file()
+
+
+def voice_modeling_worker_path():
+    return external_base_dir() / "voice_modeling_worker.py"
+
+
 def stt_runtime_site_packages():
     base_dir = external_base_dir()
     if (base_dir / "python-ml").is_dir():

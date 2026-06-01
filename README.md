@@ -156,21 +156,25 @@ file di lavoro.
 3. Usare `Refresh` se si e' appena creato un export; `Browse external...` serve solo per dataset validi fuori cartella.
 4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
 5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.
-6. Se `dvae.pth` manca, usare `Download DVAE`; il file viene salvato nella cache XTTS-v2 locale.
-7. Usare `Refresh preflight` per verificare runtime ML, Torch/CUDA, Coqui, XTTS-v2, `dvae.pth`, dataset e output.
+6. Se mancano `dvae.pth` o `mel_stats.pth`, usare `Download training assets`; i file vengono salvati nella cache XTTS-v2 locale.
+7. Usare `Refresh preflight` per verificare runtime ML, Torch/CUDA, Coqui, XTTS-v2, asset training, dataset e output.
 8. Usare `Save training config` per creare `job_config.json` nella cartella output.
 
 ### Local Voices > Training
 
-`Local Voices > Training` elenca i job configurati in `voice_models` e prepara l'area in cui verra' agganciato il
-worker di training/dry-run.
+`Local Voices > Training` elenca i job configurati in `voice_models` e avvia la preparazione, il dry-run e il training
+XTTS-v2.
 
 1. Salvare prima un `job_config.json` da `Local Voices > Setup`.
 2. Aprire `Local Voices > Training`.
-3. Selezionare il job e usare `Open job folder` per ispezionare output e configurazione.
+3. Usare `Prepare` per creare i metadata Coqui `metadata_train.csv` e `metadata_eval.csv` in `prepared_dataset`.
+4. Usare `Dry run` per verificare runtime, device, modello, `dvae.pth`, `mel_stats.pth` e dataset senza addestrare.
+5. Usare `Start training` per avviare il worker XTTS-v2; `Cancel` termina il processo esterno.
+6. Usare `Open job folder` per ispezionare config, log, metadata preparati e output.
 
-Il file `job_config.json` e' il contratto tra UI e futuro training worker: contiene dataset, output, resume checkpoint,
-device e parametri base. La cartella `voice_models` contiene output utente e non viene tracciata da git.
+Il training crea `run\training` con i checkpoint Coqui e, se completato, `inference_model` con `model.pth`,
+`config.json` e `vocab.json` preparati per il futuro aggancio ai profili locali. La cartella `voice_models` contiene
+output utente e non viene tracciata da git.
 
 ### Transcription
 
@@ -330,8 +334,8 @@ Build completo pulito:
 - Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
 - `Download Whisper large-v3` scarica il modello STT in `models\whisperx` e prepara le cache STT richieste.
 - `Download XTTS-v2` scarica un unico modello multilingua in `models\coqui` e richiede circa 1.8-2.3 GB.
-- `dvae.pth`, se usato per voice modeling/fine-tuning XTTS-v2, e' atteso in
-  `models\coqui\tts\tts_models--multilingual--multi-dataset--xtts_v2\dvae.pth`.
+- `dvae.pth` e `mel_stats.pth`, usati per voice modeling/fine-tuning XTTS-v2, sono attesi in
+  `models\coqui\tts\tts_models--multilingual--multi-dataset--xtts_v2`.
 - I modelli di allineamento SRT possono essere inclusi nella distribuzione o scaricati su richiesta dalle funzioni SRT.
 - La generazione Edge TTS resta online; Local TTS usa il runtime ML locale.
 - Il README, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.

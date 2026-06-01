@@ -53,6 +53,7 @@ openai/whisper-large-v3                  Apache-2.0                             
 facebook/wav2vec2-xls-r-300m             Apache-2.0                               https://huggingface.co/facebook/wav2vec2-xls-r-300m
 coqui/XTTS-v2                            Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2
 coqui/XTTS-v2 dvae.pth                   Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2/blob/main/dvae.pth
+coqui/XTTS-v2 mel_stats.pth              Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2/blob/main/mel_stats.pth
 Silero VAD                               Check bundled model/source license        https://github.com/snakers4/silero-vad
 
 Important XTTS-v2 notice

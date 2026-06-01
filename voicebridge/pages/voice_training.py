@@ -1,13 +1,19 @@
+import subprocess
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizePolicy
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
 
+from voicebridge.app_paths import external_base_dir, ml_python_path, voice_modeling_worker_path
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_modeling import (
+    build_voice_modeling_training_command,
     list_voice_modeling_job_configs,
+    prepare_voice_modeling_training_job,
     voice_modeling_job_label,
+    voice_modeling_training_plan_text,
 )
 
 
@@ -59,12 +65,156 @@ class VoiceTrainingWorkflowMixin:
     def update_voice_training_buttons(self) -> None:
         if not hasattr(self, "voice_training_open_folder_button"):
             return
-        self.voice_training_open_folder_button.setEnabled(bool(self.selected_voice_training_job_path()))
+        has_job = bool(self.selected_voice_training_job_path())
+        running = getattr(self, "voice_training_running", False)
+        self.voice_training_open_folder_button.setEnabled(has_job and not running)
+        self.voice_training_prepare_button.setEnabled(has_job and not running)
+        self.voice_training_dry_run_button.setEnabled(has_job and not running)
+        self.voice_training_start_button.setEnabled(has_job and not running)
+        self.voice_training_cancel_button.setEnabled(running)
+        self.voice_training_refresh_jobs_button.setEnabled(not running)
 
     def open_selected_voice_training_job_folder(self) -> None:
         config_path = self.selected_voice_training_job_path()
         if config_path:
             open_path(Path(config_path).parent)
+
+    def prepare_selected_voice_training_job(self) -> None:
+        config_path = self.selected_voice_training_job_path()
+        if not config_path:
+            return
+        try:
+            plan = prepare_voice_modeling_training_job(config_path)
+        except (OSError, ValueError) as exc:
+            self.voice_training_job_status.setPlainText(str(exc))
+            self.show_error("Voice Training", str(exc))
+            return
+        self.voice_training_job_status.setPlainText(voice_modeling_training_plan_text(plan))
+        self.refresh_voice_training_jobs(config_path)
+        self.update_local_voice_tabs()
+
+    def start_voice_training_dry_run(self) -> None:
+        self.start_voice_training_worker(dry_run=True)
+
+    def start_voice_training_run(self) -> None:
+        if not self.ask_question(
+            "Start voice training",
+            (
+                "This will start XTTS-v2 fine-tuning in the ML runtime and can take a long time.\n\n"
+                "Continue?"
+            ),
+            default_yes=False,
+        ):
+            return
+        self.start_voice_training_worker(dry_run=False)
+
+    def start_voice_training_worker(self, *, dry_run: bool) -> None:
+        config_path = self.selected_voice_training_job_path()
+        if not config_path:
+            return
+        python_path = ml_python_path()
+        worker_path = voice_modeling_worker_path()
+        if not python_path.is_file():
+            self.show_error("Voice Training", f"Could not find the ML Python runtime:\n{python_path}")
+            return
+        if not worker_path.is_file():
+            self.show_error("Voice Training", f"Could not find:\n{worker_path}")
+            return
+        self.voice_training_running = True
+        self.voice_training_cancel_requested = False
+        self.voice_training_progress.setValue(0)
+        self.voice_training_progress.show()
+        self.voice_training_job_status.clear()
+        self.append_voice_training_log("Starting dry run..." if dry_run else "Starting training...")
+        self.update_voice_training_buttons()
+        threading.Thread(
+            target=self.voice_training_worker,
+            args=(build_voice_modeling_training_command(config_path, dry_run=dry_run), dry_run),
+            daemon=True,
+        ).start()
+
+    def voice_training_worker(self, command: list[str], dry_run: bool) -> None:
+        recent_output = []
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            process = subprocess.Popen(
+                command,
+                cwd=str(external_base_dir()),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+            )
+            self.voice_training_process = process
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("PROGRESS: "):
+                    try:
+                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
+                    except ValueError:
+                        continue
+                    self.post(self.update_voice_training_progress_percent, progress_percent)
+                    continue
+                recent_output.append(line)
+                recent_output = recent_output[-16:]
+                self.post(self.append_voice_training_log, line)
+                if self.voice_training_cancel_requested and process.poll() is None:
+                    process.terminate()
+            return_code = process.wait()
+            if self.voice_training_cancel_requested:
+                self.post(self.voice_training_cancelled)
+                return
+            if return_code != 0:
+                raise RuntimeError("\n".join(recent_output[-10:]) or f"Voice training exited with code {return_code}.")
+            self.post(self.voice_training_succeeded, dry_run)
+        except (OSError, RuntimeError, AssertionError) as exc:
+            self.post(self.voice_training_failed, str(exc))
+        finally:
+            self.voice_training_process = None
+            self.post(self.finish_voice_training_worker)
+
+    def update_voice_training_progress_percent(self, percent: float) -> None:
+        self.show_percent_progress(self.voice_training_progress, percent)
+
+    def append_voice_training_log(self, message: str) -> None:
+        if not hasattr(self, "voice_training_job_status"):
+            return
+        self.voice_training_job_status.appendPlainText(message)
+
+    def voice_training_succeeded(self, dry_run: bool) -> None:
+        self.append_voice_training_log("Dry run completed." if dry_run else "Training completed.")
+        self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
+        self.update_local_voice_tabs()
+
+    def voice_training_failed(self, message: str) -> None:
+        self.append_voice_training_log(f"ERROR: {message}")
+        self.show_error("Voice Training", message)
+        self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
+        self.update_local_voice_tabs()
+
+    def voice_training_cancelled(self) -> None:
+        self.append_voice_training_log("Cancelled.")
+
+    def finish_voice_training_worker(self) -> None:
+        self.voice_training_running = False
+        self.voice_training_progress.hide()
+        self.update_voice_training_buttons()
+
+    def cancel_voice_training(self) -> None:
+        if not getattr(self, "voice_training_running", False):
+            return
+        self.voice_training_cancel_requested = True
+        process = getattr(self, "voice_training_process", None)
+        if process is not None and process.poll() is None:
+            process.terminate()
+        self.append_voice_training_log("Cancelling...")
+        self.update_voice_training_buttons()
 
     def build_voice_training_page(self, include_header: bool = True):
         page, layout = self.page_container()
@@ -86,21 +236,40 @@ class VoiceTrainingWorkflowMixin:
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         self.voice_training_refresh_jobs_button = QPushButton("Refresh")
+        self.voice_training_prepare_button = QPushButton("Prepare")
+        self.voice_training_dry_run_button = QPushButton("Dry run")
+        self.voice_training_start_button = QPushButton("Start training")
+        self.voice_training_start_button.setObjectName("PrimaryButton")
+        self.voice_training_cancel_button = QPushButton("Cancel")
         self.voice_training_open_folder_button = QPushButton("Open job folder")
         self.voice_training_refresh_jobs_button.clicked.connect(self.refresh_voice_training_jobs)
+        self.voice_training_prepare_button.clicked.connect(self.prepare_selected_voice_training_job)
+        self.voice_training_dry_run_button.clicked.connect(self.start_voice_training_dry_run)
+        self.voice_training_start_button.clicked.connect(self.start_voice_training_run)
+        self.voice_training_cancel_button.clicked.connect(self.cancel_voice_training)
         self.voice_training_open_folder_button.clicked.connect(self.open_selected_voice_training_job_folder)
         actions.addWidget(self.voice_training_refresh_jobs_button)
+        actions.addWidget(self.voice_training_prepare_button)
+        actions.addWidget(self.voice_training_dry_run_button)
+        actions.addWidget(self.voice_training_start_button)
+        actions.addWidget(self.voice_training_cancel_button)
         actions.addStretch(1)
         actions.addWidget(self.voice_training_open_folder_button)
+        self.voice_training_progress = QProgressBar()
+        self.voice_training_progress.hide()
         self.voice_training_job_status = QPlainTextEdit()
         self.voice_training_job_status.setObjectName("LogBox")
         self.voice_training_job_status.setReadOnly(True)
-        self.voice_training_job_status.setMinimumHeight(160)
+        self.voice_training_job_status.setMinimumHeight(260)
         jobs_card.content_layout.addWidget(QLabel("Job config"))
         jobs_card.content_layout.addWidget(self.voice_training_job_combo)
         jobs_card.content_layout.addLayout(actions)
+        jobs_card.content_layout.addWidget(self.voice_training_progress)
         jobs_card.content_layout.addWidget(self.voice_training_job_status)
         layout.addWidget(jobs_card)
         layout.addStretch(1)
+        self.voice_training_running = False
+        self.voice_training_cancel_requested = False
+        self.voice_training_process = None
         self.refresh_voice_training_jobs()
         return page

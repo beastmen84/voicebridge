@@ -11,10 +11,13 @@ from voicebridge.app_paths import (
     external_base_dir,
     local_tts_dvae_path,
     local_tts_dvae_ready,
+    local_tts_mel_stats_path,
+    local_tts_mel_stats_ready,
     local_tts_model_cache_dir,
     local_tts_model_ready,
     local_tts_model_required_files,
     ml_python_path,
+    voice_modeling_worker_path,
 )
 from voicebridge.modeling_datasets import (
     MODELING_DATASET_GOOD,
@@ -27,13 +30,22 @@ from voicebridge.voice_profiles import safe_voice_profile_audio_stem
 
 VOICE_MODELING_OUTPUTS_DIR = "voice_models"
 VOICE_MODELING_JOB_CONFIG = "job_config.json"
+VOICE_MODELING_TRAINING_STATE = "training_state.json"
+VOICE_MODELING_PREPARED_DIR = "prepared_dataset"
+VOICE_MODELING_TRAIN_METADATA = "metadata_train.csv"
+VOICE_MODELING_EVAL_METADATA = "metadata_eval.csv"
+VOICE_MODELING_COMMAND = "training_command.txt"
+VOICE_MODELING_LOG = "training.log"
 VOICE_MODELING_DEVICE_KEYS = {"auto", "cpu", "cuda"}
 VOICE_MODELING_MIN_EPOCHS = 1
 VOICE_MODELING_MAX_EPOCHS = 500
 VOICE_MODELING_MIN_BATCH_SIZE = 1
 VOICE_MODELING_MAX_BATCH_SIZE = 16
+VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS = 1
+VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS = 11
 XTTS_DVAE_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/dvae.pth?download=true"
 XTTS_DVAE_SHA256 = "b29bc227d410d4991e0a8c09b858f77415013eeb9fba9650258e96095557d97a"
+XTTS_MEL_STATS_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/mel_stats.pth?download=true"
 
 
 class VoiceModelingExportInfo(TypedDict):
@@ -70,6 +82,31 @@ class VoiceModelingJobSummary(TypedDict):
     dataset_name: str
     status: str
     created_at: str
+    updated_at: str
+
+
+class VoiceModelingTrainingPlan(TypedDict):
+    config_path: str
+    output_dir: str
+    dataset_dir: str
+    prepared_dir: str
+    train_csv_path: str
+    eval_csv_path: str
+    command_path: str
+    log_path: str
+    train_rows: int
+    eval_rows: int
+    total_rows: int
+    device: str
+    command: list[str]
+    command_text: str
+
+
+class VoiceModelingTrainingState(TypedDict):
+    config_path: str
+    output_dir: str
+    status: str
+    message: str
     updated_at: str
 
 
@@ -149,6 +186,41 @@ def download_xtts_dvae(progress_callback=None) -> Path:
         expected_sha256=XTTS_DVAE_SHA256,
         progress_callback=progress_callback,
     )
+
+
+def download_xtts_training_assets(progress_callback=None) -> list[Path]:
+    downloads: list[tuple[str, Path, str]] = []
+    if not local_tts_dvae_ready():
+        downloads.append((XTTS_DVAE_DOWNLOAD_URL, local_tts_dvae_path(), XTTS_DVAE_SHA256))
+    if not local_tts_mel_stats_ready():
+        downloads.append((XTTS_MEL_STATS_DOWNLOAD_URL, local_tts_mel_stats_path(), ""))
+
+    if not downloads:
+        if progress_callback:
+            progress_callback(100.0)
+        return [local_tts_dvae_path(), local_tts_mel_stats_path()]
+
+    completed: list[Path] = []
+    total = len(downloads)
+    for index, (source_url, target_path, expected_sha256) in enumerate(downloads):
+        start = index * 100.0 / total
+        end = (index + 1) * 100.0 / total
+
+        def mapped_progress(percent: float, *, progress_start=start, progress_end=end) -> None:
+            if progress_callback:
+                progress_callback(progress_start + ((progress_end - progress_start) * percent / 100.0))
+
+        completed.append(
+            download_file_to_path(
+                source_url,
+                target_path,
+                expected_sha256=expected_sha256,
+                progress_callback=mapped_progress,
+            )
+        )
+    if progress_callback:
+        progress_callback(100.0)
+    return completed
 
 
 def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExportInfo:
@@ -284,6 +356,7 @@ def check_voice_modeling_preflight(
         add_check(f"XTTS-v2 {filename}", (model_cache_dir / filename).is_file(), model_cache_dir / filename)
     add_check("XTTS-v2 model package", local_tts_model_ready(), model_cache_dir)
     add_check("XTTS-v2 DVAE checkpoint", local_tts_dvae_ready(), local_tts_dvae_path())
+    add_check("XTTS-v2 mel stats", local_tts_mel_stats_ready(), local_tts_mel_stats_path())
 
     if export_info:
         try:
@@ -326,7 +399,7 @@ def check_voice_modeling_preflight(
         details.append(f"{marker}: {label} - {detail}")
     details.append(f"INFO: {runtime_info['detail']}")
     details.append(f"INFO: {coqui_info['detail']}")
-    details.append("INFO: Training worker is not connected yet; this validates prerequisites and configuration.")
+    details.append("INFO: Training worker is available from Local Voices > Training.")
 
     return {
         "ok": not missing,
@@ -459,6 +532,43 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
     return data
 
 
+def update_voice_modeling_job_status(config_path: str | Path, status: str) -> VoiceModelingJobConfig:
+    config = dict(load_voice_modeling_job_config(config_path))
+    config["status"] = status
+    config["updated_at"] = utc_timestamp()
+    save_voice_modeling_job_config(config)  # type: ignore[arg-type]
+    return config  # type: ignore[return-value]
+
+
+def voice_modeling_training_state_path(config_path: str | Path) -> Path:
+    config = load_voice_modeling_job_config(config_path)
+    return Path(config["output_dir"]).expanduser() / VOICE_MODELING_TRAINING_STATE
+
+
+def write_voice_modeling_training_state(
+    config_path: str | Path,
+    *,
+    status: str,
+    message: str = "",
+    extra: dict[str, Any] | None = None,
+) -> Path:
+    config = load_voice_modeling_job_config(config_path)
+    output_dir = Path(config["output_dir"]).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    state: dict[str, Any] = {
+        "config_path": str(Path(config_path).expanduser().resolve()),
+        "output_dir": str(output_dir),
+        "status": status,
+        "message": message,
+        "updated_at": utc_timestamp(),
+    }
+    if extra:
+        state.update(extra)
+    state_path = output_dir / VOICE_MODELING_TRAINING_STATE
+    state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return state_path
+
+
 def voice_modeling_job_summary(config_path: str | Path) -> VoiceModelingJobSummary:
     path = Path(config_path).expanduser().resolve()
     config = load_voice_modeling_job_config(path)
@@ -502,6 +612,118 @@ def voice_modeling_job_label(job: VoiceModelingJobSummary) -> str:
     timestamp = job["updated_at"] or job["created_at"] or Path(job["output_dir"]).name
     status = job["status"].replace("_", " ").title() if job["status"] else "Configured"
     return f"{job['dataset_name']} | {status} | {timestamp}"
+
+
+def split_voice_modeling_metadata_rows(
+    rows: list[tuple[str, str]],
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    if len(rows) <= 1:
+        return rows, []
+    eval_count = max(1, round(len(rows) * 0.15))
+    eval_count = min(eval_count, len(rows) - 1)
+    return rows[:-eval_count], rows[-eval_count:]
+
+
+def write_coqui_metadata(path: Path, rows: list[tuple[str, str]], *, speaker_name: str = "voicebridge") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["audio_file|text|speaker_name"]
+    for audio_file, text in rows:
+        safe_text = " ".join(text.replace("|", ",").split())
+        lines.append(f"{audio_file}|{safe_text}|{speaker_name}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build_voice_modeling_training_command(
+    config_path: str | Path,
+    *,
+    dry_run: bool = False,
+    python_path: str | Path | None = None,
+    worker_path: str | Path | None = None,
+) -> list[str]:
+    command = [
+        str(Path(python_path).expanduser() if python_path else ml_python_path()),
+        "-u",
+        str(Path(worker_path).expanduser() if worker_path else voice_modeling_worker_path()),
+        "--config",
+        str(Path(config_path).expanduser().resolve()),
+    ]
+    if dry_run:
+        command.append("--dry-run")
+    return command
+
+
+def prepare_voice_modeling_training_job(config_path: str | Path) -> VoiceModelingTrainingPlan:
+    resolved_config_path = Path(config_path).expanduser().resolve()
+    config = load_voice_modeling_job_config(resolved_config_path)
+    export_info = validate_voice_modeling_export(config["dataset_dir"])
+    rows = parse_voice_modeling_metadata(Path(export_info["metadata_path"]), Path(export_info["dataset_dir"]))
+    train_rows, eval_rows = split_voice_modeling_metadata_rows(rows)
+    if not train_rows:
+        raise ValueError("Training requires at least one train metadata row.")
+
+    output_dir = Path(config["output_dir"]).expanduser()
+    prepared_dir = output_dir / VOICE_MODELING_PREPARED_DIR
+    train_csv = prepared_dir / VOICE_MODELING_TRAIN_METADATA
+    eval_csv = prepared_dir / VOICE_MODELING_EVAL_METADATA
+    command_path = output_dir / VOICE_MODELING_COMMAND
+    log_path = output_dir / VOICE_MODELING_LOG
+
+    write_coqui_metadata(train_csv, train_rows)
+    write_coqui_metadata(eval_csv, eval_rows or train_rows[-1:])
+    command = build_voice_modeling_training_command(resolved_config_path)
+    command_text = subprocess.list2cmdline(command)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command_path.write_text(command_text + "\n", encoding="utf-8")
+    update_voice_modeling_job_status(resolved_config_path, "prepared")
+    write_voice_modeling_training_state(
+        resolved_config_path,
+        status="prepared",
+        message="Training metadata prepared.",
+        extra={
+            "prepared_dir": str(prepared_dir),
+            "train_csv_path": str(train_csv),
+            "eval_csv_path": str(eval_csv),
+            "train_rows": len(train_rows),
+            "eval_rows": len(eval_rows or train_rows[-1:]),
+            "total_rows": len(rows),
+            "command_path": str(command_path),
+            "log_path": str(log_path),
+        },
+    )
+    return {
+        "config_path": str(resolved_config_path),
+        "output_dir": str(output_dir),
+        "dataset_dir": export_info["dataset_dir"],
+        "prepared_dir": str(prepared_dir),
+        "train_csv_path": str(train_csv),
+        "eval_csv_path": str(eval_csv),
+        "command_path": str(command_path),
+        "log_path": str(log_path),
+        "train_rows": len(train_rows),
+        "eval_rows": len(eval_rows or train_rows[-1:]),
+        "total_rows": len(rows),
+        "device": normalize_voice_modeling_device(config.get("device")),
+        "command": command,
+        "command_text": command_text,
+    }
+
+
+def voice_modeling_training_plan_text(plan: VoiceModelingTrainingPlan) -> str:
+    return "\n".join(
+        [
+            f"Config: {plan['config_path']}",
+            f"Dataset: {plan['dataset_dir']}",
+            f"Output: {plan['output_dir']}",
+            f"Prepared rows: {plan['train_rows']} train, {plan['eval_rows']} eval, {plan['total_rows']} total",
+            f"Device: {plan['device']}",
+            f"Train CSV: {plan['train_csv_path']}",
+            f"Eval CSV: {plan['eval_csv_path']}",
+            f"Log: {plan['log_path']}",
+            "",
+            "Command:",
+            plan["command_text"],
+        ]
+    )
 
 
 def voice_modeling_export_summary_text(export_info: VoiceModelingExportInfo) -> str:

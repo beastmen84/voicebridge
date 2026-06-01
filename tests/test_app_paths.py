@@ -53,12 +53,17 @@ def test_local_tts_dvae_ready_checks_xtts_cache_file(monkeypatch, tmp_path: Path
     monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
 
     assert app_paths.local_tts_dvae_path() == app_paths.local_tts_model_cache_dir() / "dvae.pth"
+    assert app_paths.local_tts_mel_stats_path() == app_paths.local_tts_model_cache_dir() / "mel_stats.pth"
+    assert app_paths.voice_modeling_worker_path() == tmp_path / "voice_modeling_worker.py"
     assert not app_paths.local_tts_dvae_ready()
+    assert not app_paths.local_tts_mel_stats_ready()
 
     app_paths.local_tts_dvae_path().parent.mkdir(parents=True)
     app_paths.local_tts_dvae_path().write_text("x", encoding="utf-8")
+    app_paths.local_tts_mel_stats_path().write_text("x", encoding="utf-8")
 
     assert app_paths.local_tts_dvae_ready()
+    assert app_paths.local_tts_mel_stats_ready()
 
 
 def test_ffmpeg_candidates_only_include_shared_ml_runtime(monkeypatch, tmp_path: Path) -> None:

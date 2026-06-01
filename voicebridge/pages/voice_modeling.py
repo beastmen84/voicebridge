@@ -17,7 +17,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from voicebridge.app_paths import local_tts_dvae_path, local_tts_dvae_ready
+from voicebridge.app_paths import (
+    local_tts_dvae_path,
+    local_tts_dvae_ready,
+    local_tts_mel_stats_path,
+    local_tts_mel_stats_ready,
+)
 from voicebridge.constants import STT_DEVICE_BY_LABEL, STT_DEVICE_LABEL_BY_KEY, STT_DEVICE_LABELS
 from voicebridge.modeling_datasets import modeling_dataset_exports_root
 from voicebridge.ui.helpers import open_path
@@ -27,7 +32,7 @@ from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
     check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
-    download_xtts_dvae,
+    download_xtts_training_assets,
     list_voice_modeling_exports,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
@@ -282,7 +287,7 @@ class VoiceModelingWorkflowMixin:
     def update_voice_modeling_dvae_status(self) -> None:
         if not hasattr(self, "voice_modeling_download_dvae_button"):
             return
-        ready = local_tts_dvae_ready()
+        ready = local_tts_dvae_ready() and local_tts_mel_stats_ready()
         running = getattr(self, "voice_modeling_dvae_download_running", False)
         self.voice_modeling_download_dvae_button.setEnabled(not ready and not running)
         self.voice_modeling_download_dvae_button.setVisible(not ready)
@@ -295,56 +300,62 @@ class VoiceModelingWorkflowMixin:
 
     def confirm_xtts_dvae_download(self) -> bool:
         return self.ask_question(
-            "Download XTTS-v2 DVAE",
+            "Download XTTS-v2 training assets",
             (
-                "XTTS-v2 DVAE is about 211 MB and is needed for voice modeling/fine-tuning.\n\n"
+                "XTTS-v2 DVAE is about 211 MB and mel_stats.pth is also needed for voice modeling/fine-tuning.\n\n"
                 "The file is distributed with XTTS-v2 under the Coqui Public Model License, "
                 "limited to non-commercial use.\n\n"
-                "Download dvae.pth now?"
+                "Download the missing training asset(s) now?"
             ),
         )
 
     def start_xtts_dvae_download(self) -> None:
-        if local_tts_dvae_ready():
+        if local_tts_dvae_ready() and local_tts_mel_stats_ready():
             self.update_voice_modeling_dvae_status()
-            self.show_info("Voice Modeling", f"XTTS-v2 DVAE is already downloaded:\n{local_tts_dvae_path()}")
+            self.show_info(
+                "Voice Modeling",
+                (
+                    "XTTS-v2 training assets are already downloaded:\n"
+                    f"{local_tts_dvae_path()}\n{local_tts_mel_stats_path()}"
+                ),
+            )
             return
         if not self.confirm_xtts_dvae_download():
-            self.voice_modeling_status.setText("DVAE download cancelled.")
+            self.voice_modeling_status.setText("Training assets download cancelled.")
             return
         self.voice_modeling_dvae_download_running = True
         self.voice_modeling_dvae_progress.setRange(0, 100)
         self.voice_modeling_dvae_progress.setValue(0)
         self.voice_modeling_dvae_progress.setFormat("%p%")
         self.voice_modeling_dvae_progress.show()
-        self.voice_modeling_preflight_label.setText("Downloading XTTS-v2 DVAE...")
+        self.voice_modeling_preflight_label.setText("Downloading XTTS-v2 training assets...")
         self.update_voice_modeling_dvae_status()
         threading.Thread(target=self.xtts_dvae_download_worker, daemon=True).start()
 
     def xtts_dvae_download_worker(self) -> None:
         try:
-            path = download_xtts_dvae(
+            paths = download_xtts_training_assets(
                 progress_callback=lambda percent: self.post(self.update_voice_modeling_dvae_progress, percent)
             )
         except (OSError, ValueError, TimeoutError) as exc:
             self.post(self.xtts_dvae_download_failed, str(exc))
             return
-        self.post(self.xtts_dvae_download_succeeded, str(path))
+        self.post(self.xtts_dvae_download_succeeded, "\n".join(str(path) for path in paths))
 
     def update_voice_modeling_dvae_progress(self, percent: float) -> None:
         self.show_percent_progress(self.voice_modeling_dvae_progress, percent)
 
     def xtts_dvae_download_succeeded(self, path: str) -> None:
         self.voice_modeling_dvae_download_running = False
-        self.voice_modeling_status.setText("XTTS-v2 DVAE ready.")
+        self.voice_modeling_status.setText("XTTS-v2 training assets ready.")
         self.update_voice_modeling_dvae_status()
         self.refresh_home_diagnostics()
         self.refresh_voice_modeling_preflight_async()
-        self.show_info("Voice Modeling", f"XTTS-v2 DVAE downloaded:\n{path}")
+        self.show_info("Voice Modeling", f"XTTS-v2 training assets ready:\n{path}")
 
     def xtts_dvae_download_failed(self, message: str) -> None:
         self.voice_modeling_dvae_download_running = False
-        self.voice_modeling_status.setText("DVAE download failed.")
+        self.voice_modeling_status.setText("Training assets download failed.")
         self.update_voice_modeling_dvae_status()
         self.show_error("Voice Modeling", message)
 
@@ -486,7 +497,7 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_preflight_details_box.setMinimumHeight(120)
         preflight_actions = QHBoxLayout()
         preflight_actions.setContentsMargins(0, 0, 0, 0)
-        self.voice_modeling_download_dvae_button = QPushButton("Download DVAE")
+        self.voice_modeling_download_dvae_button = QPushButton("Download training assets")
         self.voice_modeling_download_dvae_button.clicked.connect(self.start_xtts_dvae_download)
         self.voice_modeling_preflight_refresh_button = QPushButton("Refresh preflight")
         self.voice_modeling_preflight_refresh_button.clicked.connect(self.refresh_voice_modeling_preflight_async)

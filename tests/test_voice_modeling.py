@@ -13,16 +13,19 @@ from voicebridge.modeling_datasets import (
 )
 from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
+    build_voice_modeling_training_command,
     check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
     download_file_to_path,
     list_voice_modeling_exports,
     list_voice_modeling_job_configs,
+    prepare_voice_modeling_training_job,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     voice_modeling_export_label,
     voice_modeling_export_summary_text,
     voice_modeling_job_label,
+    voice_modeling_training_plan_text,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, build_voice_profile
 
@@ -135,6 +138,49 @@ def test_list_voice_modeling_job_configs_reads_saved_configs(tmp_path: Path) -> 
     assert jobs[0]["config_path"] == str(config_path.resolve())
     assert jobs[0]["dataset_name"] == "Dataset Voice"
     assert "Dataset Voice" in voice_modeling_job_label(jobs[0])
+
+
+def test_prepare_voice_modeling_training_job_writes_coqui_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    output_dir = tmp_path / "voice-models" / "job-a"
+    config = build_voice_modeling_job_config(export_info, output_dir=output_dir, job_id="job-a")
+    config_path = save_voice_modeling_job_config(config)
+    monkeypatch.setattr("voicebridge.voice_modeling.ml_python_path", lambda: tmp_path / "python.exe")
+    monkeypatch.setattr("voicebridge.voice_modeling.voice_modeling_worker_path", lambda: tmp_path / "worker.py")
+
+    plan = prepare_voice_modeling_training_job(config_path)
+
+    train_lines = Path(plan["train_csv_path"]).read_text(encoding="utf-8").splitlines()
+    eval_lines = Path(plan["eval_csv_path"]).read_text(encoding="utf-8").splitlines()
+    saved_config = json.loads(config_path.read_text(encoding="utf-8"))
+    state = json.loads((output_dir / "training_state.json").read_text(encoding="utf-8"))
+    assert train_lines[0] == "audio_file|text|speaker_name"
+    assert train_lines[1] == "wavs/0001_clip-0.wav|Clip 0|voicebridge"
+    assert eval_lines == ["audio_file|text|speaker_name", "wavs/0005_clip-4.wav|Clip 4|voicebridge"]
+    assert plan["train_rows"] == 4
+    assert plan["eval_rows"] == 1
+    assert plan["total_rows"] == 5
+    assert saved_config["status"] == "prepared"
+    assert state["status"] == "prepared"
+    assert "worker.py" in plan["command_text"]
+    assert "Prepared rows: 4 train, 1 eval, 5 total" in voice_modeling_training_plan_text(plan)
+
+
+def test_build_voice_modeling_training_command_can_enable_dry_run(tmp_path: Path) -> None:
+    config_path = tmp_path / "job_config.json"
+    command = build_voice_modeling_training_command(
+        config_path,
+        dry_run=True,
+        python_path=tmp_path / "python.exe",
+        worker_path=tmp_path / "voice_modeling_worker.py",
+    )
+
+    assert command[:3] == [str(tmp_path / "python.exe"), "-u", str(tmp_path / "voice_modeling_worker.py")]
+    assert command[-1] == "--dry-run"
 
 
 def test_build_voice_modeling_job_config_rejects_missing_resume(tmp_path: Path) -> None:

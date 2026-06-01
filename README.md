@@ -52,7 +52,8 @@ quando si seleziona o si rileva una lingua non disponibile offline.
 
 Il runtime ML puo' essere CPU-only o CUDA. Nell'app le sezioni STT e Local TTS espongono `Auto`, `CPU` e `CUDA`;
 `CUDA` viene abilitato solo quando il precheck rileva un runtime PyTorch compatibile e una GPU NVIDIA disponibile.
-La sidebar mostra anche lo stato `LOCAL` per runtime Local TTS e modello XTTS-v2.
+La sidebar mostra anche lo stato `LOCAL` per runtime Local TTS e modello XTTS-v2, piu' `DVAE` per il checkpoint
+`dvae.pth` richiesto dal futuro training XTTS-v2.
 Per le modalita' SRT, se viene rilevata o selezionata una lingua con modello di allineamento non incluso, l'app chiede conferma prima di scaricarlo. Dopo il download, quel modello resta disponibile offline sul computer.
 
 ## Requisiti utente
@@ -154,7 +155,8 @@ file di lavoro.
 3. Usare `Refresh` se si e' appena creato un export; `Browse external...` serve solo per dataset validi fuori cartella.
 4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
 5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.
-6. Usare `Save training config` per creare `job_config.json` nella cartella output.
+6. Usare `Refresh preflight` per verificare runtime ML, Torch/CUDA, Coqui, XTTS-v2, `dvae.pth`, dataset e output.
+7. Usare `Save training config` per creare `job_config.json` nella cartella output.
 
 Il file `job_config.json` e' il contratto tra UI e futuro training worker: contiene dataset, output, resume checkpoint,
 device e parametri base. La cartella `voice_models` contiene output utente e non viene tracciata da git.
@@ -317,6 +319,8 @@ Build completo pulito:
 - Il primo avvio STT puo' essere lento su CPU, soprattutto con video lunghi.
 - `Download Whisper large-v3` scarica il modello STT in `models\whisperx` e prepara le cache STT richieste.
 - `Download XTTS-v2` scarica un unico modello multilingua in `models\coqui` e richiede circa 1.8-2.3 GB.
+- `dvae.pth`, se usato per voice modeling/fine-tuning XTTS-v2, e' atteso in
+  `models\coqui\tts\tts_models--multilingual--multi-dataset--xtts_v2\dvae.pth`.
 - I modelli di allineamento SRT possono essere inclusi nella distribuzione o scaricati su richiesta dalle funzioni SRT.
 - La generazione Edge TTS resta online; Local TTS usa il runtime ML locale.
 - Il README, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.

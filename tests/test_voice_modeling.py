@@ -12,6 +12,7 @@ from voicebridge.modeling_datasets import (
 )
 from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
+    check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
     list_voice_modeling_exports,
     save_voice_modeling_job_config,
@@ -124,3 +125,47 @@ def test_build_voice_modeling_job_config_rejects_missing_resume(tmp_path: Path) 
 
     with pytest.raises(ValueError, match="Resume checkpoint"):
         build_voice_modeling_job_config(export_info, resume_checkpoint=tmp_path / "missing.pth")
+
+
+def test_check_voice_modeling_preflight_requires_dvae(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    python_path = tmp_path / ".venv-ml" / "Scripts" / "python.exe"
+    python_path.parent.mkdir(parents=True)
+    python_path.write_text("python", encoding="utf-8")
+    model_dir = tmp_path / "models" / "coqui" / "tts" / "tts_models--multilingual--multi-dataset--xtts_v2"
+    model_dir.mkdir(parents=True)
+    for filename in ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json"):
+        (model_dir / filename).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr("voicebridge.voice_modeling.ml_python_path", lambda: python_path)
+    monkeypatch.setattr("voicebridge.voice_modeling.local_tts_model_cache_dir", lambda: model_dir)
+    monkeypatch.setattr("voicebridge.voice_modeling.local_tts_dvae_path", lambda: model_dir / "dvae.pth")
+    monkeypatch.setattr("voicebridge.voice_modeling.local_tts_model_ready", lambda: True)
+    monkeypatch.setattr("voicebridge.voice_modeling.local_tts_dvae_ready", lambda: False)
+    monkeypatch.setattr(
+        "voicebridge.voice_modeling.inspect_stt_runtime",
+        lambda _python_path: {
+            "torch_ok": True,
+            "torch_version": "2.0",
+            "cuda_build": "",
+            "cuda_available": False,
+            "cuda_device_count": 0,
+            "cuda_device_name": "",
+            "detail": "Torch 2.0; CPU runtime.",
+        },
+    )
+    monkeypatch.setattr(
+        "voicebridge.voice_modeling.inspect_coqui_runtime",
+        lambda _python_path: {
+            "coqui_ok": True,
+            "coqui_version": "0.27",
+            "detail": "Coqui TTS import ready.",
+        },
+    )
+
+    result = check_voice_modeling_preflight(export_info, output_dir=tmp_path / "voice-model")
+
+    assert not result["ok"]
+    assert not result["dvae_ready"]
+    assert any("DVAE" in detail and detail.startswith("MISSING") for detail in result["details"])

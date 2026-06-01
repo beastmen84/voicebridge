@@ -89,6 +89,14 @@ def local_tts_model_ready():
     return all((model_dir / filename).is_file() for filename in local_tts_model_required_files())
 
 
+def local_tts_dvae_path():
+    return local_tts_model_cache_dir() / "dvae.pth"
+
+
+def local_tts_dvae_ready():
+    return local_tts_dvae_path().is_file()
+
+
 def stt_runtime_site_packages():
     base_dir = external_base_dir()
     if (base_dir / "python-ml").is_dir():

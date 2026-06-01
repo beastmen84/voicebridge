@@ -202,9 +202,16 @@ class VoiceBridgeQt(
     voice_modeling_batch_spin: QSpinBox
     voice_modeling_refresh_exports_button: QPushButton
     voice_modeling_browse_export_button: QPushButton
+    voice_modeling_preflight_box: QFrame
+    voice_modeling_preflight_label: QLabel
+    voice_modeling_preflight_details_box: QPlainTextEdit
+    voice_modeling_preflight_refresh_button: QPushButton
     voice_modeling_clear_resume_button: QPushButton
     voice_modeling_save_config_button: QPushButton
     voice_modeling_open_output_button: QPushButton
+    voice_modeling_preflight_ok: bool
+    voice_modeling_preflight_details: list[str]
+    voice_modeling_auto_preflight_enabled: bool
 
     stt_media_picker: FilePicker
     stt_text_picker: FilePicker
@@ -468,6 +475,10 @@ class VoiceBridgeQt(
         self.cleanup_frame_checkboxes: dict[int, QCheckBox] = {}
         self.cleanup_log_lines = []
         self._stt_preflight_refreshing = False
+        self._voice_modeling_preflight_refreshing = False
+        self.voice_modeling_preflight_ok = False
+        self.voice_modeling_preflight_details = []
+        self.voice_modeling_auto_preflight_enabled = False
         self.warning_callback: Callable[[], None] = self.no_warning_action
 
         self.apply_style()
@@ -532,7 +543,7 @@ class VoiceBridgeQt(
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(6)
         self.status_tiles = {}
-        for index, key in enumerate(("TTS", "LOCAL", "STT", "FFMPEG", "DOC", "OCR", "CPU")):
+        for index, key in enumerate(("TTS", "LOCAL", "DVAE", "STT", "FFMPEG", "DOC", "OCR", "CPU")):
             tile = QLabel(key)
             tile.setObjectName("StatusTile")
             tile.setAlignment(Qt.AlignmentFlag.AlignCenter)

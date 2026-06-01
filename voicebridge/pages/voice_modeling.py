@@ -1,9 +1,11 @@
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpinBox,
+    QVBoxLayout,
 )
 
 from voicebridge.constants import STT_DEVICE_BY_LABEL, STT_DEVICE_LABEL_BY_KEY, STT_DEVICE_LABELS
@@ -20,6 +23,7 @@ from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_modeling import (
     VoiceModelingExportInfo,
     build_voice_modeling_job_config,
+    check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
     list_voice_modeling_exports,
     save_voice_modeling_job_config,
@@ -45,6 +49,7 @@ class VoiceModelingWorkflowMixin:
     def voice_modeling_device_changed(self) -> None:
         if self.voice_modeling_device_key() == "cuda" and not self.stt_cuda_available:
             self.set_voice_modeling_device_key("auto")
+        self.mark_voice_modeling_preflight_stale()
 
     def update_voice_modeling_device_options(self) -> None:
         if not hasattr(self, "voice_modeling_device_combo"):
@@ -185,6 +190,10 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
         self.voice_modeling_status.setText("Dataset export validated.")
         self.update_voice_modeling_buttons()
+        if getattr(self, "voice_modeling_auto_preflight_enabled", False):
+            self.refresh_voice_modeling_preflight_async()
+        elif hasattr(self, "voice_modeling_preflight_label"):
+            self.voice_modeling_preflight_label.setText("Preflight not run yet. Use Refresh preflight.")
 
     def select_voice_modeling_output_folder(self) -> None:
         initial = self.voice_modeling_output_picker.text() or str(Path.home())
@@ -192,6 +201,7 @@ class VoiceModelingWorkflowMixin:
         if path:
             self.voice_modeling_output_picker.set_text(path)
             self.update_voice_modeling_buttons()
+            self.mark_voice_modeling_preflight_stale()
 
     def select_voice_modeling_resume_checkpoint(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -205,6 +215,65 @@ class VoiceModelingWorkflowMixin:
 
     def clear_voice_modeling_resume_checkpoint(self) -> None:
         self.voice_modeling_resume_picker.set_text("")
+        self.mark_voice_modeling_preflight_stale()
+
+    def mark_voice_modeling_preflight_stale(self) -> None:
+        if not hasattr(self, "voice_modeling_preflight_label"):
+            return
+        if getattr(self, "_voice_modeling_preflight_refreshing", False):
+            return
+        self.voice_modeling_preflight_ok = False
+        self.voice_modeling_preflight_label.setText("Preflight needs refresh after configuration changes.")
+        self.voice_modeling_preflight_box.setObjectName("WarningBox")
+        self.voice_modeling_preflight_box.style().unpolish(self.voice_modeling_preflight_box)
+        self.voice_modeling_preflight_box.style().polish(self.voice_modeling_preflight_box)
+
+    def refresh_voice_modeling_preflight_async(self) -> None:
+        if not hasattr(self, "voice_modeling_preflight_label"):
+            return
+        if getattr(self, "_voice_modeling_preflight_refreshing", False):
+            return
+        export_info = dict(self.voice_modeling_export_info) if self.voice_modeling_export_info else None
+        output_dir = self.voice_modeling_output_picker.text() if hasattr(self, "voice_modeling_output_picker") else ""
+        resume_checkpoint = (
+            self.voice_modeling_resume_picker.text() if hasattr(self, "voice_modeling_resume_picker") else ""
+        )
+        device = self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto"
+        self._voice_modeling_preflight_refreshing = True
+        self.voice_modeling_preflight_refresh_button.setEnabled(False)
+        self.voice_modeling_preflight_label.setText("Checking Voice Modeling prerequisites...")
+        threading.Thread(
+            target=self.refresh_voice_modeling_preflight_worker,
+            args=(export_info, output_dir, resume_checkpoint, device),
+            daemon=True,
+        ).start()
+
+    def refresh_voice_modeling_preflight_worker(
+        self,
+        export_info,
+        output_dir: str,
+        resume_checkpoint: str,
+        device: str,
+    ) -> None:
+        result = check_voice_modeling_preflight(
+            export_info,
+            output_dir=output_dir,
+            resume_checkpoint=resume_checkpoint,
+            device=device,
+        )
+        self.post(self.voice_modeling_preflight_finished, result)
+
+    def voice_modeling_preflight_finished(self, result) -> None:
+        self._voice_modeling_preflight_refreshing = False
+        self.voice_modeling_preflight_ok = bool(result["ok"])
+        self.voice_modeling_preflight_details = result["details"]
+        self.voice_modeling_preflight_label.setText(result["summary"])
+        self.voice_modeling_preflight_details_box.setPlainText("\n".join(result["details"]))
+        self.voice_modeling_preflight_refresh_button.setEnabled(True)
+        self.voice_modeling_preflight_box.setObjectName("GoodBox" if result["ok"] else "WarningBox")
+        self.voice_modeling_preflight_box.style().unpolish(self.voice_modeling_preflight_box)
+        self.voice_modeling_preflight_box.style().polish(self.voice_modeling_preflight_box)
+        self.refresh_home_diagnostics()
 
     def save_voice_modeling_config(self) -> None:
         export_info = self.voice_modeling_export_info or self.validate_voice_modeling_dataset()
@@ -290,8 +359,14 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_output_picker = FilePicker("Model output folder")
         self.voice_modeling_output_picker.button.clicked.connect(self.select_voice_modeling_output_folder)
         self.voice_modeling_output_picker.edit.textChanged.connect(lambda _text: self.update_voice_modeling_buttons())
+        self.voice_modeling_output_picker.edit.textChanged.connect(
+            lambda _text: self.mark_voice_modeling_preflight_stale()
+        )
         self.voice_modeling_resume_picker = FilePicker("Resume checkpoint", "Browse...")
         self.voice_modeling_resume_picker.button.clicked.connect(self.select_voice_modeling_resume_checkpoint)
+        self.voice_modeling_resume_picker.edit.textChanged.connect(
+            lambda _text: self.mark_voice_modeling_preflight_stale()
+        )
         self.voice_modeling_clear_resume_button = QPushButton("Clear checkpoint")
         self.voice_modeling_clear_resume_button.clicked.connect(self.clear_voice_modeling_resume_checkpoint)
         self.voice_modeling_device_combo = QComboBox()
@@ -320,6 +395,26 @@ class VoiceModelingWorkflowMixin:
         config_card.content_layout.addWidget(self.voice_modeling_clear_resume_button)
         config_card.content_layout.addLayout(config_grid)
 
+        preflight_card = Card("Training preflight")
+        preflight_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.voice_modeling_preflight_box = QFrame()
+        self.voice_modeling_preflight_box.setObjectName("WarningBox")
+        preflight_box_layout = QVBoxLayout(self.voice_modeling_preflight_box)
+        preflight_box_layout.setContentsMargins(12, 10, 12, 10)
+        preflight_box_layout.setSpacing(8)
+        self.voice_modeling_preflight_label = QLabel("Select a dataset export to check training prerequisites.")
+        self.voice_modeling_preflight_label.setWordWrap(True)
+        self.voice_modeling_preflight_details_box = QPlainTextEdit()
+        self.voice_modeling_preflight_details_box.setObjectName("LogBox")
+        self.voice_modeling_preflight_details_box.setReadOnly(True)
+        self.voice_modeling_preflight_details_box.setMinimumHeight(120)
+        self.voice_modeling_preflight_refresh_button = QPushButton("Refresh preflight")
+        self.voice_modeling_preflight_refresh_button.clicked.connect(self.refresh_voice_modeling_preflight_async)
+        preflight_box_layout.addWidget(self.voice_modeling_preflight_label)
+        preflight_box_layout.addWidget(self.voice_modeling_preflight_details_box)
+        preflight_box_layout.addWidget(self.voice_modeling_preflight_refresh_button)
+        preflight_card.content_layout.addWidget(self.voice_modeling_preflight_box)
+
         actions_card = Card()
         actions_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         action_row = QHBoxLayout()
@@ -340,13 +435,18 @@ class VoiceModelingWorkflowMixin:
 
         grid.addWidget(dataset_card, 0, 0)
         grid.addWidget(config_card, 0, 1)
+        grid.addWidget(preflight_card, 1, 0, 1, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         layout.addWidget(actions_card)
         layout.addStretch(1)
 
         self.voice_modeling_export_info = None
+        self.voice_modeling_preflight_ok = False
+        self.voice_modeling_preflight_details = []
+        self.voice_modeling_auto_preflight_enabled = False
         self.update_voice_modeling_device_options()
         self.refresh_voice_modeling_exports()
+        self.voice_modeling_auto_preflight_enabled = True
         self.update_voice_modeling_buttons()
         return page

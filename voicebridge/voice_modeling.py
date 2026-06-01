@@ -1,16 +1,26 @@
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from voicebridge.app_paths import external_base_dir
+from voicebridge.app_paths import (
+    external_base_dir,
+    local_tts_dvae_path,
+    local_tts_dvae_ready,
+    local_tts_model_cache_dir,
+    local_tts_model_ready,
+    local_tts_model_required_files,
+    ml_python_path,
+)
 from voicebridge.modeling_datasets import (
     MODELING_DATASET_GOOD,
     MODELING_DATASET_USABLE,
     format_modeling_dataset_duration,
     modeling_dataset_exports_root,
 )
+from voicebridge.stt_preflight import SttRuntimeInfo, inspect_stt_runtime
 from voicebridge.voice_profiles import safe_voice_profile_audio_stem
 
 VOICE_MODELING_OUTPUTS_DIR = "voice_models"
@@ -48,6 +58,22 @@ class VoiceModelingJobConfig(TypedDict):
     dataset: VoiceModelingExportInfo
     created_at: str
     updated_at: str
+
+
+class CoquiRuntimeInfo(TypedDict):
+    coqui_ok: bool
+    coqui_version: str
+    detail: str
+
+
+class VoiceModelingPreflightResult(TypedDict):
+    ok: bool
+    summary: str
+    details: list[str]
+    runtime_info: SttRuntimeInfo
+    coqui_info: CoquiRuntimeInfo
+    xtts_model_ready: bool
+    dvae_ready: bool
 
 
 def utc_timestamp() -> str:
@@ -108,6 +134,145 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
         "dataset_json_path": str(dataset_json_path.resolve()),
         "wavs_dir": str(wavs_dir.resolve()),
         "metadata_rows": len(metadata_rows),
+    }
+
+
+def inspect_coqui_runtime(python_path: Path) -> CoquiRuntimeInfo:
+    default_info: CoquiRuntimeInfo = {
+        "coqui_ok": False,
+        "coqui_version": "",
+        "detail": "Coqui TTS runtime was not inspected.",
+    }
+    if not python_path.is_file():
+        default_info["detail"] = f"Python runtime not found: {python_path}"
+        return default_info
+
+    script = (
+        "import importlib.metadata as metadata\n"
+        "from TTS.api import TTS\n"
+        "version = ''\n"
+        "for package_name in ('coqui-tts', 'TTS'):\n"
+        "    try:\n"
+        "        version = metadata.version(package_name)\n"
+        "        break\n"
+        "    except metadata.PackageNotFoundError:\n"
+        "        pass\n"
+        "print('coqui_ok=1')\n"
+        "print('coqui_version=' + version)\n"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_path), "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        default_info["detail"] = f"Could not inspect Coqui TTS runtime: {exc}"
+        return default_info
+
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    if result.returncode != 0:
+        default_info["detail"] = output or f"Coqui TTS runtime inspection failed with code {result.returncode}."
+        return default_info
+
+    values = {}
+    for line in output.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+
+    coqui_version = values.get("coqui_version", "")
+    detail = f"Coqui TTS import ready{f' ({coqui_version})' if coqui_version else ''}."
+    return {
+        "coqui_ok": values.get("coqui_ok") == "1",
+        "coqui_version": coqui_version,
+        "detail": detail,
+    }
+
+
+def check_voice_modeling_preflight(
+    export_info: VoiceModelingExportInfo | None = None,
+    *,
+    output_dir: str | Path | None = None,
+    resume_checkpoint: str | Path | None = None,
+    device: str = "auto",
+) -> VoiceModelingPreflightResult:
+    checks: list[tuple[str, bool, str]] = []
+
+    def add_check(label: str, ok: bool, detail: str | Path) -> None:
+        checks.append((label, ok, str(detail)))
+
+    python_path = ml_python_path()
+    runtime_info = inspect_stt_runtime(python_path)
+    coqui_info = inspect_coqui_runtime(python_path)
+    normalized_device = normalize_voice_modeling_device(device)
+    model_cache_dir = local_tts_model_cache_dir()
+
+    add_check("ML Python runtime", python_path.is_file(), python_path)
+    add_check("Torch runtime", runtime_info["torch_ok"], runtime_info["detail"])
+    add_check("Coqui TTS runtime", coqui_info["coqui_ok"], coqui_info["detail"])
+    for filename in local_tts_model_required_files():
+        add_check(f"XTTS-v2 {filename}", (model_cache_dir / filename).is_file(), model_cache_dir / filename)
+    add_check("XTTS-v2 model package", local_tts_model_ready(), model_cache_dir)
+    add_check("XTTS-v2 DVAE checkpoint", local_tts_dvae_ready(), local_tts_dvae_path())
+
+    if export_info:
+        try:
+            validated_export = validate_voice_modeling_export(export_info["dataset_dir"])
+        except ValueError as exc:
+            add_check("Selected modeling export", False, str(exc))
+        else:
+            add_check("Selected modeling export", True, validated_export["dataset_dir"])
+    else:
+        add_check("Selected modeling export", False, "No dataset export selected.")
+
+    if output_dir:
+        output_path = Path(output_dir).expanduser()
+        output_parent = output_path.parent if output_path.name else output_path
+        output_parent_ready = output_parent.exists() or output_parent.parent.exists()
+        add_check("Model output folder", not output_path.is_file(), output_path)
+        add_check("Model output parent", output_parent_ready, output_parent)
+    else:
+        add_check("Model output folder", False, "No output folder selected.")
+
+    if resume_checkpoint:
+        resume_path = Path(resume_checkpoint).expanduser()
+        add_check("Resume checkpoint", resume_path.is_file(), resume_path)
+
+    if normalized_device == "cuda":
+        add_check("CUDA device selection", runtime_info["cuda_available"], runtime_info["detail"])
+
+    missing = [(label, detail) for label, ok, detail in checks if not ok]
+    if missing:
+        summary = f"Voice Modeling preflight incomplete: {len(missing)} missing item(s)."
+    elif normalized_device == "cuda" or (normalized_device == "auto" and runtime_info["cuda_available"]):
+        device_name = runtime_info["cuda_device_name"] or "CUDA device"
+        summary = f"Voice Modeling preflight ready. CUDA available: {device_name}."
+    else:
+        summary = "Voice Modeling preflight ready for CPU. Training may be slow."
+
+    details = []
+    for label, ok, detail in checks:
+        marker = "OK" if ok else "MISSING"
+        details.append(f"{marker}: {label} - {detail}")
+    details.append(f"INFO: {runtime_info['detail']}")
+    details.append(f"INFO: {coqui_info['detail']}")
+    details.append("INFO: Training worker is not connected yet; this validates prerequisites and configuration.")
+
+    return {
+        "ok": not missing,
+        "summary": summary,
+        "details": details,
+        "runtime_info": runtime_info,
+        "coqui_info": coqui_info,
+        "xtts_model_ready": local_tts_model_ready(),
+        "dvae_ready": local_tts_dvae_ready(),
     }
 
 

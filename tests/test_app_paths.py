@@ -49,6 +49,18 @@ def test_stt_alignment_model_ready_checks_language_file(monkeypatch, tmp_path: P
     assert app_paths.stt_alignment_model_ready("it")
 
 
+def test_local_tts_dvae_ready_checks_xtts_cache_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
+
+    assert app_paths.local_tts_dvae_path() == app_paths.local_tts_model_cache_dir() / "dvae.pth"
+    assert not app_paths.local_tts_dvae_ready()
+
+    app_paths.local_tts_dvae_path().parent.mkdir(parents=True)
+    app_paths.local_tts_dvae_path().write_text("x", encoding="utf-8")
+
+    assert app_paths.local_tts_dvae_ready()
+
+
 def test_ffmpeg_candidates_only_include_shared_ml_runtime(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(media_tools, "external_base_dir", lambda: tmp_path)
     bundled_dir = tmp_path / "python-ml" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries"

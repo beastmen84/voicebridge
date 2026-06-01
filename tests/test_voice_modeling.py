@@ -1,5 +1,6 @@
 import json
 import os
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -14,11 +15,14 @@ from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
     check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
+    download_file_to_path,
     list_voice_modeling_exports,
+    list_voice_modeling_job_configs,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     voice_modeling_export_label,
     voice_modeling_export_summary_text,
+    voice_modeling_job_label,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, build_voice_profile
 
@@ -119,6 +123,20 @@ def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: p
     assert saved["dataset"]["metadata_rows"] == 5
 
 
+def test_list_voice_modeling_job_configs_reads_saved_configs(tmp_path: Path) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    output_dir = tmp_path / "voice-models" / "job-a"
+    config = build_voice_modeling_job_config(export_info, output_dir=output_dir, job_id="job-a")
+    config_path = save_voice_modeling_job_config(config)
+
+    jobs = list_voice_modeling_job_configs(tmp_path / "voice-models")
+
+    assert jobs[0]["config_path"] == str(config_path.resolve())
+    assert jobs[0]["dataset_name"] == "Dataset Voice"
+    assert "Dataset Voice" in voice_modeling_job_label(jobs[0])
+
+
 def test_build_voice_modeling_job_config_rejects_missing_resume(tmp_path: Path) -> None:
     export_dir = exported_dataset(tmp_path)
     export_info = validate_voice_modeling_export(export_dir)
@@ -169,3 +187,22 @@ def test_check_voice_modeling_preflight_requires_dvae(tmp_path: Path, monkeypatc
     assert not result["ok"]
     assert not result["dvae_ready"]
     assert any("DVAE" in detail and detail.startswith("MISSING") for detail in result["details"])
+
+
+def test_download_file_to_path_verifies_checksum(tmp_path: Path) -> None:
+    source = tmp_path / "source.bin"
+    target = tmp_path / "target.bin"
+    content = b"dvae"
+    source.write_bytes(content)
+    progress_values = []
+
+    result = download_file_to_path(
+        source.as_uri(),
+        target,
+        expected_sha256=sha256(content).hexdigest(),
+        progress_callback=progress_values.append,
+    )
+
+    assert result == target
+    assert target.read_bytes() == content
+    assert progress_values[-1] == 100.0

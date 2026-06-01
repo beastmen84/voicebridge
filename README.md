@@ -97,9 +97,10 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 
 ### Local Voices, Voice Profiles e Local TTS
 
-Le funzioni locali per la voce sono raccolte in `Local Voices`, con tab `Profiles`, `Datasets` e `Modeling`.
-Il tab `Datasets` si abilita dopo aver creato almeno un profilo `Modeling dataset`; il tab `Modeling` si abilita
-quando esiste almeno un export dataset valido in `modeling_exports`.
+Le funzioni locali per la voce sono raccolte in `Local Voices`, con tab `Profiles`, `Datasets`, `Setup` e `Training`.
+Il tab `Datasets` si abilita dopo aver creato almeno un profilo `Modeling dataset`; il tab `Setup` si abilita
+quando esiste almeno un export dataset valido in `modeling_exports`; il tab `Training` si abilita dopo aver salvato
+almeno un `job_config.json`.
 
 1. Aprire `Local Voices > Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.
@@ -146,17 +147,27 @@ da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 `dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente e non modifica i
 file di lavoro.
 
-### Local Voices > Modeling
+### Local Voices > Setup
 
-`Local Voices > Modeling` prepara il job di training XTTS-v2, ma non avvia ancora il training.
+`Local Voices > Setup` prepara il job di training XTTS-v2, ma non avvia ancora il training.
 
 1. Esportare prima un dataset dalla sezione `Local Voices > Datasets`.
-2. Aprire `Local Voices > Modeling` e scegliere il dataset export dal dropdown popolato da `modeling_exports`.
+2. Aprire `Local Voices > Setup` e scegliere il dataset export dal dropdown popolato da `modeling_exports`.
 3. Usare `Refresh` se si e' appena creato un export; `Browse external...` serve solo per dataset validi fuori cartella.
 4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
 5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.
-6. Usare `Refresh preflight` per verificare runtime ML, Torch/CUDA, Coqui, XTTS-v2, `dvae.pth`, dataset e output.
-7. Usare `Save training config` per creare `job_config.json` nella cartella output.
+6. Se `dvae.pth` manca, usare `Download DVAE`; il file viene salvato nella cache XTTS-v2 locale.
+7. Usare `Refresh preflight` per verificare runtime ML, Torch/CUDA, Coqui, XTTS-v2, `dvae.pth`, dataset e output.
+8. Usare `Save training config` per creare `job_config.json` nella cartella output.
+
+### Local Voices > Training
+
+`Local Voices > Training` elenca i job configurati in `voice_models` e prepara l'area in cui verra' agganciato il
+worker di training/dry-run.
+
+1. Salvare prima un `job_config.json` da `Local Voices > Setup`.
+2. Aprire `Local Voices > Training`.
+3. Selezionare il job e usare `Open job folder` per ispezionare output e configurazione.
 
 Il file `job_config.json` e' il contratto tra UI e futuro training worker: contiene dataset, output, resume checkpoint,
 device e parametri base. La cartella `voice_models` contiene output utente e non viene tracciata da git.

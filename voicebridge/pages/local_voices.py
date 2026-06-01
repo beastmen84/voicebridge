@@ -1,11 +1,12 @@
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
-from voicebridge.voice_modeling import list_voice_modeling_exports
+from voicebridge.voice_modeling import list_voice_modeling_exports, list_voice_modeling_job_configs
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
 LOCAL_VOICES_TAB_PROFILES = 0
 LOCAL_VOICES_TAB_DATASETS = 1
-LOCAL_VOICES_TAB_MODELING = 2
+LOCAL_VOICES_TAB_SETUP = 2
+LOCAL_VOICES_TAB_TRAINING = 3
 
 
 class LocalVoicesWorkflowMixin:
@@ -22,28 +23,39 @@ class LocalVoicesWorkflowMixin:
     def has_voice_modeling_exports(self) -> bool:
         return bool(list_voice_modeling_exports())
 
+    def has_voice_training_jobs(self) -> bool:
+        return bool(list_voice_modeling_job_configs())
+
     def update_local_voice_tabs(self) -> None:
         if not hasattr(self, "local_voice_tabs"):
             return
         datasets_enabled = self.has_modeling_voice_profiles()
-        modeling_enabled = self.has_voice_modeling_exports()
+        setup_enabled = self.has_voice_modeling_exports()
+        training_enabled = self.has_voice_training_jobs()
         self.local_voice_tabs.setTabEnabled(LOCAL_VOICES_TAB_DATASETS, datasets_enabled)
-        self.local_voice_tabs.setTabEnabled(LOCAL_VOICES_TAB_MODELING, modeling_enabled)
+        self.local_voice_tabs.setTabEnabled(LOCAL_VOICES_TAB_SETUP, setup_enabled)
+        self.local_voice_tabs.setTabEnabled(LOCAL_VOICES_TAB_TRAINING, training_enabled)
         self.local_voice_tabs.setTabToolTip(
             LOCAL_VOICES_TAB_DATASETS,
             "" if datasets_enabled else "Create a Modeling dataset profile first.",
         )
         self.local_voice_tabs.setTabToolTip(
-            LOCAL_VOICES_TAB_MODELING,
-            "" if modeling_enabled else "Export a usable dataset first.",
+            LOCAL_VOICES_TAB_SETUP,
+            "" if setup_enabled else "Export a usable dataset first.",
+        )
+        self.local_voice_tabs.setTabToolTip(
+            LOCAL_VOICES_TAB_TRAINING,
+            "" if training_enabled else "Save a training config from Setup first.",
         )
         if not self.local_voice_tabs.isTabEnabled(self.local_voice_tabs.currentIndex()):
             fallback_tab = LOCAL_VOICES_TAB_DATASETS if datasets_enabled else LOCAL_VOICES_TAB_PROFILES
             self.local_voice_tabs.setCurrentIndex(fallback_tab)
 
     def local_voice_tab_changed(self, tab_index: int) -> None:
-        if tab_index == LOCAL_VOICES_TAB_MODELING:
+        if tab_index == LOCAL_VOICES_TAB_SETUP:
             self.refresh_voice_modeling_exports()
+        if tab_index == LOCAL_VOICES_TAB_TRAINING:
+            self.refresh_voice_training_jobs()
 
     def build_local_voices_page(self):
         page = QWidget()
@@ -62,7 +74,8 @@ class LocalVoicesWorkflowMixin:
         self.local_voice_tabs.setObjectName("WorkspaceTabs")
         self.local_voice_tabs.addTab(self.build_voice_profiles_page(include_header=False), "Profiles")
         self.local_voice_tabs.addTab(self.build_modeling_datasets_page(include_header=False), "Datasets")
-        self.local_voice_tabs.addTab(self.build_voice_modeling_page(include_header=False), "Modeling")
+        self.local_voice_tabs.addTab(self.build_voice_modeling_page(include_header=False), "Setup")
+        self.local_voice_tabs.addTab(self.build_voice_training_page(include_header=False), "Training")
         self.local_voice_tabs.currentChanged.connect(self.local_voice_tab_changed)
         layout.addWidget(self.local_voice_tabs, 1)
         self.update_local_voice_tabs()

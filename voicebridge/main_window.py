@@ -68,6 +68,7 @@ from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.pages.voice_modeling import VoiceModelingWorkflowMixin
 from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
+from voicebridge.pages.voice_training import VoiceTrainingWorkflowMixin
 from voicebridge.ui.styles import apply_app_style
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import FilePicker
@@ -87,6 +88,7 @@ class VoiceBridgeQt(
     VoiceModelingWorkflowMixin,
     ModelingDatasetsWorkflowMixin,
     VoiceProfilesWorkflowMixin,
+    VoiceTrainingWorkflowMixin,
     LocalVoicesWorkflowMixin,
     PageBuilderMixin,
     QMainWindow,
@@ -206,12 +208,19 @@ class VoiceBridgeQt(
     voice_modeling_preflight_label: QLabel
     voice_modeling_preflight_details_box: QPlainTextEdit
     voice_modeling_preflight_refresh_button: QPushButton
+    voice_modeling_download_dvae_button: QPushButton
+    voice_modeling_dvae_progress: QProgressBar
     voice_modeling_clear_resume_button: QPushButton
     voice_modeling_save_config_button: QPushButton
     voice_modeling_open_output_button: QPushButton
     voice_modeling_preflight_ok: bool
     voice_modeling_preflight_details: list[str]
     voice_modeling_auto_preflight_enabled: bool
+    voice_modeling_dvae_download_running: bool
+    voice_training_job_combo: QComboBox
+    voice_training_refresh_jobs_button: QPushButton
+    voice_training_open_folder_button: QPushButton
+    voice_training_job_status: QPlainTextEdit
 
     stt_media_picker: FilePicker
     stt_text_picker: FilePicker
@@ -479,6 +488,7 @@ class VoiceBridgeQt(
         self.voice_modeling_preflight_ok = False
         self.voice_modeling_preflight_details = []
         self.voice_modeling_auto_preflight_enabled = False
+        self.voice_modeling_dvae_download_running = False
         self.warning_callback: Callable[[], None] = self.no_warning_action
 
         self.apply_style()

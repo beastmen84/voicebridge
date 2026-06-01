@@ -1,5 +1,5 @@
 VoiceBridge third-party notices
-Last updated: 2026-05-30
+Last updated: 2026-06-01
 
 This file summarizes third-party software and model licenses used by VoiceBridge.
 It is a notice file, not legal advice. When dependencies are bundled, their
@@ -52,6 +52,7 @@ Asset / model                            License / notice                       
 openai/whisper-large-v3                  Apache-2.0                               https://huggingface.co/openai/whisper-large-v3
 facebook/wav2vec2-xls-r-300m             Apache-2.0                               https://huggingface.co/facebook/wav2vec2-xls-r-300m
 coqui/XTTS-v2                            Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2
+coqui/XTTS-v2 dvae.pth                   Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2/blob/main/dvae.pth
 Silero VAD                               Check bundled model/source license        https://github.com/snakers4/silero-vad
 
 Important XTTS-v2 notice

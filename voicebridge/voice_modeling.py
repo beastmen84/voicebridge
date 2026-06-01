@@ -1,6 +1,8 @@
 import json
 import subprocess
+import urllib.request
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -30,6 +32,8 @@ VOICE_MODELING_MIN_EPOCHS = 1
 VOICE_MODELING_MAX_EPOCHS = 500
 VOICE_MODELING_MIN_BATCH_SIZE = 1
 VOICE_MODELING_MAX_BATCH_SIZE = 16
+XTTS_DVAE_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/dvae.pth?download=true"
+XTTS_DVAE_SHA256 = "b29bc227d410d4991e0a8c09b858f77415013eeb9fba9650258e96095557d97a"
 
 
 class VoiceModelingExportInfo(TypedDict):
@@ -60,6 +64,15 @@ class VoiceModelingJobConfig(TypedDict):
     updated_at: str
 
 
+class VoiceModelingJobSummary(TypedDict):
+    config_path: str
+    output_dir: str
+    dataset_name: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
 class CoquiRuntimeInfo(TypedDict):
     coqui_ok: bool
     coqui_version: str
@@ -86,6 +99,56 @@ def file_timestamp() -> str:
 
 def voice_modeling_outputs_root() -> Path:
     return external_base_dir() / VOICE_MODELING_OUTPUTS_DIR
+
+
+def download_file_to_path(
+    source_url: str,
+    target_path: str | Path,
+    *,
+    expected_sha256: str = "",
+    progress_callback=None,
+) -> Path:
+    target = Path(target_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_target = target.with_suffix(f"{target.suffix}.part")
+    request = urllib.request.Request(source_url, headers={"User-Agent": "VoiceBridge"})
+    digest = sha256()
+    downloaded_bytes = 0
+    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+        total_header = response.headers.get("Content-Length", "")
+        try:
+            total_bytes = int(total_header)
+        except ValueError:
+            total_bytes = 0
+        with temporary_target.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+                digest.update(chunk)
+                downloaded_bytes += len(chunk)
+                if progress_callback and total_bytes:
+                    progress_callback(min(100.0, downloaded_bytes * 100.0 / total_bytes))
+    actual_sha256 = digest.hexdigest()
+    if expected_sha256 and actual_sha256.lower() != expected_sha256.lower():
+        temporary_target.unlink(missing_ok=True)
+        raise ValueError(
+            f"Downloaded file checksum mismatch. Expected {expected_sha256}, got {actual_sha256}."
+        )
+    temporary_target.replace(target)
+    if progress_callback:
+        progress_callback(100.0)
+    return target
+
+
+def download_xtts_dvae(progress_callback=None) -> Path:
+    return download_file_to_path(
+        XTTS_DVAE_DOWNLOAD_URL,
+        local_tts_dvae_path(),
+        expected_sha256=XTTS_DVAE_SHA256,
+        progress_callback=progress_callback,
+    )
 
 
 def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExportInfo:
@@ -377,6 +440,68 @@ def save_voice_modeling_job_config(config: VoiceModelingJobConfig) -> Path:
     config_path = output_dir / VOICE_MODELING_JOB_CONFIG
     config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return config_path
+
+
+def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobConfig:
+    path = Path(config_path).expanduser()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Training config is not readable JSON: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Training config must contain an object: {path}")
+    dataset = data.get("dataset")
+    if not isinstance(dataset, dict):
+        raise ValueError(f"Training config is missing dataset metadata: {path}")
+    output_dir = data.get("output_dir")
+    if not isinstance(output_dir, str) or not output_dir:
+        raise ValueError(f"Training config is missing output_dir: {path}")
+    return data
+
+
+def voice_modeling_job_summary(config_path: str | Path) -> VoiceModelingJobSummary:
+    path = Path(config_path).expanduser().resolve()
+    config = load_voice_modeling_job_config(path)
+    dataset = config.get("dataset", {})
+    dataset_name = dataset.get("name") if isinstance(dataset, dict) else ""
+    return {
+        "config_path": str(path),
+        "output_dir": config["output_dir"],
+        "dataset_name": dataset_name if isinstance(dataset_name, str) and dataset_name else "Unknown dataset",
+        "status": config.get("status", "") if isinstance(config.get("status"), str) else "",
+        "created_at": config.get("created_at", "") if isinstance(config.get("created_at"), str) else "",
+        "updated_at": config.get("updated_at", "") if isinstance(config.get("updated_at"), str) else "",
+    }
+
+
+def list_voice_modeling_job_configs(outputs_root: str | Path | None = None) -> list[VoiceModelingJobSummary]:
+    root = Path(outputs_root).expanduser() if outputs_root else voice_modeling_outputs_root()
+    if not root.is_dir():
+        return []
+    summaries = []
+    for config_path in root.rglob(VOICE_MODELING_JOB_CONFIG):
+        if not config_path.is_file():
+            continue
+        try:
+            summary = voice_modeling_job_summary(config_path)
+            modified_at = config_path.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        summaries.append((modified_at, summary))
+    return [
+        summary
+        for _modified_at, summary in sorted(
+            summaries,
+            key=lambda item: (item[0], item[1]["config_path"]),
+            reverse=True,
+        )
+    ]
+
+
+def voice_modeling_job_label(job: VoiceModelingJobSummary) -> str:
+    timestamp = job["updated_at"] or job["created_at"] or Path(job["output_dir"]).name
+    status = job["status"].replace("_", " ").title() if job["status"] else "Configured"
+    return f"{job['dataset_name']} | {status} | {timestamp}"
 
 
 def voice_modeling_export_summary_text(export_info: VoiceModelingExportInfo) -> str:

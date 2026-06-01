@@ -63,6 +63,7 @@ from voicebridge.local_tts_presets import (
 )
 from voicebridge.local_voice_sources import (
     LocalVoiceSource,
+    grouped_local_voice_sources,
     local_voice_display_label,
     local_voice_from_reference_profile,
     local_voice_model_args,
@@ -192,6 +193,34 @@ class TtsWorkflowMixin:
     def local_multi_voice_available(self) -> bool:
         return len(self.ready_tts_voice_profiles()) > 1
 
+    def populate_local_voice_combo(
+        self,
+        combo: QComboBox,
+        voices: list[LocalVoiceSource],
+        target_voice_id: str | None,
+    ) -> None:
+        first_voice_index = -1
+        selected_index = -1
+        for group_label, group_voices in grouped_local_voice_sources(voices):
+            combo.addItem(group_label, "")
+            header_index = combo.count() - 1
+            header_item = combo.model().item(header_index)
+            if header_item is not None:
+                header_item.setEnabled(False)
+            combo.setItemData(header_index, group_label, Qt.ItemDataRole.ToolTipRole)
+            for voice in group_voices:
+                combo.addItem(local_voice_display_label(voice), voice["id"])
+                voice_index = combo.count() - 1
+                combo.setItemData(voice_index, local_voice_status_text(voice), Qt.ItemDataRole.ToolTipRole)
+                if first_voice_index < 0:
+                    first_voice_index = voice_index
+                if target_voice_id and voice["id"] == target_voice_id:
+                    selected_index = voice_index
+        if selected_index >= 0:
+            combo.setCurrentIndex(selected_index)
+        elif first_voice_index >= 0:
+            combo.setCurrentIndex(first_voice_index)
+
     def update_tts_multi_mode_availability(self) -> None:
         if not hasattr(self, "tts_multi_mode_button"):
             return
@@ -219,14 +248,8 @@ class TtsWorkflowMixin:
                 self.local_voice_profile_combo.addItem("No ready local voices", "")
                 self.local_voice_profile_combo.setEnabled(False)
             else:
-                for profile in profiles:
-                    self.local_voice_profile_combo.addItem(local_voice_display_label(profile), profile["id"])
+                self.populate_local_voice_combo(self.local_voice_profile_combo, profiles, target_profile_id)
                 self.local_voice_profile_combo.setEnabled(True)
-                if target_profile_id:
-                    for index in range(self.local_voice_profile_combo.count()):
-                        if self.local_voice_profile_combo.itemData(index) == target_profile_id:
-                            self.local_voice_profile_combo.setCurrentIndex(index)
-                            break
         finally:
             self.local_voice_profile_combo.blockSignals(False)
         self.update_local_voice_profile_status()
@@ -402,14 +425,8 @@ class TtsWorkflowMixin:
                 self.block_voice_combo.addItem("No ready local voices", "")
                 self.block_voice_combo.setEnabled(False)
             else:
-                for profile in profiles:
-                    self.block_voice_combo.addItem(local_voice_display_label(profile), profile["id"])
+                self.populate_local_voice_combo(self.block_voice_combo, profiles, target_profile_id)
                 self.block_voice_combo.setEnabled(True)
-                if target_profile_id:
-                    for index in range(self.block_voice_combo.count()):
-                        if self.block_voice_combo.itemData(index) == target_profile_id:
-                            self.block_voice_combo.setCurrentIndex(index)
-                            break
         finally:
             self.block_voice_combo.blockSignals(False)
 

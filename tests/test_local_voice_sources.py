@@ -3,7 +3,9 @@ from pathlib import Path
 
 from tests.test_voice_modeling import exported_dataset
 from voicebridge.local_voice_sources import (
+    LOCAL_VOICE_REFERENCE,
     LOCAL_VOICE_TRAINED,
+    grouped_local_voice_sources,
     list_trained_local_voices,
     local_voice_display_label,
     local_voice_from_training_result,
@@ -74,3 +76,25 @@ def test_list_trained_local_voices_skips_incomplete_results(tmp_path: Path) -> N
     voices = list_trained_local_voices(tmp_path / "voice-models")
 
     assert [voice["source_path"] for voice in voices] == [str(result_path.resolve())]
+
+
+def test_grouped_local_voice_sources_keeps_reference_before_trained(tmp_path: Path) -> None:
+    trained_voice = local_voice_from_training_result(write_training_result(tmp_path))
+    reference_voice = {
+        "id": "profile-1",
+        "kind": LOCAL_VOICE_REFERENCE,
+        "name": "Reference Voice",
+        "language_code": "it",
+        "reference_paths": [str(tmp_path / "reference.wav")],
+        "model_path": "",
+        "config_path": "",
+        "source_path": "",
+        "status": "Ready",
+    }
+
+    groups = grouped_local_voice_sources([trained_voice, reference_voice])
+
+    assert [(label, [voice["id"] for voice in voices]) for label, voices in groups] == [
+        ("Reference profiles", ["profile-1"]),
+        ("Trained models", [trained_voice["id"]]),
+    ]

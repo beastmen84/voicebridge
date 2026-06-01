@@ -110,6 +110,18 @@ def ready_local_voice_sources(profiles: list[VoiceProfile]) -> list[LocalVoiceSo
     ]
 
 
+def grouped_local_voice_sources(voices: list[LocalVoiceSource]) -> list[tuple[str, list[LocalVoiceSource]]]:
+    groups = [
+        ("Reference profiles", LOCAL_VOICE_REFERENCE),
+        ("Trained models", LOCAL_VOICE_TRAINED),
+    ]
+    return [
+        (label, [voice for voice in voices if voice["kind"] == kind])
+        for label, kind in groups
+        if any(voice["kind"] == kind for voice in voices)
+    ]
+
+
 def local_voice_display_label(voice: LocalVoiceSource) -> str:
     language = LANGUAGE_NAMES.get(voice["language_code"], voice["language_code"].upper())
     suffix = "trained" if voice["kind"] == LOCAL_VOICE_TRAINED else "reference"

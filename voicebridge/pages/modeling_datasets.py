@@ -30,6 +30,7 @@ from voicebridge.modeling_datasets import (
     modeling_clip_audio_path,
     modeling_clip_status_label,
     modeling_dataset_dir,
+    modeling_dataset_summary_text,
     save_modeling_datasets,
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
@@ -70,6 +71,7 @@ class ModelingDatasetsWorkflowMixin:
 
     def refresh_modeling_datasets_page(self) -> None:
         self.refresh_modeling_datasets_list()
+        self.update_modeling_dataset_summary()
         self.refresh_modeling_clips_list()
         self.update_modeling_dataset_buttons()
 
@@ -108,8 +110,18 @@ class ModelingDatasetsWorkflowMixin:
         dataset_id = item.data(Qt.ItemDataRole.UserRole) if item else None
         self.selected_modeling_dataset_id = dataset_id if isinstance(dataset_id, str) else ""
         self.selected_modeling_clip_id = ""
+        self.update_modeling_dataset_summary()
         self.refresh_modeling_clips_list()
         self.update_modeling_dataset_buttons()
+
+    def update_modeling_dataset_summary(self) -> None:
+        if not hasattr(self, "modeling_dataset_summary_box"):
+            return
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            self.modeling_dataset_summary_box.setPlainText("Create or select a modeling dataset.")
+            return
+        self.modeling_dataset_summary_box.setPlainText(modeling_dataset_summary_text(dataset))
 
     def refresh_modeling_clips_list(self) -> None:
         if not hasattr(self, "modeling_clips_list"):
@@ -387,6 +399,11 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_datasets_list = QListWidget()
         self.modeling_datasets_list.setMinimumHeight(220)
         self.modeling_datasets_list.currentRowChanged.connect(lambda _row: self.modeling_dataset_selection_changed())
+        self.modeling_dataset_summary_box = QPlainTextEdit()
+        self.modeling_dataset_summary_box.setObjectName("LogBox")
+        self.modeling_dataset_summary_box.setReadOnly(True)
+        self.modeling_dataset_summary_box.setMinimumHeight(150)
+        self.modeling_dataset_summary_box.setPlaceholderText("Dataset readiness summary appears here.")
         dataset_actions = QHBoxLayout()
         dataset_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_refresh_button = QPushButton("Refresh")
@@ -396,6 +413,7 @@ class ModelingDatasetsWorkflowMixin:
         dataset_actions.addWidget(self.modeling_refresh_button)
         dataset_actions.addWidget(self.modeling_open_dataset_folder_button)
         datasets_card.content_layout.addWidget(self.modeling_datasets_list)
+        datasets_card.content_layout.addWidget(self.modeling_dataset_summary_box)
         datasets_card.content_layout.addLayout(dataset_actions)
 
         clips_card = Card("Clips")

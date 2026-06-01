@@ -1,4 +1,5 @@
 import json
+import re
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,17 @@ MODELING_CLIP_FREE_RECORDING = "free_recording"
 MODELING_CLIP_READY = "ready"
 MODELING_CLIP_NEEDS_TRANSCRIPT = "needs_transcript"
 MODELING_CLIP_MISSING_AUDIO = "missing_audio"
+MODELING_DATASET_NOT_READY = "not_ready"
+MODELING_DATASET_USABLE = "usable"
+MODELING_DATASET_GOOD = "good"
+MODELING_MIN_READY_CLIPS = 5
+MODELING_MIN_READY_SECONDS = 60.0
+MODELING_GOOD_READY_CLIPS = 20
+MODELING_GOOD_READY_SECONDS = 600.0
+MODELING_MIN_READY_CLIP_SECONDS = 5.0
+MODELING_MAX_READY_CLIP_SECONDS = 60.0
+MODELING_LOW_RMS_PERCENT = 3.0
+MODELING_CLIPPING_PERCENT = 0.10
 
 
 class ModelingClip(TypedDict):
@@ -44,6 +56,21 @@ class ModelingDataset(TypedDict):
     clips: list[ModelingClip]
     created_at: str
     updated_at: str
+
+
+class ModelingDatasetSummary(TypedDict):
+    total_clips: int
+    ready_clips: int
+    pending_transcript_clips: int
+    missing_audio_clips: int
+    ready_duration_seconds: float
+    average_ready_duration_seconds: float
+    short_ready_clips: int
+    long_ready_clips: int
+    low_level_clips: int
+    clipping_clips: int
+    readiness: str
+    issues: list[str]
 
 
 def utc_timestamp() -> str:
@@ -93,6 +120,154 @@ def modeling_clip_status_label(status: str) -> str:
         MODELING_CLIP_NEEDS_TRANSCRIPT: "Needs transcript",
         MODELING_CLIP_MISSING_AUDIO: "Missing audio",
     }.get(status, status.replace("_", " ").title())
+
+
+def modeling_dataset_readiness_label(readiness: str) -> str:
+    return {
+        MODELING_DATASET_NOT_READY: "Not ready",
+        MODELING_DATASET_USABLE: "Usable",
+        MODELING_DATASET_GOOD: "Good",
+    }.get(readiness, readiness.replace("_", " ").title())
+
+
+def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary:
+    ready_duration_seconds = 0.0
+    ready_clips = 0
+    pending_transcript_clips = 0
+    missing_audio_clips = 0
+    short_ready_clips = 0
+    long_ready_clips = 0
+    low_level_clips = 0
+    clipping_clips = 0
+
+    for clip in dataset["clips"]:
+        status = modeling_clip_display_status(clip)
+        if status == MODELING_CLIP_MISSING_AUDIO:
+            missing_audio_clips += 1
+            continue
+        if status == MODELING_CLIP_NEEDS_TRANSCRIPT:
+            pending_transcript_clips += 1
+            continue
+
+        ready_clips += 1
+        duration_seconds = _float(clip.get("duration_seconds"))
+        ready_duration_seconds += duration_seconds
+        if duration_seconds < MODELING_MIN_READY_CLIP_SECONDS:
+            short_ready_clips += 1
+        if duration_seconds > MODELING_MAX_READY_CLIP_SECONDS:
+            long_ready_clips += 1
+        quality_details = clip.get("quality_details", "")
+        rms_percent = _quality_percent(quality_details, "RMS level")
+        clipping_percent = _quality_percent(quality_details, "Input clipping")
+        if rms_percent is not None and rms_percent < MODELING_LOW_RMS_PERCENT:
+            low_level_clips += 1
+        if clipping_percent is not None and clipping_percent > MODELING_CLIPPING_PERCENT:
+            clipping_clips += 1
+
+    average_ready_duration_seconds = ready_duration_seconds / ready_clips if ready_clips else 0.0
+    quality_warning_count = short_ready_clips + long_ready_clips + low_level_clips + clipping_clips
+    issue_count = quality_warning_count + pending_transcript_clips + missing_audio_clips
+    if ready_clips >= MODELING_GOOD_READY_CLIPS and ready_duration_seconds >= MODELING_GOOD_READY_SECONDS:
+        readiness = MODELING_DATASET_GOOD if issue_count == 0 else MODELING_DATASET_USABLE
+    elif ready_clips >= MODELING_MIN_READY_CLIPS and ready_duration_seconds >= MODELING_MIN_READY_SECONDS:
+        readiness = MODELING_DATASET_USABLE
+    else:
+        readiness = MODELING_DATASET_NOT_READY
+
+    issues = modeling_dataset_summary_issues(
+        ready_clips=ready_clips,
+        pending_transcript_clips=pending_transcript_clips,
+        missing_audio_clips=missing_audio_clips,
+        ready_duration_seconds=ready_duration_seconds,
+        short_ready_clips=short_ready_clips,
+        long_ready_clips=long_ready_clips,
+        low_level_clips=low_level_clips,
+        clipping_clips=clipping_clips,
+        readiness=readiness,
+    )
+    return {
+        "total_clips": len(dataset["clips"]),
+        "ready_clips": ready_clips,
+        "pending_transcript_clips": pending_transcript_clips,
+        "missing_audio_clips": missing_audio_clips,
+        "ready_duration_seconds": round(ready_duration_seconds, 3),
+        "average_ready_duration_seconds": round(average_ready_duration_seconds, 3),
+        "short_ready_clips": short_ready_clips,
+        "long_ready_clips": long_ready_clips,
+        "low_level_clips": low_level_clips,
+        "clipping_clips": clipping_clips,
+        "readiness": readiness,
+        "issues": issues,
+    }
+
+
+def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
+    summary = modeling_dataset_summary(dataset)
+    lines = [
+        f"Readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
+        f"Language: {dataset['language_code']}",
+        f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
+        f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
+        f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
+    ]
+    if summary["issues"]:
+        lines.append("")
+        lines.append("Notes:")
+        lines.extend(f"- {issue}" for issue in summary["issues"])
+    else:
+        lines.append("")
+        lines.append("No blocking dataset issues detected.")
+    return "\n".join(lines)
+
+
+def modeling_dataset_summary_issues(
+    *,
+    ready_clips: int,
+    pending_transcript_clips: int,
+    missing_audio_clips: int,
+    ready_duration_seconds: float,
+    short_ready_clips: int,
+    long_ready_clips: int,
+    low_level_clips: int,
+    clipping_clips: int,
+    readiness: str,
+) -> list[str]:
+    issues = []
+    if ready_clips == 0:
+        issues.append("Add at least one ready clip with audio and transcript.")
+    elif ready_clips < MODELING_MIN_READY_CLIPS:
+        issues.append(f"Collect at least {MODELING_MIN_READY_CLIPS} ready clips for a first training test.")
+    if ready_duration_seconds < MODELING_MIN_READY_SECONDS:
+        issues.append(
+            f"Collect at least {format_modeling_dataset_duration(MODELING_MIN_READY_SECONDS)} of ready audio."
+        )
+    if pending_transcript_clips:
+        issues.append(f"{pending_transcript_clips} clip(s) need transcript text.")
+    if missing_audio_clips:
+        issues.append(f"{missing_audio_clips} clip(s) are missing their WAV file.")
+    if short_ready_clips:
+        issues.append(f"{short_ready_clips} ready clip(s) are shorter than {MODELING_MIN_READY_CLIP_SECONDS:.0f}s.")
+    if long_ready_clips:
+        issues.append(f"{long_ready_clips} ready clip(s) are longer than {MODELING_MAX_READY_CLIP_SECONDS:.0f}s.")
+    if low_level_clips:
+        issues.append(f"{low_level_clips} ready clip(s) have low RMS level.")
+    if clipping_clips:
+        issues.append(f"{clipping_clips} ready clip(s) show input clipping.")
+    if readiness == MODELING_DATASET_USABLE:
+        issues.append(
+            "For stronger modeling, aim for "
+            f"{MODELING_GOOD_READY_CLIPS}+ ready clips and "
+            f"{format_modeling_dataset_duration(MODELING_GOOD_READY_SECONDS)}+ of audio."
+        )
+    return issues
+
+
+def format_modeling_dataset_duration(seconds: float) -> str:
+    seconds = max(0, round(float(seconds)))
+    minutes, seconds = divmod(seconds, 60)
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
 
 
 def build_modeling_dataset_for_profile(
@@ -307,3 +482,12 @@ def _float(value: Any) -> float:
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _quality_percent(details: str, label: str) -> float | None:
+    if not isinstance(details, str):
+        return None
+    match = re.search(rf"^{re.escape(label)}:\s*([0-9]+(?:\.[0-9]+)?)%", details, flags=re.MULTILINE)
+    if not match:
+        return None
+    return _float(match.group(1))

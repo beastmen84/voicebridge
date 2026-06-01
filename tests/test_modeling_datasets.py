@@ -6,6 +6,9 @@ from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     MODELING_CLIP_NEEDS_TRANSCRIPT,
     MODELING_CLIP_READY,
+    MODELING_DATASET_GOOD,
+    MODELING_DATASET_NOT_READY,
+    MODELING_DATASET_USABLE,
     build_modeling_clip,
     build_modeling_dataset_for_profile,
     ensure_modeling_datasets_for_profiles,
@@ -14,6 +17,8 @@ from voicebridge.modeling_datasets import (
     modeling_clip_status_label,
     modeling_clip_transcript_path,
     modeling_dataset_dir,
+    modeling_dataset_summary,
+    modeling_dataset_summary_text,
     modeling_datasets_root,
     save_modeling_datasets,
     update_modeling_clip_transcript,
@@ -95,6 +100,149 @@ def test_modeling_clip_transcript_sidecar(tmp_path: Path) -> None:
     assert updated["status"] == MODELING_CLIP_READY
     assert Path(updated["transcript_path"]).read_text(encoding="utf-8") == "Hello world\n"
     assert modeling_clip_status_label(updated["status"]) == "Ready"
+
+
+def test_modeling_dataset_summary_reports_not_ready_without_clips() -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+
+    summary = modeling_dataset_summary(dataset)
+
+    assert summary["readiness"] == MODELING_DATASET_NOT_READY
+    assert summary["ready_clips"] == 0
+    assert "Add at least one ready clip" in summary["issues"][0]
+    assert "Readiness: Not ready" in modeling_dataset_summary_text(dataset)
+
+
+def test_modeling_dataset_summary_uses_ready_clip_subset(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"ready-{index}.wav"
+        audio_path.write_bytes(b"RIFF")
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"Ready clip {index}",
+                duration_seconds=12.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"ready-{index}",
+            )
+        )
+    pending_audio = tmp_path / "pending.wav"
+    pending_audio.write_bytes(b"RIFF")
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=pending_audio,
+            duration_seconds=12.0,
+            clip_id="pending",
+        )
+    )
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=tmp_path / "missing.wav",
+            transcript_text="Missing audio",
+            duration_seconds=12.0,
+            clip_id="missing",
+        )
+    )
+
+    summary = modeling_dataset_summary(dataset)
+
+    assert summary["readiness"] == MODELING_DATASET_USABLE
+    assert summary["ready_clips"] == 5
+    assert summary["total_clips"] == 7
+    assert summary["ready_duration_seconds"] == 60.0
+    assert summary["pending_transcript_clips"] == 1
+    assert summary["missing_audio_clips"] == 1
+    assert any("need transcript" in issue for issue in summary["issues"])
+    assert any("missing their WAV" in issue for issue in summary["issues"])
+
+
+def test_modeling_dataset_summary_flags_clip_quality(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for clip_id, duration, quality_details in (
+        ("short", 4.0, "RMS level: 8%\nInput clipping: 0.00%"),
+        ("long", 61.0, "RMS level: 8%\nInput clipping: 0.00%"),
+        ("quiet", 12.0, "RMS level: 1%\nInput clipping: 0.00%"),
+        ("clipped", 12.0, "RMS level: 8%\nInput clipping: 0.50%"),
+    ):
+        audio_path = tmp_path / f"{clip_id}.wav"
+        audio_path.write_bytes(b"RIFF")
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"{clip_id} text",
+                duration_seconds=duration,
+                quality_details=quality_details,
+                clip_id=clip_id,
+            )
+        )
+
+    summary = modeling_dataset_summary(dataset)
+
+    assert summary["short_ready_clips"] == 1
+    assert summary["long_ready_clips"] == 1
+    assert summary["low_level_clips"] == 1
+    assert summary["clipping_clips"] == 1
+
+
+def test_modeling_dataset_summary_reports_good_dataset(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(20):
+        audio_path = tmp_path / f"good-{index}.wav"
+        audio_path.write_bytes(b"RIFF")
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"Good clip {index}",
+                duration_seconds=30.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"good-{index}",
+            )
+        )
+
+    summary = modeling_dataset_summary(dataset)
+
+    assert summary["readiness"] == MODELING_DATASET_GOOD
+    assert summary["ready_duration_seconds"] == 600.0
+    assert summary["issues"] == []
 
 
 def test_save_and_load_modeling_datasets(tmp_path: Path) -> None:

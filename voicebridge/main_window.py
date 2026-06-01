@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from voicebridge.app_paths import resource_path, stt_alignment_model_ready
-from voicebridge.app_settings import load_app_settings, save_app_settings
+from voicebridge.app_settings import cleanup_app_config_on_startup, load_app_settings, save_app_settings
 from voicebridge.constants import (
     APP_ATTRIBUTION,
     APP_ICON,
@@ -403,6 +403,7 @@ class VoiceBridgeQt(
 
     def __init__(self):
         super().__init__()
+        cleanup_app_config_on_startup()
         self.app_settings = load_app_settings()
         self.is_restoring_settings = True
         self.setWindowTitle(APP_NAME)

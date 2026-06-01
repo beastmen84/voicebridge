@@ -1,12 +1,19 @@
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 APP_CONFIG_DIR_NAME = "VoiceBridge"
 SETTINGS_CONFIG = "settings.json"
 LEGACY_PREFERRED_VOICES_CONFIG = "preferred_voices.json"
+VOICE_PROFILES_CONFIG = "voice_profiles.json"
+MODELING_DATASETS_CONFIG = "modeling_datasets.json"
+APP_CONFIG_BACKUP_DIR = "legacy_backup"
 SETTINGS_VERSION = 1
+ACTIVE_CONFIG_FILES = {SETTINGS_CONFIG, VOICE_PROFILES_CONFIG, MODELING_DATASETS_CONFIG}
+LEGACY_CONFIG_FILES = {LEGACY_PREFERRED_VOICES_CONFIG}
+KNOWN_CONFIG_FILES = ACTIVE_CONFIG_FILES | LEGACY_CONFIG_FILES
 
 Settings = dict[str, Any]
 
@@ -26,6 +33,47 @@ def legacy_preferred_voices_config_path() -> Path:
     return app_config_dir() / LEGACY_PREFERRED_VOICES_CONFIG
 
 
+def legacy_backup_dir() -> Path:
+    return app_config_dir() / APP_CONFIG_BACKUP_DIR
+
+
+def _file_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+
+
+def _read_json(path: Path) -> tuple[Any, str | None]:
+    try:
+        with path.open("r", encoding="utf-8") as config_file:
+            return json.load(config_file), None
+    except json.JSONDecodeError:
+        return None, "invalid-json"
+    except OSError:
+        return None, "unreadable"
+
+
+def _archive_config_file(path: Path, reason: str) -> Path | None:
+    if not path.is_file():
+        return None
+    try:
+        backup_dir = legacy_backup_dir()
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        target = backup_dir / f"{path.stem}.{reason}-{_file_timestamp()}{path.suffix}"
+        counter = 2
+        while target.exists():
+            target = backup_dir / f"{path.stem}.{reason}-{_file_timestamp()}-{counter}{path.suffix}"
+            counter += 1
+        path.replace(target)
+    except OSError:
+        return None
+    return target
+
+
+def _archive_with_action(path: Path, reason: str, actions: list[str]) -> None:
+    archived_path = _archive_config_file(path, reason)
+    if archived_path:
+        actions.append(f"archived {path.name} -> {archived_path.name}")
+
+
 def _short_name_set(value: Any) -> set[str]:
     if not isinstance(value, list):
         return set()
@@ -40,6 +88,53 @@ def _load_legacy_preferred_voice_short_names() -> set[str]:
         return set()
     short_names = data.get("short_names", []) if isinstance(data, dict) else []
     return _short_name_set(short_names)
+
+
+def cleanup_app_config_on_startup() -> list[str]:
+    """Archive stale AppData JSON files without deleting user assets."""
+    config_dir = app_config_dir()
+    if not config_dir.is_dir():
+        return []
+
+    actions: list[str] = []
+    settings_path = settings_config_path()
+    settings_data: Settings = {}
+    settings_value = None
+    if settings_path.exists():
+        settings_value, error = _read_json(settings_path)
+        if error or not isinstance(settings_value, dict):
+            _archive_with_action(settings_path, "corrupt", actions)
+        else:
+            settings_data = settings_value
+
+    for config_name in (VOICE_PROFILES_CONFIG, MODELING_DATASETS_CONFIG):
+        config_path = config_dir / config_name
+        if not config_path.exists():
+            continue
+        _value, error = _read_json(config_path)
+        if error:
+            _archive_with_action(config_path, "corrupt", actions)
+
+    legacy_path = legacy_preferred_voices_config_path()
+    if legacy_path.exists():
+        legacy_value, error = _read_json(legacy_path)
+        if error or not isinstance(legacy_value, dict):
+            _archive_with_action(legacy_path, "legacy-invalid", actions)
+        else:
+            existing_short_names = _short_name_set(settings_data.get("preferred_voice_short_names", []))
+            legacy_short_names = _short_name_set(legacy_value.get("short_names", []))
+            merged_short_names = sorted(existing_short_names | legacy_short_names)
+            if merged_short_names:
+                settings_data["preferred_voice_short_names"] = merged_short_names
+            settings_data["version"] = SETTINGS_VERSION
+            save_app_settings(settings_data)
+            _archive_with_action(legacy_path, "migrated", actions)
+
+    for config_path in config_dir.glob("*.json"):
+        if config_path.name not in KNOWN_CONFIG_FILES:
+            _archive_with_action(config_path, "legacy", actions)
+
+    return actions
 
 
 def load_app_settings() -> Settings:

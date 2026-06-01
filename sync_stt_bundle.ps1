@@ -35,6 +35,9 @@ if (-not $ModelsOnly) {
     Copy-Item -Path (Join-Path $PSScriptRoot "voice_modeling_worker.py") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "Manual.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 
     $mlVenv = Join-Path $PSScriptRoot ".venv-ml"

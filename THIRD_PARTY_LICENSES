@@ -6,6 +6,10 @@ It is a notice file, not legal advice. When dependencies are bundled, their
 installed *.dist-info license and metadata files should remain available in the
 distributed runtime folders.
 
+VoiceBridge's own source code is licensed under the Mozilla Public License 2.0.
+Third-party libraries, runtimes, model files, generated caches and external
+services keep their own licenses and terms.
+
 Main application dependencies
 
 Package                 License / notice                         Source

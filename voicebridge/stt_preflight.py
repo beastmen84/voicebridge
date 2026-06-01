@@ -13,6 +13,9 @@ from voicebridge.app_paths import (
 )
 from voicebridge.file_checks import partial_download_files, required_file_issue
 
+STT_RUNTIME_INSPECTION_TIMEOUT_SECONDS = 45
+STT_RUNTIME_INSPECTION_RETRY_TIMEOUT_SECONDS = 90
+
 
 class SttRuntimeInfo(TypedDict):
     torch_ok: bool
@@ -24,7 +27,10 @@ class SttRuntimeInfo(TypedDict):
     detail: str
 
 
-def inspect_stt_runtime(python_path: Path) -> SttRuntimeInfo:
+def inspect_stt_runtime(
+    python_path: Path,
+    timeout_seconds: int = STT_RUNTIME_INSPECTION_TIMEOUT_SECONDS,
+) -> SttRuntimeInfo:
     default_info: SttRuntimeInfo = {
         "torch_ok": False,
         "torch_version": "",
@@ -56,7 +62,7 @@ def inspect_stt_runtime(python_path: Path) -> SttRuntimeInfo:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=45,
+            timeout=timeout_seconds,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             check=False,
         )
@@ -104,6 +110,32 @@ def inspect_stt_runtime(python_path: Path) -> SttRuntimeInfo:
     }
 
 
+def inspect_stt_runtime_with_retry(python_path: Path) -> SttRuntimeInfo:
+    if not python_path.is_file():
+        return inspect_stt_runtime(python_path)
+
+    first_result = inspect_stt_runtime(
+        python_path,
+        timeout_seconds=STT_RUNTIME_INSPECTION_TIMEOUT_SECONDS,
+    )
+    if first_result["torch_ok"]:
+        return first_result
+
+    retry_result = inspect_stt_runtime(
+        python_path,
+        timeout_seconds=STT_RUNTIME_INSPECTION_RETRY_TIMEOUT_SECONDS,
+    )
+    if retry_result["torch_ok"]:
+        retry_result["detail"] = f"{retry_result['detail']} Torch inspection passed after one retry."
+        return retry_result
+
+    retry_result["detail"] = (
+        f"{retry_result['detail']} Torch inspection was retried once after an initial failure: "
+        f"{first_result['detail']}"
+    )
+    return retry_result
+
+
 def check_stt_preflight():
     checks = []
     optional_checks = []
@@ -122,7 +154,7 @@ def check_stt_preflight():
     worker_path = stt_worker_path()
     model_dir = stt_model_dir()
     models_root = stt_models_root()
-    runtime_info = inspect_stt_runtime(python_path)
+    runtime_info = inspect_stt_runtime_with_retry(python_path)
 
     add_check("STT Python runtime", python_path, python_path.is_file())
     add_check("Torch runtime", python_path, runtime_info["torch_ok"])

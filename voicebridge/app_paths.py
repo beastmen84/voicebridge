@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from voicebridge.file_checks import RequiredFileSpec, required_files_ready
+
 
 def source_base_dir():
     return Path(__file__).resolve().parents[1]
@@ -55,9 +57,18 @@ def stt_whisper_model_required_files():
     return ("config.json", "model.bin", "preprocessor_config.json", "tokenizer.json", "vocabulary.json")
 
 
+def stt_whisper_model_required_file_specs():
+    return (
+        RequiredFileSpec("config.json", 32),
+        RequiredFileSpec("model.bin", 1024 * 1024),
+        RequiredFileSpec("preprocessor_config.json", 32),
+        RequiredFileSpec("tokenizer.json", 32),
+        RequiredFileSpec("vocabulary.json", 32),
+    )
+
+
 def stt_whisper_model_ready():
-    model_dir = stt_model_dir()
-    return all((model_dir / filename).is_file() for filename in stt_whisper_model_required_files())
+    return required_files_ready(stt_model_dir(), stt_whisper_model_required_file_specs())
 
 
 def stt_alignment_model_files():
@@ -84,9 +95,17 @@ def local_tts_model_required_files():
     return ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
 
 
+def local_tts_model_required_file_specs():
+    return (
+        RequiredFileSpec("config.json", 32),
+        RequiredFileSpec("model.pth", 1024 * 1024),
+        RequiredFileSpec("speakers_xtts.pth", 1024),
+        RequiredFileSpec("vocab.json", 32),
+    )
+
+
 def local_tts_model_ready():
-    model_dir = local_tts_model_cache_dir()
-    return all((model_dir / filename).is_file() for filename in local_tts_model_required_files())
+    return required_files_ready(local_tts_model_cache_dir(), local_tts_model_required_file_specs())
 
 
 def local_tts_dvae_path():
@@ -94,7 +113,7 @@ def local_tts_dvae_path():
 
 
 def local_tts_dvae_ready():
-    return local_tts_dvae_path().is_file()
+    return required_files_ready(local_tts_model_cache_dir(), (RequiredFileSpec("dvae.pth", 1024 * 1024),))
 
 
 def local_tts_mel_stats_path():
@@ -102,7 +121,7 @@ def local_tts_mel_stats_path():
 
 
 def local_tts_mel_stats_ready():
-    return local_tts_mel_stats_path().is_file()
+    return required_files_ready(local_tts_model_cache_dir(), (RequiredFileSpec("mel_stats.pth", 32),))
 
 
 def voice_modeling_worker_path():

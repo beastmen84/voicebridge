@@ -32,6 +32,7 @@ from voicebridge.constants import (
     AUDIO_CLEANUP_REMOVE_LABEL,
     AUDIO_CLEANUP_SILENCE_LABEL,
 )
+from voicebridge.file_checks import ensure_free_space, validate_output_path
 from voicebridge.media_tools import (
     SUPPORTED_AUDIO_SUFFIXES,
     audio_cleanup_command,
@@ -56,6 +57,7 @@ AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS = (
     ("8x", 8.0),
     ("16x", 16.0),
 )
+AUDIO_CLEANUP_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 
 
 class AudioCleanupWorkflowMixin:
@@ -192,6 +194,17 @@ class AudioCleanupWorkflowMixin:
             self.reset_audio_cleanup_tts_timeline()
             return
         duration = max(0.0, float(duration_seconds))
+        try:
+            timeline_audio_path = Path(str(timeline.get("audio_path") or "")).resolve()
+            loaded_audio_path = Path(audio_path).resolve()
+        except OSError:
+            timeline_audio_path = None
+            loaded_audio_path = Path(audio_path)
+        if timeline_audio_path is not None and timeline_audio_path != loaded_audio_path:
+            self.reset_audio_cleanup_tts_timeline("TTS block JSON does not match the selected audio file.")
+            return
+        timeline_duration = float(timeline.get("total_duration_seconds") or 0.0)
+        duration_mismatch = bool(timeline_duration and abs(timeline_duration - duration) > 1.0)
         blocks = [
             block
             for block in timeline["blocks"]
@@ -215,7 +228,12 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_tts_block_preview.setEnabled(True)
         self.audio_cleanup_tts_blocks_card.show()
         engine = str(timeline.get("engine") or "TTS").title()
-        self.audio_cleanup_tts_block_status.setText(f"{engine} block map loaded: {len(blocks)} range(s).")
+        if duration_mismatch:
+            self.audio_cleanup_tts_block_status.setText(
+                f"{engine} block map loaded with duration mismatch; verify ranges before editing."
+            )
+        else:
+            self.audio_cleanup_tts_block_status.setText(f"{engine} block map loaded: {len(blocks)} range(s).")
 
     def audio_cleanup_tts_block_label(self, block):
         source_index = int(block.get("source_block_index") or block.get("index") or 1)
@@ -654,13 +672,12 @@ class AudioCleanupWorkflowMixin:
         output_file = Path(output_path)
         if output_file.suffix.lower() not in SUPPORTED_AUDIO_SUFFIXES:
             raise ValueError("Cleaned audio output must be .mp3, .wav, .m4a, .aac, .flac or .ogg.")
-        if not output_file.parent.is_dir():
-            raise ValueError("The output folder does not exist.")
-        try:
-            if output_file.resolve() == input_file.resolve():
-                raise ValueError("Choose an output path different from the source audio.")
-        except OSError:
-            pass
+        validate_output_path(output_file, source_path=input_file, expected_suffixes=SUPPORTED_AUDIO_SUFFIXES)
+        ensure_free_space(
+            output_file,
+            max(AUDIO_CLEANUP_OUTPUT_MIN_FREE_BYTES, input_file.stat().st_size),
+            "audio cleanup output",
+        )
         self.audio_cleanup_output_picker.set_text(output_path)
         self.save_user_settings()
         return input_path, output_path, list(self.audio_cleanup_changes), self.audio_cleanup_duration_seconds

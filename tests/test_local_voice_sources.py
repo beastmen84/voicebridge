@@ -20,6 +20,11 @@ from voicebridge.voice_modeling import (
 )
 
 
+def write_sized_file(path: Path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
 def write_training_result(tmp_path: Path) -> Path:
     export_dir = exported_dataset(tmp_path)
     export_info = validate_voice_modeling_export(export_dir)
@@ -32,8 +37,10 @@ def write_training_result(tmp_path: Path) -> Path:
     config_path_for_inference = inference_dir / "config.json"
     vocab_path = inference_dir / "vocab.json"
     speaker_wav = output_dir / "speaker.wav"
-    for path in (model_path, config_path_for_inference, vocab_path, speaker_wav):
-        path.write_text("x", encoding="utf-8")
+    write_sized_file(model_path, 1024 * 1024)
+    write_sized_file(config_path_for_inference, 32)
+    write_sized_file(vocab_path, 32)
+    write_sized_file(speaker_wav, 32)
     result_path = output_dir / "training_result.json"
     result_path.write_text(
         json.dumps(

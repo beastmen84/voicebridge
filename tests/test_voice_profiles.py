@@ -20,6 +20,10 @@ from voicebridge.voice_profiles import (
 )
 
 
+def write_audio_marker(path: Path) -> None:
+    path.write_bytes(b"RIFF" + (b"\0" * 64))
+
+
 def test_clean_profile_name_collapses_whitespace() -> None:
     assert clean_profile_name("  Marco   IT  ") == "Marco IT"
     assert clean_profile_name(None) == ""
@@ -36,7 +40,7 @@ def test_voice_profile_recording_path_uses_safe_stem(tmp_path: Path) -> None:
 
 def test_reference_profile_ready_status(tmp_path: Path) -> None:
     reference = tmp_path / "voice.wav"
-    reference.write_bytes(b"RIFF")
+    write_audio_marker(reference)
     profile = build_voice_profile(
         name="Marco",
         language_code="it",
@@ -51,7 +55,7 @@ def test_reference_profile_ready_status(tmp_path: Path) -> None:
 
 def test_profile_validation_rejects_missing_consent(tmp_path: Path) -> None:
     reference = tmp_path / "voice.wav"
-    reference.write_bytes(b"RIFF")
+    write_audio_marker(reference)
     profile = build_voice_profile(
         name="Marco",
         language_code="it",
@@ -80,7 +84,7 @@ def test_modeling_profile_status(tmp_path: Path) -> None:
 
 def test_save_and_load_voice_profiles(tmp_path: Path) -> None:
     reference = tmp_path / "voice.mp3"
-    reference.write_bytes(b"ID3")
+    write_audio_marker(reference)
     profile = build_voice_profile(
         name="Reference",
         language_code="it",
@@ -99,7 +103,7 @@ def test_save_and_load_voice_profiles(tmp_path: Path) -> None:
 
 def test_ready_voice_profiles_only_returns_reference_profiles(tmp_path: Path) -> None:
     reference = tmp_path / "voice.wav"
-    reference.write_bytes(b"RIFF")
+    write_audio_marker(reference)
     ready = build_voice_profile(
         name="Ready",
         language_code="it",
@@ -123,11 +127,11 @@ def test_voice_profile_owned_audio_paths_only_returns_recorded_wavs(tmp_path: Pa
     audio_dir = tmp_path / "voice_profiles"
     recorded_wav = audio_dir / "reference_clone" / "reference" / "recorded.wav"
     recorded_wav.parent.mkdir(parents=True)
-    recorded_wav.write_bytes(b"RIFF")
+    write_audio_marker(recorded_wav)
     external_wav = tmp_path / "external.wav"
-    external_wav.write_bytes(b"RIFF")
+    write_audio_marker(external_wav)
     recorded_mp3 = audio_dir / "reference_clone" / "reference" / "recorded.mp3"
-    recorded_mp3.write_bytes(b"ID3")
+    write_audio_marker(recorded_mp3)
     profile = build_voice_profile(
         name="Reference",
         language_code="it",
@@ -143,9 +147,9 @@ def test_delete_voice_profile_audio_files_removes_only_owned_wavs(tmp_path: Path
     audio_dir = tmp_path / "voice_profiles"
     recorded_wav = audio_dir / "reference_clone" / "reference" / "recorded.wav"
     recorded_wav.parent.mkdir(parents=True)
-    recorded_wav.write_bytes(b"RIFF")
+    write_audio_marker(recorded_wav)
     external_wav = tmp_path / "external.wav"
-    external_wav.write_bytes(b"RIFF")
+    write_audio_marker(external_wav)
     profile = build_voice_profile(
         name="Reference",
         language_code="it",

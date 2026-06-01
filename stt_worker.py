@@ -6,10 +6,19 @@ import shutil
 import sys
 from pathlib import Path
 
+from voicebridge.file_checks import RequiredFileSpec, required_file_issues, validate_output_path
+
 SAMPLE_RATE = 16000
 DEFAULT_MODEL = "large-v3"
 SRT_MODES = {"auto_srt", "align_text"}
 MISSING_ALIGNMENT_PREFIX = "MISSING_ALIGNMENT_MODEL:"
+WHISPER_MODEL_REQUIRED_FILE_SPECS = (
+    RequiredFileSpec("config.json", 32),
+    RequiredFileSpec("model.bin", 1024 * 1024),
+    RequiredFileSpec("preprocessor_config.json", 32),
+    RequiredFileSpec("tokenizer.json", 32),
+    RequiredFileSpec("vocabulary.json", 32),
+)
 
 
 class AlignmentModelMissing(RuntimeError):
@@ -135,20 +144,12 @@ def write_srt_from_segments(segments, language, output_path):
 
 def resolve_whisper_model_source(model_name, model_dir, offline):
     model_dir = Path(model_dir)
-    local_files = [
-        "config.json",
-        "model.bin",
-        "preprocessor_config.json",
-        "tokenizer.json",
-        "vocabulary.json",
-    ]
-
     if offline:
-        missing = [filename for filename in local_files if not (model_dir / filename).is_file()]
-        if missing:
-            missing_text = ", ".join(missing)
+        issues = required_file_issues(model_dir, WHISPER_MODEL_REQUIRED_FILE_SPECS)
+        if issues:
+            missing_text = ", ".join(issues)
             raise ValueError(
-                f"Offline Whisper model is incomplete in {model_dir}. Missing: {missing_text}."
+                f"Offline Whisper model is incomplete in {model_dir}. Required file issue(s): {missing_text}."
             )
         return str(model_dir)
 
@@ -501,11 +502,14 @@ def run(args):
         raise ValueError("Output file path is required.")
 
     media_path = Path(args.media).resolve()
-    output_path = Path(args.output).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
     if not media_path.is_file():
         raise ValueError(f"Media file not found: {media_path}")
+    output_path = validate_output_path(
+        Path(args.output).resolve(),
+        source_path=media_path,
+        expected_suffixes={".md", ".srt"},
+        create_parent=True,
+    )
 
     if args.mode == "align_text":
         if not args.text or not Path(args.text).is_file():

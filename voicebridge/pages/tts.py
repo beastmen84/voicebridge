@@ -12,7 +12,7 @@ from pathlib import Path
 import aiohttp
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -54,6 +54,7 @@ from voicebridge.constants import (
     TTS_SPLIT_LINES,
     TTS_SPLIT_PARAGRAPHS,
 )
+from voicebridge.file_checks import ensure_free_space, partial_download_files, validate_output_path
 from voicebridge.languages import language_name
 from voicebridge.local_tts_presets import (
     DEFAULT_LOCAL_TTS_PRESET_KEY,
@@ -83,6 +84,7 @@ from voicebridge.readers import (
     read_input_file,
     read_txt,
 )
+from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
 from voicebridge.tts_text import split_tts_text_for_tts
 from voicebridge.tts_timeline import load_local_tts_chunk_timeline, remove_tts_timeline, write_tts_timeline
@@ -97,6 +99,9 @@ from voicebridge.voices import (
     find_voice_label,
     save_preferred_voice_short_names,
 )
+
+LOCAL_TTS_MODEL_MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
+TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 
 
 class TtsWorkflowMixin:
@@ -283,12 +288,15 @@ class TtsWorkflowMixin:
             return
         selected_voice = self.selected_tts_voice_profile()
         model_ready = local_tts_model_ready()
+        partials = partial_download_files(local_tts_model_cache_dir())
         if selected_voice and not local_voice_requires_base_xtts(selected_voice) and not model_ready:
             self.local_tts_model_status.setText(
                 "Trained model selected. Download XTTS-v2 is only required for reference clone voices."
             )
         elif model_ready:
             self.local_tts_model_status.setText("XTTS-v2 model ready.")
+        elif partials:
+            self.local_tts_model_status.setText("XTTS-v2 model download is incomplete. Download again to repair it.")
         else:
             self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
         if hasattr(self, "local_tts_model_status_box"):
@@ -906,9 +914,8 @@ class TtsWorkflowMixin:
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
         save_path = ensure_mp3_suffix(save_path)
-        save_dir = os.path.dirname(os.path.abspath(save_path))
-        if not os.path.isdir(save_dir):
-            raise ValueError("The output folder does not exist.")
+        validate_output_path(save_path, source_path=input_path, expected_suffixes={".mp3"})
+        ensure_free_space(save_path, TTS_OUTPUT_MIN_FREE_BYTES, "TTS output")
         if self.is_loading_voices:
             raise ValueError("The voice list is still loading. Please wait a moment.")
         if self.is_detecting_language:
@@ -934,8 +941,8 @@ class TtsWorkflowMixin:
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
         save_path = ensure_mp3_suffix(save_path)
-        if not os.path.isdir(os.path.dirname(os.path.abspath(save_path))):
-            raise ValueError("The output folder does not exist.")
+        validate_output_path(save_path, source_path=input_path, expected_suffixes={".mp3"})
+        ensure_free_space(save_path, TTS_OUTPUT_MIN_FREE_BYTES, "Local TTS output")
         if self.is_detecting_language:
             raise ValueError("Language detection is still running. Please wait a moment.")
         if self.input_file_error_message:
@@ -956,8 +963,8 @@ class TtsWorkflowMixin:
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
         save_path = ensure_mp3_suffix(save_path)
-        if not os.path.isdir(os.path.dirname(os.path.abspath(save_path))):
-            raise ValueError("The output folder does not exist.")
+        validate_output_path(save_path, source_path=source_path or None, expected_suffixes={".mp3"})
+        ensure_free_space(save_path, TTS_OUTPUT_MIN_FREE_BYTES, "multi-voice TTS output")
         if not self.tts_segments:
             self.split_tts_document_into_blocks()
         segments = []
@@ -991,8 +998,8 @@ class TtsWorkflowMixin:
         if not save_path:
             raise ValueError("Please choose where to save the MP3.")
         save_path = ensure_mp3_suffix(save_path)
-        if not os.path.isdir(os.path.dirname(os.path.abspath(save_path))):
-            raise ValueError("The output folder does not exist.")
+        validate_output_path(save_path, source_path=source_path or None, expected_suffixes={".mp3"})
+        ensure_free_space(save_path, TTS_OUTPUT_MIN_FREE_BYTES, "local multi-voice TTS output")
         if self.is_detecting_language:
             raise ValueError("Language detection is still running. Please wait a moment.")
         if self.input_file_error_message:
@@ -1191,6 +1198,12 @@ class TtsWorkflowMixin:
         if not worker_path.is_file():
             self.tts_status.setText("Local TTS worker missing.")
             self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            return
+        try:
+            ensure_free_space(local_tts_model_dir(), LOCAL_TTS_MODEL_MIN_FREE_BYTES, "XTTS-v2 model download")
+        except ValueError as exc:
+            self.tts_status.setText("Not enough disk space.")
+            self.show_error("Local TTS", str(exc))
             return
         if not self.confirm_xtts_model_license():
             self.tts_status.setText("XTTS-v2 download cancelled.")
@@ -1691,6 +1704,23 @@ class TtsWorkflowMixin:
 
     def conversion_failed(self, message):
         self.tts_status.setText("Error.")
+        if (
+            self.tts_engine_key() == "local"
+            and self.tts_local_device_key() != "cpu"
+            and is_cuda_runtime_failure(message)
+            and self.ask_question(
+                "Local TTS CUDA failed",
+                (
+                    "Local TTS failed in the CUDA runtime.\n\n"
+                    "Retry the same job on CPU now?"
+                ),
+                default_yes=True,
+            )
+        ):
+            self.set_tts_local_device_key("cpu")
+            self.tts_status.setText("Retrying Local TTS on CPU...")
+            QTimer.singleShot(250, self.start_tts_conversion)
+            return
         self.show_error("Error", message)
 
     def conversion_cancelled(self):

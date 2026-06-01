@@ -77,6 +77,10 @@ I file `.docx`, `.txt` e PDF testuali non richiedono Word.
 I campi file/output delle sezioni operative partono vuoti a ogni avvio. Restano salvate solo preferenze come engine,
 modalita', lingua, device, qualita' e preset.
 
+L'app esegue controlli preventivi su input, output, spazio disco e modelli locali. I download interrotti o file modello
+troppo piccoli vengono trattati come pacchetti incompleti e vanno scaricati di nuovo. Se un job CUDA fallisce nel
+runtime, le sezioni STT, Local TTS e Training propongono un retry su CPU quando possibile.
+
 ### Text to Speech
 
 1. Aprire `Text to Speech`.

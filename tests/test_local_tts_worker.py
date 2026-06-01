@@ -23,6 +23,11 @@ from local_tts_worker import (
 from voicebridge.local_tts_presets import local_tts_preset_settings, normalize_local_tts_preset_key
 
 
+def write_sized_file(path: Path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
 def test_normalize_tts_language_keeps_xtts_chinese_code() -> None:
     assert normalize_tts_language("zh_CN") == "zh-cn"
     assert normalize_tts_language("en-US") == "en"
@@ -71,8 +76,14 @@ def test_xtts_model_ready_checks_required_files(tmp_path: Path) -> None:
 
     assert not xtts_model_ready(tmp_path)
 
+    sizes = {
+        "config.json": 32,
+        "model.pth": 1024 * 1024,
+        "speakers_xtts.pth": 1024,
+        "vocab.json": 32,
+    }
     for filename in XTTS_MODEL_REQUIRED_FILES:
-        (model_dir / filename).write_text("x", encoding="utf-8")
+        write_sized_file(model_dir / filename, sizes[filename])
 
     assert xtts_model_ready(tmp_path)
 

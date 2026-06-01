@@ -39,6 +39,7 @@ from voicebridge.constants import (
     VIDEO_CLEANUP_QUALITY_DESCRIPTIONS,
     VIDEO_CLEANUP_QUALITY_LABELS,
 )
+from voicebridge.file_checks import ensure_free_space, validate_output_path
 from voicebridge.media_tools import (
     STT_VIDEO_SUFFIXES,
     BlackFrame,
@@ -53,6 +54,8 @@ from voicebridge.media_tools import (
 )
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
+
+VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
 
 
 class VideoCleanupWorkflowMixin:
@@ -149,6 +152,11 @@ class VideoCleanupWorkflowMixin:
             raise ValueError("The selected video file does not exist.")
         if media.suffix.lower() not in STT_VIDEO_SUFFIXES:
             raise ValueError("The selected file must be a video.")
+        ffmpeg = find_ffmpeg_exe()
+        if ffmpeg:
+            info = probe_video_info(ffmpeg, media)
+            if not info.get("width") or not info.get("height") or not info.get("duration_seconds"):
+                raise ValueError("The selected video file could not be inspected or has no readable video stream.")
         return media_path
 
     def selected_cleanup_frame_numbers(self) -> list[int]:
@@ -181,11 +189,9 @@ class VideoCleanupWorkflowMixin:
         output = Path(output_path)
         if output.suffix.lower() not in {".mp4", ".mkv", ".mov", ".m4v"}:
             raise ValueError("Repaired video output must be .mp4, .mkv, .mov or .m4v.")
-        try:
-            if output.resolve() == Path(media_path).resolve():
-                raise ValueError("Choose an output path different from the source video.")
-        except OSError:
-            pass
+        validate_output_path(output, source_path=media_path, expected_suffixes={".mp4", ".mkv", ".mov", ".m4v"})
+        source_size = Path(media_path).stat().st_size if Path(media_path).is_file() else 0
+        ensure_free_space(output, max(VIDEO_OUTPUT_MIN_FREE_BYTES, source_size), "video cleanup output")
         self.cleanup_output_picker.set_text(output_path)
         self.save_user_settings()
 

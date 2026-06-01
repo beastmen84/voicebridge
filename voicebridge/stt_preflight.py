@@ -8,9 +8,10 @@ from voicebridge.app_paths import (
     stt_models_root,
     stt_python_path,
     stt_runtime_site_packages,
-    stt_whisper_model_required_files,
+    stt_whisper_model_required_file_specs,
     stt_worker_path,
 )
+from voicebridge.file_checks import partial_download_files, required_file_issue
 
 
 class SttRuntimeInfo(TypedDict):
@@ -126,8 +127,15 @@ def check_stt_preflight():
     add_check("STT Python runtime", python_path, python_path.is_file())
     add_check("Torch runtime", python_path, runtime_info["torch_ok"])
     add_check("STT worker", worker_path, worker_path.is_file())
-    for filename in stt_whisper_model_required_files():
-        add_check(f"Whisper large-v3 {filename}", model_dir / filename)
+    for spec in stt_whisper_model_required_file_specs():
+        path = model_dir / spec.filename
+        add_check(
+            f"Whisper large-v3 {spec.filename}",
+            path,
+            ok=not required_file_issue(path, min_bytes=spec.min_bytes),
+        )
+    for partial_path in partial_download_files(model_dir):
+        add_optional_check("Partial download file", partial_path, ok=False)
     for language, filename in stt_alignment_model_files().items():
         add_optional_check(f"Alignment model {language}", model_dir / filename)
     add_check(

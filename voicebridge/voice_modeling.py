@@ -15,9 +15,17 @@ from voicebridge.app_paths import (
     local_tts_mel_stats_ready,
     local_tts_model_cache_dir,
     local_tts_model_ready,
-    local_tts_model_required_files,
+    local_tts_model_required_file_specs,
     ml_python_path,
     voice_modeling_worker_path,
+)
+from voicebridge.file_checks import (
+    available_disk_bytes,
+    ensure_free_space,
+    format_bytes,
+    partial_download_files,
+    required_file_issue,
+    validate_output_path,
 )
 from voicebridge.modeling_datasets import (
     MODELING_DATASET_GOOD,
@@ -46,6 +54,8 @@ VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS = 11
 XTTS_DVAE_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/dvae.pth?download=true"
 XTTS_DVAE_SHA256 = "b29bc227d410d4991e0a8c09b858f77415013eeb9fba9650258e96095557d97a"
 XTTS_MEL_STATS_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/mel_stats.pth?download=true"
+XTTS_TRAINING_ASSETS_MIN_FREE_BYTES = 512 * 1024 * 1024
+VOICE_MODELING_MIN_FREE_BYTES = 2 * 1024 * 1024 * 1024
 
 
 class VoiceModelingExportInfo(TypedDict):
@@ -200,6 +210,12 @@ def download_xtts_training_assets(progress_callback=None) -> list[Path]:
             progress_callback(100.0)
         return [local_tts_dvae_path(), local_tts_mel_stats_path()]
 
+    ensure_free_space(
+        local_tts_model_cache_dir(),
+        XTTS_TRAINING_ASSETS_MIN_FREE_BYTES,
+        "XTTS-v2 training asset download",
+    )
+
     completed: list[Path] = []
     total = len(downloads)
     for index, (source_url, target_path, expected_sha256) in enumerate(downloads):
@@ -352,11 +368,26 @@ def check_voice_modeling_preflight(
     add_check("ML Python runtime", python_path.is_file(), python_path)
     add_check("Torch runtime", runtime_info["torch_ok"], runtime_info["detail"])
     add_check("Coqui TTS runtime", coqui_info["coqui_ok"], coqui_info["detail"])
-    for filename in local_tts_model_required_files():
-        add_check(f"XTTS-v2 {filename}", (model_cache_dir / filename).is_file(), model_cache_dir / filename)
+    for spec in local_tts_model_required_file_specs():
+        path = model_cache_dir / spec.filename
+        add_check(
+            f"XTTS-v2 {spec.filename}",
+            not required_file_issue(path, min_bytes=spec.min_bytes),
+            path,
+        )
     add_check("XTTS-v2 model package", local_tts_model_ready(), model_cache_dir)
-    add_check("XTTS-v2 DVAE checkpoint", local_tts_dvae_ready(), local_tts_dvae_path())
-    add_check("XTTS-v2 mel stats", local_tts_mel_stats_ready(), local_tts_mel_stats_path())
+    add_check(
+        "XTTS-v2 DVAE checkpoint",
+        not required_file_issue(local_tts_dvae_path(), min_bytes=1024 * 1024),
+        local_tts_dvae_path(),
+    )
+    add_check(
+        "XTTS-v2 mel stats",
+        not required_file_issue(local_tts_mel_stats_path(), min_bytes=32),
+        local_tts_mel_stats_path(),
+    )
+    for partial_path in partial_download_files(model_cache_dir):
+        add_check("Partial model download", False, partial_path)
 
     if export_info:
         try:
@@ -374,6 +405,18 @@ def check_voice_modeling_preflight(
         output_parent_ready = output_parent.exists() or output_parent.parent.exists()
         add_check("Model output folder", not output_path.is_file(), output_path)
         add_check("Model output parent", output_parent_ready, output_parent)
+        try:
+            validate_output_path(output_path / ".voicebridge-output-check", create_parent=True)
+        except ValueError as exc:
+            add_check("Model output writable", False, str(exc))
+        else:
+            add_check("Model output writable", True, output_path)
+        free_bytes = available_disk_bytes(output_path)
+        add_check(
+            "Model output free space",
+            not free_bytes or free_bytes >= VOICE_MODELING_MIN_FREE_BYTES,
+            f"{format_bytes(free_bytes)} available; {format_bytes(VOICE_MODELING_MIN_FREE_BYTES)} recommended minimum",
+        )
     else:
         add_check("Model output folder", False, "No output folder selected.")
 
@@ -490,6 +533,8 @@ def build_voice_modeling_job_config(
     resume_path = Path(resume_checkpoint).expanduser() if resume_checkpoint else None
     if resume_path and not resume_path.is_file():
         raise ValueError("Resume checkpoint must be an existing file.")
+    validate_output_path(output_path / ".voicebridge-output-check", create_parent=True)
+    ensure_free_space(output_path, VOICE_MODELING_MIN_FREE_BYTES, "voice model training output")
     timestamp = utc_timestamp()
     return {
         "id": job_id or uuid4().hex,

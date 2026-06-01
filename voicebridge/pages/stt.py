@@ -36,11 +36,18 @@ from voicebridge.constants import (
     STT_MODEL,
     STT_SRT_MODES,
 )
+from voicebridge.file_checks import ensure_free_space, validate_output_path
 from voicebridge.languages import language_name
+from voicebridge.media_tools import find_ffmpeg_exe, probe_audio_info
 from voicebridge.readers import read_input_file
+from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.stt_preflight import check_stt_preflight
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
+
+STT_DOWNLOAD_MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
+STT_ALIGNMENT_DOWNLOAD_MIN_FREE_BYTES = 512 * 1024 * 1024
+STT_OUTPUT_MIN_FREE_BYTES = 64 * 1024 * 1024
 
 
 class SttWorkflowMixin:
@@ -262,6 +269,12 @@ class SttWorkflowMixin:
             raise ValueError("Please select an audio or video file.")
         if not os.path.isfile(media_path):
             raise ValueError("The selected media file does not exist.")
+        ffmpeg = find_ffmpeg_exe()
+        if ffmpeg:
+            info = probe_audio_info(ffmpeg, media_path)
+            duration = info.get("duration_seconds") or 0
+            if not info.get("has_audio") or duration <= 0:
+                raise ValueError("The selected media file has no readable audio stream.")
         if not output_path:
             raise ValueError("Please choose where to save the output file.")
         device = self.stt_device_key()
@@ -270,6 +283,8 @@ class SttWorkflowMixin:
         if mode == "align_text" and (not text_path or not os.path.isfile(text_path)):
             raise ValueError("Please select the transcript text file to align.")
         output_path = str(Path(output_path).with_suffix(self.stt_output_suffix()))
+        validate_output_path(output_path, source_path=media_path, expected_suffixes={self.stt_output_suffix()})
+        ensure_free_space(output_path, STT_OUTPUT_MIN_FREE_BYTES, "STT output")
         self.stt_output_picker.set_text(output_path)
         self.save_user_settings()
         return media_path, output_path, text_path, mode, STT_MODEL, language, device
@@ -472,6 +487,12 @@ class SttWorkflowMixin:
         if not worker_path.is_file():
             self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
             return
+        try:
+            ensure_free_space(stt_model_dir(), STT_ALIGNMENT_DOWNLOAD_MIN_FREE_BYTES, "alignment model download")
+        except ValueError as exc:
+            self.stt_status.setText("Not enough disk space.")
+            self.show_error("STT", str(exc))
+            return
 
         self.stt_cancel_requested = False
         self.stt_process = None
@@ -498,6 +519,12 @@ class SttWorkflowMixin:
             return
         if not worker_path.is_file():
             self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
+            return
+        try:
+            ensure_free_space(stt_model_dir(), STT_DOWNLOAD_MIN_FREE_BYTES, "Whisper large-v3 download")
+        except ValueError as exc:
+            self.stt_status.setText("Not enough disk space.")
+            self.show_error("STT", str(exc))
             return
 
         self.stt_cancel_requested = False
@@ -692,6 +719,21 @@ class SttWorkflowMixin:
     def stt_job_failed(self, message):
         self.stt_status.setText("Error.")
         self.append_stt_log(f"ERROR: {message}")
+        if (
+            self.stt_device_key() != "cpu"
+            and is_cuda_runtime_failure(message)
+            and self.ask_question(
+                "STT CUDA failed",
+                "Transcription failed in the CUDA runtime.\n\nRetry the same job on CPU now?",
+                default_yes=True,
+            )
+        ):
+            self.set_stt_device_key("cpu")
+            self.preferred_stt_device_key = "cpu"
+            self.save_user_settings()
+            self.stt_status.setText("Retrying transcription on CPU...")
+            QTimer.singleShot(250, self.start_stt_job)
+            return
         self.show_error("STT Error", message)
 
     def finish_stt_job(self):

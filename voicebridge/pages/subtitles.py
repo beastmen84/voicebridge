@@ -40,6 +40,7 @@ from voicebridge.constants import (
     VIDEO_SUBTITLE_MODE_DESCRIPTIONS,
     VIDEO_SUBTITLE_POSITION_LABELS,
 )
+from voicebridge.file_checks import ensure_free_space
 from voicebridge.media_tools import (
     SubtitleStyle,
     auto_burn_quality,
@@ -57,6 +58,8 @@ from voicebridge.ui.helpers import (
     validate_video_subtitle_inputs,
 )
 from voicebridge.ui.widgets import Card, FilePicker
+
+VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
 
 
 class SubtitlesWorkflowMixin:
@@ -196,6 +199,8 @@ class SubtitlesWorkflowMixin:
             Path(output_path).suffix.lower() if output_path else "",
         )
         validate_video_subtitle_inputs(mode, media_path, srt_path, output_path)
+        source_size = Path(media_path).stat().st_size if Path(media_path).is_file() else 0
+        ensure_free_space(output_path, max(VIDEO_OUTPUT_MIN_FREE_BYTES, source_size), "subtitled video output")
         burn_quality = BURN_QUALITY_BY_LABEL.get(self.video_quality_combo.currentText(), BURN_QUALITY_AUTO)
         subtitle_style = self.collect_video_subtitle_style() if mode == "burn" else None
         self.video_output_picker.set_text(output_path)

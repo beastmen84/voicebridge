@@ -5,6 +5,7 @@ import wave
 from contextlib import suppress
 from pathlib import Path
 
+from voicebridge.file_checks import RequiredFileSpec, required_files_ready, validate_output_path
 from voicebridge.local_tts_presets import (
     DEFAULT_LOCAL_TTS_PRESET_KEY,
     LOCAL_TTS_PRESETS,
@@ -25,6 +26,12 @@ from voicebridge.tts_timeline import write_local_tts_chunk_timeline
 DEFAULT_XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 XTTS_MODEL_CACHE_NAME = "tts_models--multilingual--multi-dataset--xtts_v2"
 XTTS_MODEL_REQUIRED_FILES = ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
+XTTS_MODEL_REQUIRED_FILE_SPECS = (
+    RequiredFileSpec("config.json", 32),
+    RequiredFileSpec("model.pth", 1024 * 1024),
+    RequiredFileSpec("speakers_xtts.pth", 1024),
+    RequiredFileSpec("vocab.json", 32),
+)
 XTTS_MAX_CHUNK_CHARS = TTS_MAX_CHUNK_CHARS
 XTTS_CHUNK_SILENCE_SECONDS = 0.25
 XTTS_STABLE_INFERENCE_SETTINGS = local_tts_preset_settings("stable")
@@ -60,7 +67,7 @@ def xtts_model_cache_dir(model_dir):
 
 def xtts_model_ready(model_dir):
     model_path = xtts_model_cache_dir(model_dir)
-    return all((model_path / filename).is_file() for filename in XTTS_MODEL_REQUIRED_FILES)
+    return required_files_ready(model_path, XTTS_MODEL_REQUIRED_FILE_SPECS)
 
 
 def xtts_terms_path(model_dir):
@@ -304,7 +311,7 @@ def synthesize(args):
 
     text_path = Path(args.text_file).resolve()
     output_path = Path(args.output).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = validate_output_path(output_path, source_path=text_path, create_parent=True)
     if not text_path.is_file():
         raise ValueError(f"Text file not found: {text_path}")
 

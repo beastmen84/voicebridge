@@ -14,8 +14,8 @@ def test_stt_preflight_treats_alignment_models_as_optional(monkeypatch, tmp_path
     python_path.write_text("", encoding="utf-8")
     worker_path.write_text("", encoding="utf-8")
     model_dir.mkdir(parents=True)
-    for filename in stt_preflight.stt_whisper_model_required_files():
-        (model_dir / filename).write_text("x", encoding="utf-8")
+    for spec in stt_preflight.stt_whisper_model_required_file_specs():
+        (model_dir / spec.filename).write_bytes(b"x" * spec.min_bytes)
     (tmp_path / "models" / "torch" / "hub" / "snakers4_silero-vad_master").mkdir(parents=True)
     (tmp_path / "models" / "nltk" / "tokenizers" / "punkt_tab" / "english").mkdir(parents=True)
     (tmp_path / "models" / "nltk" / "tokenizers" / "punkt_tab" / "italian").mkdir(parents=True)

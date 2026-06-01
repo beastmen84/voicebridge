@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+from voicebridge.file_checks import validate_existing_file
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.voice_modeling import (
     load_voice_modeling_job_config,
@@ -59,13 +60,14 @@ def local_voice_from_training_result(result_path: str | Path) -> LocalVoiceSourc
     dataset_name = dataset.get("name") if isinstance(dataset, dict) else ""
     language_code = dataset.get("language_code") if isinstance(dataset, dict) else ""
 
-    model_path = _existing_file(result.get("model_path"), "model_path")
+    model_path = _existing_file(result.get("model_path"), "model_path", min_bytes=1024 * 1024)
     inference_config_path = _existing_file(
         result.get("config_path_for_inference") or Path(model_path).with_name("config.json"),
         "config_path_for_inference",
+        min_bytes=32,
     )
-    _existing_file(result.get("vocab_path") or Path(model_path).with_name("vocab.json"), "vocab_path")
-    speaker_wav = _existing_file(result.get("speaker_wav"), "speaker_wav")
+    _existing_file(result.get("vocab_path") or Path(model_path).with_name("vocab.json"), "vocab_path", min_bytes=32)
+    speaker_wav = _existing_file(result.get("speaker_wav"), "speaker_wav", min_bytes=32)
 
     name = dataset_name if isinstance(dataset_name, str) and dataset_name else Path(model_path).parent.parent.name
     return {
@@ -155,13 +157,11 @@ def local_voice_relative_root_label(path: str) -> str:
             return str(resolved_path)
 
 
-def _existing_file(value: Any, label: str) -> str:
+def _existing_file(value: Any, label: str, *, min_bytes: int = 1) -> str:
     path_text = _string(value)
     if not path_text:
         raise ValueError(f"Training result is missing {label}.")
-    path = Path(path_text).expanduser()
-    if not path.is_file():
-        raise ValueError(f"Training result {label} does not exist: {path}")
+    path = validate_existing_file(path_text, f"Training result {label}", min_bytes=min_bytes)
     return str(path.resolve())
 
 

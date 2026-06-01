@@ -2,16 +2,19 @@ import subprocess
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
 
 from voicebridge.app_paths import external_base_dir, ml_python_path, voice_modeling_worker_path
+from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_modeling import (
     build_voice_modeling_training_command,
     list_voice_modeling_job_configs,
+    load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
+    save_voice_modeling_job_config,
     voice_modeling_job_label,
     voice_modeling_training_plan_text,
 )
@@ -195,6 +198,26 @@ class VoiceTrainingWorkflowMixin:
 
     def voice_training_failed(self, message: str) -> None:
         self.append_voice_training_log(f"ERROR: {message}")
+        if (
+            is_cuda_runtime_failure(message)
+            and self.ask_question(
+                "Voice Training CUDA failed",
+                "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?",
+                default_yes=False,
+            )
+        ):
+            config_path = self.selected_voice_training_job_path()
+            try:
+                config = load_voice_modeling_job_config(config_path)
+                config["device"] = "cpu"
+                save_voice_modeling_job_config(config)
+            except (OSError, ValueError) as exc:
+                self.show_error("Voice Training", f"Could not switch the training job to CPU.\n\n{exc}")
+            else:
+                self.append_voice_training_log("Job switched to CPU. Retrying...")
+                self.refresh_voice_training_jobs(config_path)
+                QTimer.singleShot(250, lambda: self.start_voice_training_worker(dry_run=False))
+                return
         self.show_error("Voice Training", message)
         self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
         self.update_local_voice_tabs()

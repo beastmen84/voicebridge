@@ -3,6 +3,11 @@ from pathlib import Path
 from voicebridge import app_paths, media_tools
 
 
+def write_sized_file(path: Path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
 def test_ml_python_path_uses_shared_ml_runtime(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
     bundled_python = tmp_path / "python-ml" / "python.exe"
@@ -31,8 +36,8 @@ def test_stt_whisper_model_ready_checks_required_files(monkeypatch, tmp_path: Pa
 
     assert not app_paths.stt_whisper_model_ready()
 
-    for filename in app_paths.stt_whisper_model_required_files():
-        (model_dir / filename).write_text("x", encoding="utf-8")
+    for spec in app_paths.stt_whisper_model_required_file_specs():
+        write_sized_file(model_dir / spec.filename, spec.min_bytes)
 
     assert app_paths.stt_whisper_model_ready()
 
@@ -59,8 +64,8 @@ def test_local_tts_dvae_ready_checks_xtts_cache_file(monkeypatch, tmp_path: Path
     assert not app_paths.local_tts_mel_stats_ready()
 
     app_paths.local_tts_dvae_path().parent.mkdir(parents=True)
-    app_paths.local_tts_dvae_path().write_text("x", encoding="utf-8")
-    app_paths.local_tts_mel_stats_path().write_text("x", encoding="utf-8")
+    write_sized_file(app_paths.local_tts_dvae_path(), 1024 * 1024)
+    write_sized_file(app_paths.local_tts_mel_stats_path(), 32)
 
     assert app_paths.local_tts_dvae_ready()
     assert app_paths.local_tts_mel_stats_ready()

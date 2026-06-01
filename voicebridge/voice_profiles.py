@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from voicebridge.app_paths import external_base_dir
 from voicebridge.app_settings import app_config_dir
+from voicebridge.file_checks import required_file_issue
 from voicebridge.languages import LANGUAGE_NAMES
 
 VOICE_PROFILES_CONFIG = "voice_profiles.json"
@@ -201,9 +202,11 @@ def voice_profile_status(profile: VoiceProfile) -> str:
     reference_paths = normalized_reference_paths(profile.get("reference_paths", []))
     if not reference_paths:
         return "Missing reference audio"
-    missing_paths = [path for path in reference_paths if not Path(path).is_file()]
-    if missing_paths:
+    audio_issues = [required_file_issue(path, min_bytes=32) for path in reference_paths]
+    if any(issue == "missing" for issue in audio_issues):
         return "Missing audio file"
+    if any(issue for issue in audio_issues):
+        return "Incomplete audio file"
     unsupported = [
         path for path in reference_paths
         if Path(path).suffix.lower() not in VOICE_PROFILE_AUDIO_SUFFIXES
@@ -231,7 +234,7 @@ def validate_voice_profile(profile: VoiceProfile) -> None:
     if not profile.get("consent_confirmed"):
         raise ValueError("Consent confirmation is required.")
     status = voice_profile_status(profile)
-    if status in {"Missing reference audio", "Missing audio file", "Unsupported audio format"}:
+    if status in {"Missing reference audio", "Missing audio file", "Incomplete audio file", "Unsupported audio format"}:
         raise ValueError(status + ".")
 
 

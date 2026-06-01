@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 
-from voicebridge.media_tools import STT_VIDEO_SUFFIXES
+from voicebridge.file_checks import validate_output_path
+from voicebridge.media_tools import STT_VIDEO_SUFFIXES, find_ffmpeg_exe, probe_video_info
 
 
 def qt_file_filter(filetypes):
@@ -34,6 +35,11 @@ def validate_video_subtitle_inputs(mode, media_path, srt_path, output_path):
         raise ValueError("Select an existing video file.")
     if media.suffix.lower() not in STT_VIDEO_SUFFIXES:
         raise ValueError("The selected media file must be a video.")
+    ffmpeg = find_ffmpeg_exe()
+    if ffmpeg:
+        info = probe_video_info(ffmpeg, media)
+        if not info.get("width") or not info.get("height") or not info.get("duration_seconds"):
+            raise ValueError("The selected video file could not be inspected or has no readable video stream.")
     if not srt or not srt.is_file() or srt.suffix.lower() != ".srt":
         raise ValueError("Select an existing .srt subtitle file.")
     if not output:
@@ -42,8 +48,8 @@ def validate_video_subtitle_inputs(mode, media_path, srt_path, output_path):
         raise ValueError("Embedded subtitles can be saved as .mp4 or .mkv.")
     if mode == "burn" and output.suffix.lower() != ".mp4":
         raise ValueError("Burned subtitles are saved as .mp4.")
-    try:
-        if output.resolve() == media.resolve():
-            raise ValueError("Choose an output path different from the source video.")
-    except OSError:
-        pass
+    validate_output_path(
+        output,
+        source_path=media,
+        expected_suffixes={".mp4", ".mkv"} if mode == "embed" else {".mp4"},
+    )

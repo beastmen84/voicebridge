@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from voicebridge.modeling_datasets import (
     build_modeling_clip,
     build_modeling_dataset_for_profile,
     ensure_modeling_datasets_for_profiles,
+    export_modeling_dataset,
     load_modeling_datasets,
     modeling_clip_audio_path,
     modeling_clip_status_label,
@@ -100,6 +102,71 @@ def test_modeling_clip_transcript_sidecar(tmp_path: Path) -> None:
     assert updated["status"] == MODELING_CLIP_READY
     assert Path(updated["transcript_path"]).read_text(encoding="utf-8") == "Hello world\n"
     assert modeling_clip_status_label(updated["status"]) == "Ready"
+
+
+def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    ready_audio = tmp_path / "ready.wav"
+    ready_audio.write_bytes(b"RIFF ready")
+    pending_audio = tmp_path / "pending.wav"
+    pending_audio.write_bytes(b"RIFF pending")
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=ready_audio,
+            transcript_text="Hello | world\nfrom dataset",
+            duration_seconds=12.0,
+            quality_details="RMS level: 8%\nInput clipping: 0.00%",
+            clip_id="ready/clip",
+        )
+    )
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=pending_audio,
+            duration_seconds=12.0,
+            clip_id="pending",
+        )
+    )
+
+    result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+
+    export_dir = Path(result["export_dir"])
+    exported_wav = export_dir / "wavs" / "0001_ready-clip.wav"
+    metadata_path = export_dir / "metadata.csv"
+    dataset_json_path = export_dir / "dataset.json"
+    assert result["exported_clips"] == 1
+    assert result["skipped_clips"] == 1
+    assert exported_wav.read_bytes() == b"RIFF ready"
+    assert metadata_path.read_text(encoding="utf-8") == "wavs/0001_ready-clip.wav|Hello , world from dataset\n"
+    export_data = json.loads(dataset_json_path.read_text(encoding="utf-8"))
+    assert export_data["name"] == "Dataset Voice"
+    assert export_data["language_code"] == "en"
+    assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
+    assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-clip.wav"
+
+
+def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+
+    with pytest.raises(ValueError, match="No ready clips"):
+        export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
 
 def test_modeling_dataset_summary_reports_not_ready_without_clips() -> None:

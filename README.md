@@ -136,6 +136,9 @@ La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata ut
 e segnali come clip troppo corte/lunghe, volume basso o clipping. `Usable` richiede almeno 5 clip pronte e 60 secondi
 di audio; `Good` richiede almeno 20 clip pronte e 10 minuti senza warning qualita'. Il target consigliato per una voce
 da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
+`Export dataset` crea una copia pronta per training in `modeling_exports\<nome profilo>-<timestamp>` con `wavs`,
+`metadata.csv` in formato `wavs/clip.wav|testo` e `dataset.json` con riepilogo e audit dell'export. L'export include
+solo clip `Ready` con WAV esistente e non modifica i file di lavoro.
 
 ### Transcription
 

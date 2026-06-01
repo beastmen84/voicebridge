@@ -26,11 +26,13 @@ from voicebridge.modeling_datasets import (
     build_modeling_clip,
     delete_modeling_clip_files,
     ensure_modeling_datasets_for_profiles,
+    export_modeling_dataset,
     load_modeling_datasets,
     modeling_clip_audio_path,
     modeling_clip_status_label,
     modeling_dataset_dir,
     modeling_dataset_summary_text,
+    ready_modeling_export_clips,
     save_modeling_datasets,
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
@@ -352,6 +354,23 @@ class ModelingDatasetsWorkflowMixin:
             modeling_dataset_dir(dataset).mkdir(parents=True, exist_ok=True)
             open_path(modeling_dataset_dir(dataset))
 
+    def export_selected_modeling_dataset(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            self.show_error("Modeling Datasets", "Select a modeling dataset first.")
+            return
+        try:
+            result = export_modeling_dataset(dataset)
+        except (OSError, ValueError) as exc:
+            self.show_error("Modeling Datasets", str(exc))
+            return
+        export_dir = result["export_dir"]
+        self.modeling_dataset_status.setText(
+            f"Exported {result['exported_clips']} ready clip(s) to {export_dir}."
+        )
+        self.show_info("Modeling Datasets", f"Dataset exported:\n{export_dir}")
+        open_path(export_dir)
+
     def send_modeling_clip_to_transcription(self) -> None:
         clip = self.selected_modeling_clip()
         if not clip or not Path(clip["audio_path"]).is_file():
@@ -368,6 +387,7 @@ class ModelingDatasetsWorkflowMixin:
         clip = self.selected_modeling_clip()
         has_dataset = dataset is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
+        has_exportable_clips = bool(dataset and ready_modeling_export_clips(dataset))
         text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
         can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
         self.modeling_record_text_button.setEnabled(can_record_from_text)
@@ -379,6 +399,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_open_clip_button.setEnabled(has_clip_audio)
         self.modeling_transcribe_clip_button.setEnabled(has_clip_audio)
         self.modeling_open_dataset_folder_button.setEnabled(has_dataset)
+        self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
 
     def build_modeling_datasets_page(self):
         page, layout = self.page_container()
@@ -407,10 +428,13 @@ class ModelingDatasetsWorkflowMixin:
         dataset_actions = QHBoxLayout()
         dataset_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_refresh_button = QPushButton("Refresh")
+        self.modeling_export_dataset_button = QPushButton("Export dataset")
         self.modeling_open_dataset_folder_button = QPushButton("Open folder")
         self.modeling_refresh_button.clicked.connect(self.sync_modeling_datasets_with_profiles)
+        self.modeling_export_dataset_button.clicked.connect(self.export_selected_modeling_dataset)
         self.modeling_open_dataset_folder_button.clicked.connect(self.open_selected_modeling_dataset_folder)
         dataset_actions.addWidget(self.modeling_refresh_button)
+        dataset_actions.addWidget(self.modeling_export_dataset_button)
         dataset_actions.addWidget(self.modeling_open_dataset_folder_button)
         datasets_card.content_layout.addWidget(self.modeling_datasets_list)
         datasets_card.content_layout.addWidget(self.modeling_dataset_summary_box)

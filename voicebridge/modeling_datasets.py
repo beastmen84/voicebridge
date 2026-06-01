@@ -1,20 +1,24 @@
 import json
 import re
+import shutil
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
 
+from voicebridge.app_paths import external_base_dir
 from voicebridge.app_settings import app_config_dir
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
+    safe_voice_profile_audio_stem,
     voice_profile_storage_dir,
     voice_profile_type_storage_dir,
 )
 
 MODELING_DATASETS_CONFIG = "modeling_datasets.json"
+MODELING_DATASET_EXPORTS_DIR = "modeling_exports"
 MODELING_CLIP_TEXT_GUIDED = "text_guided"
 MODELING_CLIP_FREE_RECORDING = "free_recording"
 MODELING_CLIP_READY = "ready"
@@ -81,8 +85,21 @@ class ModelingDatasetSummary(TypedDict):
     recommendations: list[str]
 
 
+class ModelingDatasetExportResult(TypedDict):
+    export_dir: str
+    wavs_dir: str
+    metadata_path: str
+    dataset_json_path: str
+    exported_clips: int
+    skipped_clips: int
+
+
 def utc_timestamp() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def file_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
 
 def modeling_datasets_config_path() -> Path:
@@ -103,6 +120,20 @@ def modeling_dataset_clips_dir(dataset: ModelingDataset) -> Path:
 
 def modeling_dataset_transcripts_dir(dataset: ModelingDataset) -> Path:
     return modeling_dataset_dir(dataset) / "transcripts"
+
+
+def modeling_dataset_exports_root() -> Path:
+    return external_base_dir() / MODELING_DATASET_EXPORTS_DIR
+
+
+def modeling_dataset_export_dir(
+    dataset: ModelingDataset,
+    *,
+    timestamp: str | None = None,
+    export_root: Path | None = None,
+) -> Path:
+    root = export_root or modeling_dataset_exports_root()
+    return root / f"{safe_voice_profile_audio_stem(dataset['name'])}-{timestamp or file_timestamp()}"
 
 
 def modeling_clip_audio_path(dataset: ModelingDataset, clip_id: str | None = None) -> Path:
@@ -253,6 +284,100 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
         lines.append("Recommendations:")
         lines.extend(f"- {recommendation}" for recommendation in summary["recommendations"])
     return "\n".join(lines)
+
+
+def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
+    return [
+        clip for clip in dataset["clips"]
+        if modeling_clip_display_status(clip) == MODELING_CLIP_READY
+    ]
+
+
+def export_modeling_dataset(
+    dataset: ModelingDataset,
+    *,
+    export_root: Path | None = None,
+    timestamp: str | None = None,
+) -> ModelingDatasetExportResult:
+    ready_clips = ready_modeling_export_clips(dataset)
+    if not ready_clips:
+        raise ValueError("No ready clips are available for export.")
+
+    export_dir = unique_export_dir(modeling_dataset_export_dir(dataset, timestamp=timestamp, export_root=export_root))
+    wavs_dir = export_dir / "wavs"
+    metadata_path = export_dir / "metadata.csv"
+    dataset_json_path = export_dir / "dataset.json"
+    wavs_dir.mkdir(parents=True, exist_ok=False)
+
+    metadata_lines: list[str] = []
+    exported_clips: list[dict[str, Any]] = []
+    for index, clip in enumerate(ready_clips, start=1):
+        source_audio_path = Path(clip["audio_path"])
+        export_name = modeling_export_wav_name(clip, index)
+        export_audio_path = wavs_dir / export_name
+        shutil.copy2(source_audio_path, export_audio_path)
+        transcript_text = normalize_modeling_export_text(clip.get("transcript_text", ""))
+        relative_audio_path = f"wavs/{export_name}"
+        metadata_lines.append(f"{relative_audio_path}|{transcript_text}")
+        exported_clips.append(
+            {
+                "id": clip["id"],
+                "mode": clip["mode"],
+                "source_audio_path": str(source_audio_path),
+                "export_audio_path": relative_audio_path,
+                "transcript_text": transcript_text,
+                "duration_seconds": _float(clip.get("duration_seconds")),
+            }
+        )
+
+    metadata_path.write_text("\n".join(metadata_lines) + "\n", encoding="utf-8")
+    summary = modeling_dataset_summary(dataset)
+    dataset_json_path.write_text(
+        json.dumps(
+            {
+                "dataset_id": dataset["id"],
+                "profile_id": dataset["profile_id"],
+                "name": dataset["name"],
+                "language_code": dataset["language_code"],
+                "exported_at": utc_timestamp(),
+                "metadata_format": "relative_wav_path|transcript_text",
+                "summary": summary,
+                "exported_clips": exported_clips,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "export_dir": str(export_dir),
+        "wavs_dir": str(wavs_dir),
+        "metadata_path": str(metadata_path),
+        "dataset_json_path": str(dataset_json_path),
+        "exported_clips": len(exported_clips),
+        "skipped_clips": len(dataset["clips"]) - len(exported_clips),
+    }
+
+
+def unique_export_dir(path: Path) -> Path:
+    if not path.exists():
+        return path
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{path.name}-{index}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"Could not create a unique export directory for {path}.")
+
+
+def modeling_export_wav_name(clip: ModelingClip, index: int) -> str:
+    clip_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", clip.get("id", "")).strip("-")
+    return f"{index:04d}_{clip_id or 'clip'}.wav"
+
+
+def normalize_modeling_export_text(text: Any) -> str:
+    if not isinstance(text, str):
+        return ""
+    return " ".join(text.replace("|", ",").split())
 
 
 def modeling_dataset_summary_issues(

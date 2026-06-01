@@ -31,8 +31,8 @@ from voicebridge.modeling_datasets import (
     modeling_clip_audio_path,
     modeling_clip_status_label,
     modeling_dataset_dir,
+    modeling_dataset_exportable,
     modeling_dataset_summary_text,
-    ready_modeling_export_clips,
     save_modeling_datasets,
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
@@ -387,7 +387,7 @@ class ModelingDatasetsWorkflowMixin:
         clip = self.selected_modeling_clip()
         has_dataset = dataset is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
-        has_exportable_clips = bool(dataset and ready_modeling_export_clips(dataset))
+        has_exportable_clips = bool(dataset and modeling_dataset_exportable(dataset))
         text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
         can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
         self.modeling_record_text_button.setEnabled(can_record_from_text)

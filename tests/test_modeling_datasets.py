@@ -19,6 +19,7 @@ from voicebridge.modeling_datasets import (
     modeling_clip_status_label,
     modeling_clip_transcript_path,
     modeling_dataset_dir,
+    modeling_dataset_exportable,
     modeling_dataset_summary,
     modeling_dataset_summary_text,
     modeling_datasets_root,
@@ -113,21 +114,22 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
         consent_confirmed=True,
     )
     dataset = build_modeling_dataset_for_profile(profile)
-    ready_audio = tmp_path / "ready.wav"
-    ready_audio.write_bytes(b"RIFF ready")
     pending_audio = tmp_path / "pending.wav"
     pending_audio.write_bytes(b"RIFF pending")
-    dataset["clips"].append(
-        build_modeling_clip(
-            dataset,
-            mode=MODELING_CLIP_FREE_RECORDING,
-            audio_path=ready_audio,
-            transcript_text="Hello | world\nfrom dataset",
-            duration_seconds=12.0,
-            quality_details="RMS level: 8%\nInput clipping: 0.00%",
-            clip_id="ready/clip",
+    for index in range(5):
+        ready_audio = tmp_path / f"ready-{index}.wav"
+        ready_audio.write_bytes(f"RIFF ready {index}".encode())
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=ready_audio,
+                transcript_text=f"Hello | world\nfrom dataset {index}",
+                duration_seconds=12.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"ready/{index}",
+            )
         )
-    )
     dataset["clips"].append(
         build_modeling_clip(
             dataset,
@@ -141,18 +143,20 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
     result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
     export_dir = Path(result["export_dir"])
-    exported_wav = export_dir / "wavs" / "0001_ready-clip.wav"
+    exported_wav = export_dir / "wavs" / "0001_ready-0.wav"
     metadata_path = export_dir / "metadata.csv"
     dataset_json_path = export_dir / "dataset.json"
-    assert result["exported_clips"] == 1
+    assert result["exported_clips"] == 5
     assert result["skipped_clips"] == 1
-    assert exported_wav.read_bytes() == b"RIFF ready"
-    assert metadata_path.read_text(encoding="utf-8") == "wavs/0001_ready-clip.wav|Hello , world from dataset\n"
+    assert exported_wav.read_bytes() == b"RIFF ready 0"
+    assert metadata_path.read_text(encoding="utf-8").splitlines()[0] == (
+        "wavs/0001_ready-0.wav|Hello , world from dataset 0"
+    )
     export_data = json.loads(dataset_json_path.read_text(encoding="utf-8"))
     assert export_data["name"] == "Dataset Voice"
     assert export_data["language_code"] == "en"
     assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
-    assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-clip.wav"
+    assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-0.wav"
 
 
 def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> None:
@@ -165,7 +169,34 @@ def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> 
     )
     dataset = build_modeling_dataset_for_profile(profile)
 
-    with pytest.raises(ValueError, match="No ready clips"):
+    with pytest.raises(ValueError, match="Usable readiness"):
+        export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+
+
+def test_export_modeling_dataset_rejects_before_usable_readiness(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "ready.wav"
+    audio_path.write_bytes(b"RIFF")
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=audio_path,
+            transcript_text="Ready but not enough data",
+            duration_seconds=12.0,
+            clip_id="ready",
+        )
+    )
+
+    assert modeling_dataset_exportable(dataset) is False
+    with pytest.raises(ValueError, match="Usable readiness"):
         export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
 

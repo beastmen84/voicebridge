@@ -293,12 +293,18 @@ def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
     ]
 
 
+def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
+    return modeling_dataset_summary(dataset)["readiness"] in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}
+
+
 def export_modeling_dataset(
     dataset: ModelingDataset,
     *,
     export_root: Path | None = None,
     timestamp: str | None = None,
 ) -> ModelingDatasetExportResult:
+    if not modeling_dataset_exportable(dataset):
+        raise ValueError("Dataset export requires at least Usable readiness.")
     ready_clips = ready_modeling_export_clips(dataset)
     if not ready_clips:
         raise ValueError("No ready clips are available for export.")

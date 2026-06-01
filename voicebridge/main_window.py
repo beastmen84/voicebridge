@@ -48,7 +48,6 @@ from voicebridge.constants import (
     TTS_SPLIT_LINES,
     TTS_SPLIT_PARAGRAPHS,
     UI_QUEUE_POLL_MS,
-    VIDEO_CLEANUP_METHOD_LABELS,
     VIDEO_CLEANUP_QUALITY_LABELS,
     VIDEO_SUBTITLE_POSITION_LABELS,
 )
@@ -316,13 +315,12 @@ class VoiceBridgeQt(
     cleanup_media_picker: FilePicker
     cleanup_output_picker: FilePicker
     cleanup_rule_note: QLabel
-    cleanup_repair_options: QWidget
-    cleanup_method_label: QLabel
-    cleanup_method_combo: QComboBox
-    cleanup_method_description: QLabel
     cleanup_quality_label: QLabel
     cleanup_quality_combo: QComboBox
     cleanup_quality_description: QLabel
+    cleanup_changes: list[dict[str, Any]]
+    cleanup_changes_list: QListWidget
+    cleanup_changes_status: QLabel
     cleanup_results: QListWidget
     cleanup_start_button: QPushButton
     cleanup_repair_button: QPushButton
@@ -492,6 +490,7 @@ class VoiceBridgeQt(
         self.cleanup_repairable_frame_map: dict[int, BlackFrame] = {}
         self.cleanup_detected_frame_map: dict[int, BlackFrame] = {}
         self.cleanup_marked_frame_numbers: set[int] = set()
+        self.cleanup_changes = []
         self.cleanup_video_fps = 0.0
         self.cleanup_video_duration_seconds = 0.0
         self.cleanup_video_total_frames = 0
@@ -687,11 +686,6 @@ class VoiceBridgeQt(
                 cleanup_settings.get("quality_label"),
                 VIDEO_CLEANUP_QUALITY_LABELS,
             )
-            self.set_combo_text(
-                self.cleanup_method_combo,
-                cleanup_settings.get("method_label"),
-                VIDEO_CLEANUP_METHOD_LABELS,
-            )
         finally:
             self.is_restoring_settings = False
 
@@ -701,7 +695,6 @@ class VoiceBridgeQt(
         self.update_video_quality_description(self.video_quality_combo.currentText())
         self.refresh_audio_cleanup_input_info()
         self.cleanup_media_changed()
-        self.update_cleanup_method_description(self.cleanup_method_combo.currentText())
         self.update_cleanup_quality_description(self.cleanup_quality_combo.currentText())
         self.refresh_job_history()
 
@@ -757,7 +750,6 @@ class VoiceBridgeQt(
         if hasattr(self, "cleanup_quality_combo"):
             settings["video_cleanup"] = {
                 "quality_label": self.cleanup_quality_combo.currentText(),
-                "method_label": self.cleanup_method_combo.currentText(),
             }
 
         self.app_settings = settings

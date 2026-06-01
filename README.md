@@ -14,7 +14,7 @@ La guida operativa completa e' in [Manual.md](Manual.md).
 - Transcript Markdown, sottotitoli `.srt` automatici e sottotitoli da transcript fornito.
 - Embed o burn-in di sottotitoli su video.
 - Audio Cleanup manuale con taglio, silenziamento e fade su range selezionati.
-- Video Cleanup con rilevamento frame neri, filmstrip manuale e riparazione/rimozione dei frame marcati.
+- Video Cleanup con filmstrip manuale, detect opzionale dei frame neri e coda di modifiche Freeze/Remove.
 
 ## Pacchetto distribuito
 

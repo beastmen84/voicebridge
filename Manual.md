@@ -239,13 +239,15 @@ Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche aud
 
 1. Aprire `Video Cleanup`.
 2. Scegliere il video sorgente.
-3. Usare `Detect black frames` per analizzare il video senza modificarlo.
-4. Usare `Frame review` per controllare la filmstrip: i glitch isolati rilevati automaticamente sono gia' marcati.
-5. Se serve, selezionare manualmente anche frame non neri e usare `Mark selected`; usare `Unmark selected` o `Clear marks` per correggere la selezione.
-6. Scegliere metodo/qualita' e usare `Clean selected frames`.
+3. Scegliere il percorso `Save cleaned video as` e la qualita' in `Output quality`.
+4. Usare `Frame review` per controllare la filmstrip. La selezione manuale e' sempre disponibile.
+5. Se serve, usare `Detect black frames`: analizza il video senza modificarlo e auto-marca solo i glitch isolati.
+6. Selezionare uno o piu' frame e usare `Mark selected`; usare `Unmark selected` o `Clear marks` per correggere la selezione.
+7. Applicare `Freeze previous frame` o `Remove selected frames`: la modifica entra in `Applied changes` e puo' essere rimossa con la `X`.
+8. Usare `Clean video` per applicare in ordine tutte le modifiche in coda.
 
 Il metodo `Freeze previous frame` e' conservativo: corregge i frame marcati sostituendoli con il frame precedente. Il video mantiene la durata originale e l'audio viene copiato quando possibile.
-Il metodo `Remove selected frames` elimina i frame marcati e le micro-porzioni audio corrispondenti. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
+Il metodo `Remove selected frames` elimina i frame marcati e le micro-porzioni audio corrispondenti. Le modifiche successive vengono applicate tenendo conto dei frame gia' rimossi. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
 Le sequenze nere piu' lunghe, incluse parti nere all'inizio o alla fine del video, vengono segnalate e lasciate intatte, per evitare di alterare dissolvenze, fade o parti nere intenzionali.
 La qualita' di output puo' essere scelta nella sezione `Output quality`:
 

@@ -190,6 +190,7 @@ class VoiceTrainingWorkflowMixin:
     def voice_training_succeeded(self, dry_run: bool) -> None:
         self.append_voice_training_log("Dry run completed." if dry_run else "Training completed.")
         self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
+        self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
 
     def voice_training_failed(self, message: str) -> None:

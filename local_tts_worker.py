@@ -241,6 +241,25 @@ def load_tts_api():
     return TTS
 
 
+def load_xtts_model(args, device):
+    TTS = load_tts_api()
+    if args.model_path:
+        if not args.config_path:
+            raise ValueError("A config path is required when using a trained local model.")
+        model_path = Path(args.model_path).resolve()
+        config_path = Path(args.config_path).resolve()
+        if not model_path.is_file():
+            raise ValueError(f"Trained local model file not found: {model_path}")
+        if not config_path.is_file():
+            raise ValueError(f"Trained local model config not found: {config_path}")
+        return TTS(model_path=str(model_path), config_path=str(config_path), progress_bar=False).to(device)
+
+    model_dir = Path(args.model_dir or (project_root() / "models" / "coqui")).resolve()
+    if not xtts_model_ready(model_dir):
+        raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 before Local TTS generation.")
+    return TTS(args.model).to(device)
+
+
 def download_xtts_model(args):
     model_dir = Path(args.model_dir or (project_root() / "models" / "coqui")).resolve()
     configure_model_cache(model_dir)
@@ -293,13 +312,9 @@ def synthesize(args):
     speaker_wav = reference_audio_paths(args.speaker_wav)
     language = normalize_tts_language(args.language)
     device = resolve_runtime_device(args.device)
-    TTS = load_tts_api()
-    if not xtts_model_ready(model_dir):
-        raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 before Local TTS generation.")
-
     progress(2)
     status(f"Loading XTTS model on {device}...")
-    tts = TTS(args.model).to(device)
+    tts = load_xtts_model(args, device)
     progress(35)
 
     preset_key = normalize_local_tts_preset_key(args.preset)
@@ -338,6 +353,8 @@ def parse_args():
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--preset", default=DEFAULT_LOCAL_TTS_PRESET_KEY, choices=list(LOCAL_TTS_PRESETS))
     parser.add_argument("--model", default=DEFAULT_XTTS_MODEL)
+    parser.add_argument("--model-path")
+    parser.add_argument("--config-path")
     parser.add_argument("--model-dir")
     parser.add_argument("--timeline-json")
     parser.add_argument("--offline", action="store_true")

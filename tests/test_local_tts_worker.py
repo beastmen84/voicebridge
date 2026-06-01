@@ -1,11 +1,13 @@
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from local_tts_worker import (
     XTTS_MODEL_REQUIRED_FILES,
     XTTS_STABLE_INFERENCE_SETTINGS,
+    load_xtts_model,
     merge_wav_files,
     normalize_tts_language,
     normalize_tts_text,
@@ -81,6 +83,45 @@ def test_xtts_terms_agreement_writes_marker(tmp_path: Path) -> None:
     write_xtts_terms_agreement(tmp_path)
 
     assert xtts_terms_agreed(tmp_path)
+
+
+def test_load_xtts_model_uses_trained_model_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_path = tmp_path / "model.pth"
+    config_path = tmp_path / "config.json"
+    model_path.write_text("model", encoding="utf-8")
+    config_path.write_text("config", encoding="utf-8")
+    calls = []
+
+    class FakeTts:
+        def __init__(self, *args, **kwargs) -> None:
+            calls.append((args, kwargs))
+            self.device = ""
+
+        def to(self, device: str):
+            self.device = device
+            return self
+
+    monkeypatch.setattr("local_tts_worker.load_tts_api", lambda: FakeTts)
+    args = SimpleNamespace(
+        model_path=str(model_path),
+        config_path=str(config_path),
+        model_dir=str(tmp_path / "unused"),
+        model="tts_models/multilingual/multi-dataset/xtts_v2",
+    )
+
+    tts = load_xtts_model(args, "cpu")
+
+    assert tts.device == "cpu"
+    assert calls == [
+        (
+            (),
+            {
+                "model_path": str(model_path.resolve()),
+                "config_path": str(config_path.resolve()),
+                "progress_bar": False,
+            },
+        )
+    ]
 
 
 def test_merge_wav_files_inserts_short_silence_between_chunks(tmp_path: Path) -> None:

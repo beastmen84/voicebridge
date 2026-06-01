@@ -173,8 +173,12 @@ XTTS-v2.
 6. Usare `Open job folder` per ispezionare config, log, metadata preparati e output.
 
 Il training crea `run\training` con i checkpoint Coqui e, se completato, `inference_model` con `model.pth`,
-`config.json` e `vocab.json` preparati per il futuro aggancio ai profili locali. La cartella `voice_models` contiene
+`config.json` e `vocab.json` preparati per l'uso come voce locale. La cartella `voice_models` contiene
 output utente e non viene tracciata da git.
+
+Quando esiste un `training_result.json` completo, la voce addestrata compare automaticamente tra le voci `Local TTS`
+insieme ai profili `Reference clone`. Le voci addestrate usano il loro `inference_model`; il download del modello base
+XTTS-v2 resta necessario solo per i profili reference clone.
 
 ### Transcription
 

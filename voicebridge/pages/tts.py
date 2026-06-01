@@ -61,6 +61,15 @@ from voicebridge.local_tts_presets import (
     local_tts_preset_description,
     normalize_local_tts_preset_key,
 )
+from voicebridge.local_voice_sources import (
+    LocalVoiceSource,
+    local_voice_display_label,
+    local_voice_from_reference_profile,
+    local_voice_model_args,
+    local_voice_requires_base_xtts,
+    local_voice_status_text,
+    ready_local_voice_sources,
+)
 from voicebridge.media_tools import audio_duration_seconds, concatenate_mp3_files, convert_audio_to_mp3
 from voicebridge.models import TtsSegment
 from voicebridge.readers import (
@@ -78,12 +87,7 @@ from voicebridge.tts_text import split_tts_text_for_tts
 from voicebridge.tts_timeline import load_local_tts_chunk_timeline, remove_tts_timeline, write_tts_timeline
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
-from voicebridge.voice_profiles import (
-    VoiceProfile,
-    ready_voice_profiles,
-    voice_profile_display_label,
-    voice_profile_status,
-)
+from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
     FALLBACK_VOICES,
     build_voice_options,
@@ -176,14 +180,14 @@ class TtsWorkflowMixin:
         finally:
             self.tts_local_device_combo.blockSignals(False)
 
-    def selected_tts_voice_profile(self) -> VoiceProfile | None:
+    def selected_tts_voice_profile(self) -> LocalVoiceSource | None:
         profile_id = self.local_voice_profile_combo.currentData()
         if not isinstance(profile_id, str) or not profile_id:
             return None
-        return next((profile for profile in self.voice_profiles if profile["id"] == profile_id), None)
+        return next((voice for voice in self.ready_tts_voice_profiles() if voice["id"] == profile_id), None)
 
-    def ready_tts_voice_profiles(self) -> list[VoiceProfile]:
-        return ready_voice_profiles(self.voice_profiles)
+    def ready_tts_voice_profiles(self) -> list[LocalVoiceSource]:
+        return ready_local_voice_sources(self.voice_profiles)
 
     def local_multi_voice_available(self) -> bool:
         return len(self.ready_tts_voice_profiles()) > 1
@@ -195,7 +199,7 @@ class TtsWorkflowMixin:
         available = not local or self.local_multi_voice_available()
         self.tts_multi_mode_button.setEnabled(available)
         if local and not available:
-            self.tts_multi_mode_button.setToolTip("Local multi-voice requires at least two ready voice profiles.")
+            self.tts_multi_mode_button.setToolTip("Local multi-voice requires at least two ready local voices.")
             if self.tts_mode_index() == 1:
                 self.set_tts_mode(0)
         else:
@@ -212,11 +216,11 @@ class TtsWorkflowMixin:
         try:
             self.local_voice_profile_combo.clear()
             if not profiles:
-                self.local_voice_profile_combo.addItem("No ready voice profiles", "")
+                self.local_voice_profile_combo.addItem("No ready local voices", "")
                 self.local_voice_profile_combo.setEnabled(False)
             else:
                 for profile in profiles:
-                    self.local_voice_profile_combo.addItem(voice_profile_display_label(profile), profile["id"])
+                    self.local_voice_profile_combo.addItem(local_voice_display_label(profile), profile["id"])
                 self.local_voice_profile_combo.setEnabled(True)
                 if target_profile_id:
                     for index in range(self.local_voice_profile_combo.count()):
@@ -244,23 +248,30 @@ class TtsWorkflowMixin:
             return
         profile = self.selected_tts_voice_profile()
         if profile:
-            self.local_voice_profile_status.setText(
-                f"{voice_profile_status(profile)} | {Path(profile['reference_paths'][0]).name}"
-            )
+            self.local_voice_profile_status.setText(local_voice_status_text(profile))
         else:
-            self.local_voice_profile_status.setText("Create a ready reference profile in Local Voices > Profiles.")
+            self.local_voice_profile_status.setText(
+                "Create a ready reference profile or complete a voice training job."
+            )
         self.update_tts_button_state()
 
     def update_local_tts_model_status(self):
         if not hasattr(self, "local_tts_model_status"):
             return
+        selected_voice = self.selected_tts_voice_profile()
         model_ready = local_tts_model_ready()
-        if model_ready:
+        if selected_voice and not local_voice_requires_base_xtts(selected_voice) and not model_ready:
+            self.local_tts_model_status.setText(
+                "Trained model selected. Download XTTS-v2 is only required for reference clone voices."
+            )
+        elif model_ready:
             self.local_tts_model_status.setText("XTTS-v2 model ready.")
         else:
             self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
         if hasattr(self, "local_tts_model_status_box"):
-            self.local_tts_model_status_box.setVisible(model_ready)
+            self.local_tts_model_status_box.setVisible(
+                model_ready or bool(selected_voice and not local_voice_requires_base_xtts(selected_voice))
+            )
         if hasattr(self, "tts_download_model_button"):
             self.tts_download_model_button.setVisible(not model_ready)
         self.update_tts_button_state()
@@ -276,7 +287,10 @@ class TtsWorkflowMixin:
             self.update_tts_local_device_options()
             self.update_local_tts_model_status()
             self.refresh_stt_preflight_async()
-            if local_tts_model_ready():
+            selected_voice = self.selected_tts_voice_profile()
+            if local_tts_model_ready() or (
+                selected_voice and not local_voice_requires_base_xtts(selected_voice)
+            ):
                 self.tts_status.setText("Local TTS ready.")
             else:
                 self.tts_status.setText("Download XTTS-v2 before Local TTS generation.")
@@ -385,11 +399,11 @@ class TtsWorkflowMixin:
         try:
             self.block_voice_combo.clear()
             if not profiles:
-                self.block_voice_combo.addItem("No ready voice profiles", "")
+                self.block_voice_combo.addItem("No ready local voices", "")
                 self.block_voice_combo.setEnabled(False)
             else:
                 for profile in profiles:
-                    self.block_voice_combo.addItem(voice_profile_display_label(profile), profile["id"])
+                    self.block_voice_combo.addItem(local_voice_display_label(profile), profile["id"])
                 self.block_voice_combo.setEnabled(True)
                 if target_profile_id:
                     for index in range(self.block_voice_combo.count()):
@@ -403,7 +417,7 @@ class TtsWorkflowMixin:
         if not hasattr(self, "block_voice_label"):
             return
         local = self.tts_engine_key() == "local"
-        self.block_voice_label.setText("Block voice profile" if local else "Block voice")
+        self.block_voice_label.setText("Block local voice" if local else "Block voice")
         self.block_rate_label.setVisible(not local)
         self.block_rate_combo.setVisible(not local)
         self.apply_current_block_button.setText("Use current profile" if local else "Use current voice")
@@ -596,7 +610,12 @@ class TtsWorkflowMixin:
             and not self.input_file_error_message
         )
         if self.tts_engine_key() == "local":
-            ready = common_ready and bool(self.selected_tts_voice_profile()) and local_tts_model_ready()
+            selected_voice = self.selected_tts_voice_profile()
+            ready = (
+                common_ready
+                and bool(selected_voice)
+                and (not local_voice_requires_base_xtts(selected_voice) or local_tts_model_ready())
+            )
         else:
             ready = common_ready and not self.is_loading_voices and bool(self.current_voice_map)
         self.tts_generate_button.setEnabled(ready)
@@ -637,16 +656,18 @@ class TtsWorkflowMixin:
         return voice_label, voice_short_name
 
     @staticmethod
-    def local_tts_segment_voice_fields(profile: VoiceProfile) -> dict[str, str]:
+    def local_tts_segment_voice_fields(profile: LocalVoiceSource | VoiceProfile) -> dict[str, str]:
+        if "kind" not in profile:
+            profile = local_voice_from_reference_profile(profile)
         return {
-            "voice_label": voice_profile_display_label(profile),
+            "voice_label": local_voice_display_label(profile),
             "voice_profile_id": profile["id"],
             "language_code": profile["language_code"],
             "voice_short_name": "",
             "rate": DEFAULT_RATE,
         }
 
-    def selected_block_voice_profile(self) -> VoiceProfile | None:
+    def selected_block_voice_profile(self) -> LocalVoiceSource | None:
         profile_id = self.block_voice_combo.currentData()
         if not isinstance(profile_id, str) or not profile_id:
             return None
@@ -677,7 +698,7 @@ class TtsWorkflowMixin:
             if self.tts_engine_key() == "local":
                 profile = self.selected_tts_voice_profile()
                 if not profile:
-                    raise ValueError("Please create and select a ready voice profile.")
+                    raise ValueError("Please create and select a ready local voice.")
                 voice_fields = self.local_tts_segment_voice_fields(profile)
             else:
                 voice_label, voice_short_name = self.selected_voice_assignment()
@@ -780,7 +801,7 @@ class TtsWorkflowMixin:
         if self.tts_engine_key() == "local":
             profile = self.selected_block_voice_profile()
             if not profile:
-                self.show_error("Error", "Please select a valid block voice profile.")
+                self.show_error("Error", "Please select a valid block local voice.")
                 return
             self.tts_segments[index].update(self.local_tts_segment_voice_fields(profile))
             self.refresh_tts_blocks_list()
@@ -809,7 +830,7 @@ class TtsWorkflowMixin:
         if self.tts_engine_key() == "local":
             profile = self.selected_tts_voice_profile()
             if not profile:
-                self.show_error("Error", "Please create and select a ready voice profile.")
+                self.show_error("Error", "Please create and select a ready local voice.")
                 return
             self.tts_segments[index].update(self.local_tts_segment_voice_fields(profile))
             self.refresh_tts_blocks_list()
@@ -834,7 +855,7 @@ class TtsWorkflowMixin:
         if self.tts_engine_key() == "local":
             profile = self.selected_tts_voice_profile()
             if not profile:
-                self.show_error("Error", "Please create and select a ready voice profile.")
+                self.show_error("Error", "Please create and select a ready local voice.")
                 return
             voice_fields = self.local_tts_segment_voice_fields(profile)
             for segment in self.tts_segments:
@@ -842,7 +863,7 @@ class TtsWorkflowMixin:
             self.refresh_tts_blocks_list()
             if self.selected_tts_segment_index is not None:
                 self.tts_blocks_list.setCurrentRow(self.selected_tts_segment_index)
-            self.tts_status.setText(f"Applied current voice profile to {len(self.tts_segments)} block(s).")
+            self.tts_status.setText(f"Applied current local voice to {len(self.tts_segments)} block(s).")
             return
         try:
             voice_label, voice_short_name = self.selected_voice_assignment()
@@ -903,8 +924,8 @@ class TtsWorkflowMixin:
         if self.input_file_error_message:
             raise ValueError(self.input_file_error_message)
         if not profile:
-            raise ValueError("Please create and select a ready voice profile.")
-        if not local_tts_model_ready():
+            raise ValueError("Please create and select a ready local voice.")
+        if local_voice_requires_base_xtts(profile) and not local_tts_model_ready():
             raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 first.")
         if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
             raise ValueError("CUDA is not available in the current ML runtime on this machine.")
@@ -961,9 +982,7 @@ class TtsWorkflowMixin:
             raise ValueError(self.input_file_error_message)
         profiles = self.ready_tts_voice_profiles()
         if len(profiles) < 2:
-            raise ValueError("Local multi-voice requires at least two ready voice profiles.")
-        if not local_tts_model_ready():
-            raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 first.")
+            raise ValueError("Local multi-voice requires at least two ready local voices.")
         if self.tts_local_device_key() == "cuda" and not self.stt_cuda_available:
             raise ValueError("CUDA is not available in the current ML runtime on this machine.")
         if not self.tts_segments:
@@ -976,13 +995,16 @@ class TtsWorkflowMixin:
             if not text:
                 continue
             if not profile_id:
-                raise ValueError(f"Block {index} has no local voice profile selected.")
+                raise ValueError(f"Block {index} has no local voice selected.")
             profile = profiles_by_id.get(profile_id)
             if not profile:
-                raise ValueError(f"Block {index} uses a voice profile that is no longer ready.")
+                raise ValueError(f"Block {index} uses a local voice that is no longer ready.")
             segments.append({"text": text, "profile": profile, "source_block_index": index})
         if not segments:
             raise ValueError("No text blocks are ready for generation.")
+        reference_voice_selected = any(local_voice_requires_base_xtts(segment["profile"]) for segment in segments)
+        if reference_voice_selected and not local_tts_model_ready():
+            raise ValueError("XTTS-v2 model is required for reference clone voices. Use Download XTTS-v2 first.")
         self.tts_output_picker.set_text(save_path)
         self.save_user_settings()
         return source_path, save_path, segments, self.tts_local_device_key(), self.tts_local_preset_key()
@@ -1045,7 +1067,7 @@ class TtsWorkflowMixin:
     @classmethod
     def local_tts_timeline_blocks(cls, chunks, profile, source_block_index=1, offset_seconds=0.0, start_index=1):
         blocks = []
-        voice_label = voice_profile_display_label(profile)
+        voice_label = local_voice_display_label(profile)
         for position, chunk in enumerate(chunks, start=start_index):
             start_seconds = offset_seconds + float(chunk["start_seconds"])
             duration_seconds = float(chunk["end_seconds"]) - float(chunk["start_seconds"])
@@ -1283,6 +1305,7 @@ class TtsWorkflowMixin:
             command.extend(["--timeline-json", str(timeline_path)])
         for reference_path in profile["reference_paths"]:
             command.extend(["--speaker-wav", reference_path])
+        command.extend(local_voice_model_args(profile))
         return command
 
     def run_local_tts_worker_command(self, command, progress_start=0.0, progress_end=100.0):
@@ -1385,7 +1408,7 @@ class TtsWorkflowMixin:
                             start_seconds=0.0,
                             duration_seconds=duration,
                             text=text.strip(),
-                            voice_label=voice_profile_display_label(profile),
+                            voice_label=local_voice_display_label(profile),
                             voice_profile_id=profile["id"],
                             language_code=profile["language_code"],
                         )
@@ -1481,7 +1504,7 @@ class TtsWorkflowMixin:
                                 start_seconds=timeline_cursor,
                                 duration_seconds=part_duration,
                                 text=text,
-                                voice_label=voice_profile_display_label(segment["profile"]),
+                                voice_label=local_voice_display_label(segment["profile"]),
                                 voice_profile_id=segment["profile"]["id"],
                                 language_code=segment["profile"]["language_code"],
                             )

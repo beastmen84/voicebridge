@@ -27,6 +27,7 @@ from voicebridge.file_checks import (
     required_file_issue,
     validate_output_path,
 )
+from voicebridge.json_schemas import app_json_version_supported, with_schema_metadata
 from voicebridge.modeling_datasets import (
     MODELING_DATASET_GOOD,
     MODELING_DATASET_USABLE,
@@ -39,6 +40,9 @@ from voicebridge.voice_profiles import safe_voice_profile_audio_stem
 VOICE_MODELING_OUTPUTS_DIR = "voice_models"
 VOICE_MODELING_JOB_CONFIG = "job_config.json"
 VOICE_MODELING_TRAINING_STATE = "training_state.json"
+VOICE_MODELING_JOB_CONFIG_JSON_KIND = "voicebridge_voice_modeling_job_config"
+VOICE_MODELING_TRAINING_STATE_JSON_KIND = "voicebridge_voice_modeling_training_state"
+VOICE_MODELING_TRAINING_RESULT_JSON_KIND = "voicebridge_voice_modeling_training_result"
 VOICE_MODELING_PREPARED_DIR = "prepared_dataset"
 VOICE_MODELING_TRAIN_METADATA = "metadata_train.csv"
 VOICE_MODELING_EVAL_METADATA = "metadata_eval.csv"
@@ -260,6 +264,8 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
         raise ValueError("dataset.json is not valid JSON.") from exc
     if not isinstance(dataset_data, dict):
         raise ValueError("dataset.json must contain an object.")
+    if not app_json_version_supported(dataset_data):
+        raise ValueError("dataset.json schema version is not supported.")
 
     summary = dataset_data.get("summary", {})
     if not isinstance(summary, dict):
@@ -556,7 +562,11 @@ def save_voice_modeling_job_config(config: VoiceModelingJobConfig) -> Path:
     output_dir = Path(config["output_dir"]).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     config_path = output_dir / VOICE_MODELING_JOB_CONFIG
-    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    config_path.write_text(
+        json.dumps(with_schema_metadata(config, VOICE_MODELING_JOB_CONFIG_JSON_KIND), indent=2, ensure_ascii=False)
+        + "\n",
+        encoding="utf-8",
+    )
     return config_path
 
 
@@ -568,6 +578,8 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
         raise ValueError(f"Training config is not readable JSON: {path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"Training config must contain an object: {path}")
+    if not app_json_version_supported(data):
+        raise ValueError(f"Training config schema version is not supported: {path}")
     dataset = data.get("dataset")
     if not isinstance(dataset, dict):
         raise ValueError(f"Training config is missing dataset metadata: {path}")
@@ -610,7 +622,14 @@ def write_voice_modeling_training_state(
     if extra:
         state.update(extra)
     state_path = output_dir / VOICE_MODELING_TRAINING_STATE
-    state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    state_path.write_text(
+        json.dumps(
+            with_schema_metadata(state, VOICE_MODELING_TRAINING_STATE_JSON_KIND),
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
     return state_path
 
 

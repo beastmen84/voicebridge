@@ -6,8 +6,9 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from voicebridge.app_paths import external_base_dir
-from voicebridge.app_settings import app_config_dir
+from voicebridge.app_settings import VOICE_PROFILES_JSON_KIND, app_config_dir
 from voicebridge.file_checks import required_file_issue
+from voicebridge.json_schemas import app_json_version_supported, with_schema_metadata
 from voicebridge.languages import LANGUAGE_NAMES
 
 VOICE_PROFILES_CONFIG = "voice_profiles.json"
@@ -291,6 +292,8 @@ def load_voice_profiles(path: Path | None = None) -> list[VoiceProfile]:
     except (OSError, json.JSONDecodeError):
         return []
 
+    if isinstance(data, dict) and not app_json_version_supported(data):
+        return []
     raw_profiles = data.get("profiles", []) if isinstance(data, dict) else data
     if not isinstance(raw_profiles, list):
         return []
@@ -305,6 +308,6 @@ def load_voice_profiles(path: Path | None = None) -> list[VoiceProfile]:
 def save_voice_profiles(profiles: list[VoiceProfile], path: Path | None = None) -> None:
     config_path = path or voice_profiles_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    data = {"profiles": profiles}
+    data = with_schema_metadata({"profiles": profiles}, VOICE_PROFILES_JSON_KIND)
     with config_path.open("w", encoding="utf-8") as config_file:
         json.dump(data, config_file, indent=2, ensure_ascii=False)

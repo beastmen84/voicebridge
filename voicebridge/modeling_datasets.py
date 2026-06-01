@@ -8,7 +8,8 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from voicebridge.app_paths import external_base_dir
-from voicebridge.app_settings import app_config_dir
+from voicebridge.app_settings import MODELING_DATASETS_JSON_KIND, app_config_dir
+from voicebridge.json_schemas import app_json_version_supported, with_schema_metadata
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
@@ -18,6 +19,7 @@ from voicebridge.voice_profiles import (
 )
 
 MODELING_DATASETS_CONFIG = "modeling_datasets.json"
+MODELING_DATASET_EXPORT_JSON_KIND = "voicebridge_modeling_dataset_export"
 MODELING_DATASET_EXPORTS_DIR = "modeling_exports"
 MODELING_CLIP_TEXT_GUIDED = "text_guided"
 MODELING_CLIP_FREE_RECORDING = "free_recording"
@@ -340,16 +342,19 @@ def export_modeling_dataset(
     summary = modeling_dataset_summary(dataset)
     dataset_json_path.write_text(
         json.dumps(
-            {
-                "dataset_id": dataset["id"],
-                "profile_id": dataset["profile_id"],
-                "name": dataset["name"],
-                "language_code": dataset["language_code"],
-                "exported_at": utc_timestamp(),
-                "metadata_format": "relative_wav_path|transcript_text",
-                "summary": summary,
-                "exported_clips": exported_clips,
-            },
+            with_schema_metadata(
+                {
+                    "dataset_id": dataset["id"],
+                    "profile_id": dataset["profile_id"],
+                    "name": dataset["name"],
+                    "language_code": dataset["language_code"],
+                    "exported_at": utc_timestamp(),
+                    "metadata_format": "relative_wav_path|transcript_text",
+                    "summary": summary,
+                    "exported_clips": exported_clips,
+                },
+                MODELING_DATASET_EXPORT_JSON_KIND,
+            ),
             indent=2,
             ensure_ascii=False,
         ) + "\n",
@@ -627,6 +632,8 @@ def load_modeling_datasets(path: Path | None = None) -> list[ModelingDataset]:
         data = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
+    if isinstance(data, dict) and not app_json_version_supported(data):
+        return []
     raw_datasets = data.get("datasets", []) if isinstance(data, dict) else []
     if not isinstance(raw_datasets, list):
         return []
@@ -640,7 +647,11 @@ def save_modeling_datasets(datasets: list[ModelingDataset], path: Path | None = 
     config_path = path or modeling_datasets_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        json.dumps({"datasets": datasets}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(
+            with_schema_metadata({"datasets": datasets}, MODELING_DATASETS_JSON_KIND),
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
         encoding="utf-8",
     )
 

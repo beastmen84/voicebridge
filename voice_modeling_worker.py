@@ -14,10 +14,12 @@ from voicebridge.app_paths import (
     local_tts_model_dir,
     local_tts_model_required_files,
 )
+from voicebridge.json_schemas import with_schema_metadata
 from voicebridge.voice_modeling import (
     VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS,
     VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS,
     VOICE_MODELING_LOG,
+    VOICE_MODELING_TRAINING_RESULT_JSON_KIND,
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
     update_voice_modeling_job_status,
@@ -348,7 +350,10 @@ def run_training(config_path):
         "vocab_path": str(inference_dir / "vocab.json"),
         "speaker_wav": speaker_ref,
     }
-    (output_dir / "training_result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    (output_dir / "training_result.json").write_text(
+        json.dumps(with_schema_metadata(result, VOICE_MODELING_TRAINING_RESULT_JSON_KIND), indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     del model, trainer, train_samples, eval_samples
     gc.collect()

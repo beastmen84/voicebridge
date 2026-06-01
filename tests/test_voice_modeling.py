@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
 from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     build_modeling_clip,
@@ -118,6 +119,8 @@ def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: p
 
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert config_path == default_output / "job_config.json"
+    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
+    assert saved["kind"] == "voicebridge_voice_modeling_job_config"
     assert saved["training_backend"] == "xtts_v2"
     assert saved["device"] == "cuda"
     assert saved["max_epochs"] == 80
@@ -165,7 +168,10 @@ def test_prepare_voice_modeling_training_job_writes_coqui_metadata(
     assert plan["eval_rows"] == 1
     assert plan["total_rows"] == 5
     assert saved_config["status"] == "prepared"
+    assert saved_config["schema_version"] == APP_JSON_SCHEMA_VERSION
     assert state["status"] == "prepared"
+    assert state["schema_version"] == APP_JSON_SCHEMA_VERSION
+    assert state["kind"] == "voicebridge_voice_modeling_training_state"
     assert "worker.py" in plan["command_text"]
     assert "Prepared rows: 4 train, 1 eval, 5 total" in voice_modeling_training_plan_text(plan)
 

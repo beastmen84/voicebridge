@@ -82,6 +82,8 @@ modalita', lingua, device, qualita' e preset.
 All'avvio l'app controlla le configurazioni in `%APPDATA%\VoiceBridge`: i vecchi JSON non piu' usati e i file corrotti
 vengono spostati in `legacy_backup` invece di essere eliminati. Profili vocali, dataset, modelli e output utente non
 vengono toccati da questa pulizia.
+I JSON proprietari dell'app includono `schema_version: "1.0"` e `kind`, cosi' le future modifiche strutturali possono
+essere gestite con migrazioni mirate o archiviazione controllata.
 
 L'app esegue controlli preventivi su input, output, spazio disco e modelli locali. I download interrotti o file modello
 troppo piccoli vengono trattati come pacchetti incompleti e vanno scaricati di nuovo. Se un job CUDA fallisce nel

@@ -1,7 +1,9 @@
+import json
 from pathlib import Path
 
 import pytest
 
+from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VOICE_PROFILE_REFERENCE,
@@ -96,8 +98,11 @@ def test_save_and_load_voice_profiles(tmp_path: Path) -> None:
     config_path = tmp_path / "voice_profiles.json"
 
     save_voice_profiles([profile], config_path)
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
     loaded = load_voice_profiles(config_path)
 
+    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
+    assert saved["kind"] == "voicebridge_voice_profiles"
     assert loaded == [profile]
 
 

@@ -4,9 +4,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION, app_json_version_supported
+
 TTS_TIMELINE_KIND = "voicebridge_tts_timeline"
 LOCAL_TTS_CHUNKS_KIND = "voicebridge_local_tts_chunks"
-TTS_TIMELINE_SCHEMA_VERSION = 1
+TTS_TIMELINE_SCHEMA_VERSION = APP_JSON_SCHEMA_VERSION
 
 
 def tts_timeline_path(audio_path: str | Path) -> Path:
@@ -315,7 +317,7 @@ def load_tts_timeline_for_audio(audio_path: str | Path) -> dict[str, Any] | None
         data = json.loads(timeline_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("schema_version") != TTS_TIMELINE_SCHEMA_VERSION or data.get("kind") != TTS_TIMELINE_KIND:
+    if not app_json_version_supported(data, allow_legacy_missing=False) or data.get("kind") != TTS_TIMELINE_KIND:
         return None
     blocks = data.get("blocks")
     if not isinstance(blocks, list):
@@ -359,7 +361,7 @@ def load_local_tts_chunk_timeline(metadata_path: str | Path) -> list[dict[str, A
         data = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
-    if data.get("schema_version") != TTS_TIMELINE_SCHEMA_VERSION or data.get("kind") != LOCAL_TTS_CHUNKS_KIND:
+    if not app_json_version_supported(data, allow_legacy_missing=False) or data.get("kind") != LOCAL_TTS_CHUNKS_KIND:
         return []
     chunks = data.get("chunks")
     if not isinstance(chunks, list):

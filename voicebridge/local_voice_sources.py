@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from voicebridge.file_checks import validate_existing_file
+from voicebridge.json_schemas import app_json_version_supported
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.voice_modeling import (
     load_voice_modeling_job_config,
@@ -53,6 +54,8 @@ def local_voice_from_training_result(result_path: str | Path) -> LocalVoiceSourc
         raise ValueError(f"Training result is not readable JSON: {path}") from exc
     if not isinstance(result, dict):
         raise ValueError(f"Training result must contain an object: {path}")
+    if not app_json_version_supported(result):
+        raise ValueError(f"Training result schema version is not supported: {path}")
 
     config_path = _string(result.get("config_path"))
     job_config = load_voice_modeling_job_config(config_path) if config_path else {}

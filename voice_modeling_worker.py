@@ -14,12 +14,11 @@ from voicebridge.app_paths import (
     local_tts_model_dir,
     local_tts_model_required_files,
 )
-from voicebridge.json_schemas import with_schema_metadata
+from voicebridge.json_schemas import VOICE_MODELING_TRAINING_RESULT_JSON_KIND, with_schema_metadata
 from voicebridge.voice_modeling import (
     VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS,
     VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS,
     VOICE_MODELING_LOG,
-    VOICE_MODELING_TRAINING_RESULT_JSON_KIND,
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
     update_voice_modeling_job_status,

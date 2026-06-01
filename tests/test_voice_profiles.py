@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
+from voicebridge.json_schemas import VOICE_PROFILES_JSON_KIND, current_schema_version
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VOICE_PROFILE_REFERENCE,
@@ -101,8 +101,8 @@ def test_save_and_load_voice_profiles(tmp_path: Path) -> None:
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     loaded = load_voice_profiles(config_path)
 
-    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert saved["kind"] == "voicebridge_voice_profiles"
+    assert saved["schema_version"] == current_schema_version(VOICE_PROFILES_JSON_KIND)
+    assert saved["kind"] == VOICE_PROFILES_JSON_KIND
     assert loaded == [profile]
 
 

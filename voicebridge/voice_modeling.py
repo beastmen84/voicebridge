@@ -27,8 +27,14 @@ from voicebridge.file_checks import (
     required_file_issue,
     validate_output_path,
 )
-from voicebridge.json_schemas import app_json_version_supported, with_schema_metadata
+from voicebridge.json_schemas import (
+    VOICE_MODELING_JOB_CONFIG_JSON_KIND,
+    VOICE_MODELING_TRAINING_STATE_JSON_KIND,
+    app_json_version_supported,
+    with_schema_metadata,
+)
 from voicebridge.modeling_datasets import (
+    MODELING_DATASET_EXPORT_JSON_KIND,
     MODELING_DATASET_GOOD,
     MODELING_DATASET_USABLE,
     format_modeling_dataset_duration,
@@ -40,9 +46,6 @@ from voicebridge.voice_profiles import safe_voice_profile_audio_stem
 VOICE_MODELING_OUTPUTS_DIR = "voice_models"
 VOICE_MODELING_JOB_CONFIG = "job_config.json"
 VOICE_MODELING_TRAINING_STATE = "training_state.json"
-VOICE_MODELING_JOB_CONFIG_JSON_KIND = "voicebridge_voice_modeling_job_config"
-VOICE_MODELING_TRAINING_STATE_JSON_KIND = "voicebridge_voice_modeling_training_state"
-VOICE_MODELING_TRAINING_RESULT_JSON_KIND = "voicebridge_voice_modeling_training_result"
 VOICE_MODELING_PREPARED_DIR = "prepared_dataset"
 VOICE_MODELING_TRAIN_METADATA = "metadata_train.csv"
 VOICE_MODELING_EVAL_METADATA = "metadata_eval.csv"
@@ -264,7 +267,7 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
         raise ValueError("dataset.json is not valid JSON.") from exc
     if not isinstance(dataset_data, dict):
         raise ValueError("dataset.json must contain an object.")
-    if not app_json_version_supported(dataset_data):
+    if not app_json_version_supported(dataset_data, kind=MODELING_DATASET_EXPORT_JSON_KIND):
         raise ValueError("dataset.json schema version is not supported.")
 
     summary = dataset_data.get("summary", {})
@@ -578,7 +581,7 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
         raise ValueError(f"Training config is not readable JSON: {path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"Training config must contain an object: {path}")
-    if not app_json_version_supported(data):
+    if not app_json_version_supported(data, kind=VOICE_MODELING_JOB_CONFIG_JSON_KIND):
         raise ValueError(f"Training config schema version is not supported: {path}")
     dataset = data.get("dataset")
     if not isinstance(dataset, dict):

@@ -8,8 +8,13 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from voicebridge.app_paths import external_base_dir
-from voicebridge.app_settings import MODELING_DATASETS_JSON_KIND, app_config_dir
-from voicebridge.json_schemas import app_json_version_supported, with_schema_metadata
+from voicebridge.app_settings import app_config_dir
+from voicebridge.json_schemas import (
+    MODELING_DATASET_EXPORT_JSON_KIND,
+    MODELING_DATASETS_JSON_KIND,
+    app_json_version_supported,
+    with_schema_metadata,
+)
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
@@ -19,7 +24,6 @@ from voicebridge.voice_profiles import (
 )
 
 MODELING_DATASETS_CONFIG = "modeling_datasets.json"
-MODELING_DATASET_EXPORT_JSON_KIND = "voicebridge_modeling_dataset_export"
 MODELING_DATASET_EXPORTS_DIR = "modeling_exports"
 MODELING_CLIP_TEXT_GUIDED = "text_guided"
 MODELING_CLIP_FREE_RECORDING = "free_recording"
@@ -632,7 +636,7 @@ def load_modeling_datasets(path: Path | None = None) -> list[ModelingDataset]:
         data = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
-    if isinstance(data, dict) and not app_json_version_supported(data):
+    if isinstance(data, dict) and not app_json_version_supported(data, kind=MODELING_DATASETS_JSON_KIND):
         return []
     raw_datasets = data.get("datasets", []) if isinstance(data, dict) else []
     if not isinstance(raw_datasets, list):

@@ -5,9 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from voicebridge.json_schemas import (
-    APP_JSON_SCHEMA_VERSION,
+    MODELING_DATASETS_JSON_KIND,
+    SETTINGS_JSON_KIND,
+    VOICE_PROFILES_JSON_KIND,
     app_json_metadata_needs_refresh,
     app_json_version_supported,
+    current_schema_version,
     with_schema_metadata,
 )
 
@@ -17,10 +20,7 @@ LEGACY_PREFERRED_VOICES_CONFIG = "preferred_voices.json"
 VOICE_PROFILES_CONFIG = "voice_profiles.json"
 MODELING_DATASETS_CONFIG = "modeling_datasets.json"
 APP_CONFIG_BACKUP_DIR = "legacy_backup"
-SETTINGS_JSON_KIND = "voicebridge_settings"
-VOICE_PROFILES_JSON_KIND = "voicebridge_voice_profiles"
-MODELING_DATASETS_JSON_KIND = "voicebridge_modeling_datasets"
-SETTINGS_VERSION = APP_JSON_SCHEMA_VERSION
+SETTINGS_VERSION = current_schema_version(SETTINGS_JSON_KIND)
 ACTIVE_CONFIG_FILES = {SETTINGS_CONFIG, VOICE_PROFILES_CONFIG, MODELING_DATASETS_CONFIG}
 LEGACY_CONFIG_FILES = {LEGACY_PREFERRED_VOICES_CONFIG}
 KNOWN_CONFIG_FILES = ACTIVE_CONFIG_FILES | LEGACY_CONFIG_FILES
@@ -109,7 +109,7 @@ def _upgrade_collection_config(
     if isinstance(value, list):
         upgraded = with_schema_metadata({collection_key: value}, kind)
     elif isinstance(value, dict):
-        if not app_json_version_supported(value):
+        if not app_json_version_supported(value, kind=kind):
             _archive_with_action(path, "unsupported-version", actions)
             return
         if not app_json_metadata_needs_refresh(value, kind):
@@ -153,7 +153,7 @@ def cleanup_app_config_on_startup() -> list[str]:
         settings_value, error = _read_json(settings_path)
         if error or not isinstance(settings_value, dict):
             _archive_with_action(settings_path, "corrupt", actions)
-        elif not app_json_version_supported(settings_value):
+        elif not app_json_version_supported(settings_value, kind=SETTINGS_JSON_KIND):
             _archive_with_action(settings_path, "unsupported-version", actions)
         else:
             settings_data = settings_value
@@ -206,7 +206,7 @@ def load_app_settings() -> Settings:
     except (OSError, json.JSONDecodeError):
         data = {}
 
-    settings = data if isinstance(data, dict) and app_json_version_supported(data) else {}
+    settings = data if isinstance(data, dict) and app_json_version_supported(data, kind=SETTINGS_JSON_KIND) else {}
     settings.setdefault("schema_version", SETTINGS_VERSION)
     settings.setdefault("kind", SETTINGS_JSON_KIND)
     settings.setdefault("version", SETTINGS_VERSION)

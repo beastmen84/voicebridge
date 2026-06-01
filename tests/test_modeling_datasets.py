@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
+from voicebridge.json_schemas import (
+    MODELING_DATASET_EXPORT_JSON_KIND,
+    MODELING_DATASETS_JSON_KIND,
+    current_schema_version,
+)
 from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     MODELING_CLIP_NEEDS_TRANSCRIPT,
@@ -154,8 +158,8 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
         "wavs/0001_ready-0.wav|Hello , world from dataset 0"
     )
     export_data = json.loads(dataset_json_path.read_text(encoding="utf-8"))
-    assert export_data["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert export_data["kind"] == "voicebridge_modeling_dataset_export"
+    assert export_data["schema_version"] == current_schema_version(MODELING_DATASET_EXPORT_JSON_KIND)
+    assert export_data["kind"] == MODELING_DATASET_EXPORT_JSON_KIND
     assert export_data["name"] == "Dataset Voice"
     assert export_data["language_code"] == "en"
     assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
@@ -404,6 +408,6 @@ def test_save_and_load_modeling_datasets(tmp_path: Path) -> None:
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     loaded = load_modeling_datasets(config_path)
 
-    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert saved["kind"] == "voicebridge_modeling_datasets"
+    assert saved["schema_version"] == current_schema_version(MODELING_DATASETS_JSON_KIND)
+    assert saved["kind"] == MODELING_DATASETS_JSON_KIND
     assert loaded == [dataset]

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
+from voicebridge.json_schemas import LOCAL_TTS_CHUNKS_JSON_KIND, TTS_TIMELINE_JSON_KIND, current_schema_version
 from voicebridge.tts_timeline import (
     load_local_tts_chunk_timeline,
     load_tts_timeline_for_audio,
@@ -39,8 +39,8 @@ def test_write_and_load_tts_timeline(tmp_path: Path) -> None:
 
     assert metadata_path == tts_timeline_path(audio_path)
     saved = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert saved["kind"] == "voicebridge_tts_timeline"
+    assert saved["schema_version"] == current_schema_version(TTS_TIMELINE_JSON_KIND)
+    assert saved["kind"] == TTS_TIMELINE_JSON_KIND
     loaded = load_tts_timeline_for_audio(audio_path)
 
     assert loaded is not None
@@ -79,8 +79,8 @@ def test_write_and_load_local_tts_chunk_timeline(tmp_path: Path) -> None:
     chunks = load_local_tts_chunk_timeline(metadata_path)
     saved = json.loads(metadata_path.read_text(encoding="utf-8"))
 
-    assert saved["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert saved["kind"] == "voicebridge_local_tts_chunks"
+    assert saved["schema_version"] == current_schema_version(LOCAL_TTS_CHUNKS_JSON_KIND)
+    assert saved["kind"] == LOCAL_TTS_CHUNKS_JSON_KIND
     assert chunks == [
         {
             "id": "block-0001",

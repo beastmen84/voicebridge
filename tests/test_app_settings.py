@@ -7,7 +7,12 @@ from voicebridge.app_settings import (
     load_app_settings,
     settings_config_path,
 )
-from voicebridge.json_schemas import APP_JSON_SCHEMA_VERSION
+from voicebridge.json_schemas import (
+    MODELING_DATASETS_JSON_KIND,
+    SETTINGS_JSON_KIND,
+    VOICE_PROFILES_JSON_KIND,
+    current_schema_version,
+)
 
 
 def _config_dir(tmp_path: Path) -> Path:
@@ -30,8 +35,8 @@ def test_cleanup_app_config_migrates_legacy_preferred_voices(tmp_path, monkeypat
     actions = cleanup_app_config_on_startup()
 
     settings = load_app_settings()
-    assert settings["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert settings["kind"] == "voicebridge_settings"
+    assert settings["schema_version"] == current_schema_version(SETTINGS_JSON_KIND)
+    assert settings["kind"] == SETTINGS_JSON_KIND
     assert settings["preferred_voice_short_names"] == ["en-JennyNeural", "it-ElsaNeural"]
     assert settings["window"] == {"width": 1200}
     assert not (config_dir / "preferred_voices.json").exists()
@@ -89,10 +94,10 @@ def test_cleanup_app_config_adds_schema_metadata_to_active_configs(tmp_path, mon
 
     profiles_data = json.loads((config_dir / "voice_profiles.json").read_text(encoding="utf-8"))
     datasets_data = json.loads((config_dir / "modeling_datasets.json").read_text(encoding="utf-8"))
-    assert profiles_data["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert profiles_data["kind"] == "voicebridge_voice_profiles"
-    assert datasets_data["schema_version"] == APP_JSON_SCHEMA_VERSION
-    assert datasets_data["kind"] == "voicebridge_modeling_datasets"
+    assert profiles_data["schema_version"] == current_schema_version(VOICE_PROFILES_JSON_KIND)
+    assert profiles_data["kind"] == VOICE_PROFILES_JSON_KIND
+    assert datasets_data["schema_version"] == current_schema_version(MODELING_DATASETS_JSON_KIND)
+    assert datasets_data["kind"] == MODELING_DATASETS_JSON_KIND
 
 
 def test_cleanup_app_config_archives_unsupported_active_config_version(tmp_path, monkeypatch) -> None:

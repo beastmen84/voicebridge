@@ -173,6 +173,7 @@ class SttWorkflowMixin:
         self.stt_runtime_detail = runtime_info.get("detail", "STT runtime inspected.")
         self.update_stt_device_options()
         self.update_tts_local_device_options()
+        self.update_voice_modeling_device_options()
         self.stt_preflight_label.setText(summary)
         self.update_stt_model_status()
         self.update_stt_button_state()

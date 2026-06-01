@@ -64,10 +64,12 @@ from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
 from voicebridge.pages.stt import SttWorkflowMixin
 from voicebridge.pages.subtitles import SubtitlesWorkflowMixin
 from voicebridge.pages.tts import TtsWorkflowMixin
+from voicebridge.pages.voice_modeling import VoiceModelingWorkflowMixin
 from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
 from voicebridge.ui.styles import apply_app_style
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import FilePicker
+from voicebridge.voice_modeling import VoiceModelingExportInfo
 from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
     load_preferred_voice_short_names,
@@ -80,6 +82,7 @@ class VoiceBridgeQt(
     SubtitlesWorkflowMixin,
     SttWorkflowMixin,
     TtsWorkflowMixin,
+    VoiceModelingWorkflowMixin,
     ModelingDatasetsWorkflowMixin,
     VoiceProfilesWorkflowMixin,
     PageBuilderMixin,
@@ -90,6 +93,7 @@ class VoiceBridgeQt(
     nav_tts: QPushButton
     nav_profiles: QPushButton
     nav_modeling: QPushButton
+    nav_voice_modeling: QPushButton
     nav_stt: QPushButton
     nav_video: QPushButton
     nav_audio_cleanup: QPushButton
@@ -184,6 +188,20 @@ class VoiceBridgeQt(
     modeling_transcribe_clip_button: QPushButton
     modeling_clip_audio_output: Any
     modeling_clip_media_player: Any
+
+    voice_modeling_export_info: VoiceModelingExportInfo | None
+    voice_modeling_dataset_picker: FilePicker
+    voice_modeling_output_picker: FilePicker
+    voice_modeling_resume_picker: FilePicker
+    voice_modeling_dataset_info: QPlainTextEdit
+    voice_modeling_status: QLabel
+    voice_modeling_device_combo: QComboBox
+    voice_modeling_epochs_spin: QSpinBox
+    voice_modeling_batch_spin: QSpinBox
+    voice_modeling_validate_button: QPushButton
+    voice_modeling_clear_resume_button: QPushButton
+    voice_modeling_save_config_button: QPushButton
+    voice_modeling_open_output_button: QPushButton
 
     stt_media_picker: FilePicker
     stt_text_picker: FilePicker
@@ -489,14 +507,16 @@ class VoiceBridgeQt(
         self.nav_tts = self.nav_button("Text to Speech", lambda: self.show_page(1))
         self.nav_profiles = self.nav_button("Voice Profiles", lambda: self.show_page(2))
         self.nav_modeling = self.nav_button("Modeling Datasets", lambda: self.show_page(3))
-        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(4))
-        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(5))
-        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(6))
-        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(7))
+        self.nav_voice_modeling = self.nav_button("Voice Modeling", lambda: self.show_page(4))
+        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(5))
+        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(6))
+        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(7))
+        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(8))
         side_layout.addWidget(self.nav_home)
         side_layout.addWidget(self.nav_tts)
         side_layout.addWidget(self.nav_profiles)
         side_layout.addWidget(self.nav_modeling)
+        side_layout.addWidget(self.nav_voice_modeling)
         side_layout.addWidget(self.nav_stt)
         side_layout.addWidget(self.nav_video)
         side_layout.addWidget(self.nav_audio_cleanup)
@@ -532,6 +552,7 @@ class VoiceBridgeQt(
         self.stack.addWidget(self.build_tts_page())
         self.stack.addWidget(self.build_voice_profiles_page())
         self.stack.addWidget(self.build_modeling_datasets_page())
+        self.stack.addWidget(self.build_voice_modeling_page())
         self.stack.addWidget(self.build_stt_page())
         self.stack.addWidget(self.build_video_subtitle_page())
         self.stack.addWidget(self.build_audio_cleanup_page())

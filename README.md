@@ -141,6 +141,20 @@ da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 `dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente e non modifica i
 file di lavoro.
 
+### Voice Modeling
+
+`Voice Modeling` prepara il job di training XTTS-v2, ma non avvia ancora il training.
+
+1. Esportare prima un dataset dalla sezione `Modeling Datasets`.
+2. Aprire `Voice Modeling` e selezionare la cartella export in `modeling_exports`.
+3. Usare `Validate` per controllare `metadata.csv`, `dataset.json` e i WAV collegati.
+4. Scegliere cartella output in `voice_models`, device `Auto`, `CPU` o `CUDA`, epoch e batch size.
+5. Se si sta riprendendo un training precedente, indicare un checkpoint `.pth`, `.pt` o `.ckpt`.
+6. Usare `Save training config` per creare `job_config.json` nella cartella output.
+
+Il file `job_config.json` e' il contratto tra UI e futuro training worker: contiene dataset, output, resume checkpoint,
+device e parametri base. La cartella `voice_models` contiene output utente e non viene tracciata da git.
+
 ### Transcription
 
 1. Aprire `Transcription`.

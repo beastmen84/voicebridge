@@ -1692,7 +1692,7 @@ class TtsWorkflowMixin:
         except ValueError as exc:
             self.show_error("Audio Cleanup", str(exc))
             return
-        self.show_page(5)
+        self.show_page(7)
 
     def build_tts_page(self):
         page, layout = self.page_container()

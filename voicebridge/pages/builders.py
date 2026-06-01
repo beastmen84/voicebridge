@@ -37,17 +37,18 @@ class PageBuilderMixin(HomePageMixin):
             (self.nav_tts, index == 1),
             (self.nav_profiles, index == 2),
             (self.nav_modeling, index == 3),
-            (self.nav_stt, index == 4),
-            (self.nav_video, index == 5),
-            (self.nav_audio_cleanup, index == 6),
-            (self.nav_cleanup, index == 7),
+            (self.nav_voice_modeling, index == 4),
+            (self.nav_stt, index == 5),
+            (self.nav_video, index == 6),
+            (self.nav_audio_cleanup, index == 7),
+            (self.nav_cleanup, index == 8),
         ):
             button.setProperty("active", active)
             button.style().unpolish(button)
             button.style().polish(button)
-        if index == 4:
-            self.refresh_stt_preflight_async()
         if index == 5:
+            self.refresh_stt_preflight_async()
+        if index == 6:
             self.sync_video_subtitle_inputs_from_stt()
 
     def update_navigation_state(self):
@@ -65,6 +66,7 @@ class PageBuilderMixin(HomePageMixin):
             self.nav_tts,
             self.nav_profiles,
             self.nav_modeling,
+            self.nav_voice_modeling,
             self.nav_stt,
             self.nav_video,
             self.nav_audio_cleanup,

@@ -10,6 +10,7 @@ dist/
 models/
 voice_profiles/
 modeling_exports/
+voice_models/
 .stt-bin/
 ffmpeg.exe
 ffprobe.exe

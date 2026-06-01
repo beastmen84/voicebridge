@@ -378,7 +378,7 @@ class ModelingDatasetsWorkflowMixin:
         self.stt_media_picker.set_text(clip["audio_path"])
         output_path = str(Path(clip["audio_path"]).with_suffix(".md"))
         self.stt_output_picker.set_text(output_path)
-        self.show_page(4)
+        self.show_page(5)
 
     def update_modeling_dataset_buttons(self) -> None:
         if not hasattr(self, "modeling_record_text_button"):

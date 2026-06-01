@@ -71,6 +71,13 @@ class HomePageMixin:
             "Dataset preparation",
             "BadgeGreen",
         )
+        voice_modeling_card = self.home_card(
+            "TRAIN",
+            "Voice Modeling",
+            "Validate an exported dataset and prepare training configuration.",
+            "Training setup",
+            "BadgeGreen",
+        )
         stt_card = self.home_card(
             "STT",
             "Transcription",
@@ -99,7 +106,16 @@ class HomePageMixin:
             "Frame repair/removal",
             "BadgeGreen",
         )
-        for card in (tts_card, profiles_card, modeling_card, stt_card, video_card, audio_cleanup_card, cleanup_card):
+        for card in (
+            tts_card,
+            profiles_card,
+            modeling_card,
+            voice_modeling_card,
+            stt_card,
+            video_card,
+            audio_cleanup_card,
+            cleanup_card,
+        ):
             modules_layout.addWidget(card)
 
         note = QLabel("TTS requires internet. Local voice profiles are prepared separately.")

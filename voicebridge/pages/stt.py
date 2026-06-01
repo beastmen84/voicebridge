@@ -715,10 +715,8 @@ class SttWorkflowMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "STT",
             "Transcription",
             "Creates transcripts or SRT subtitles locally with the bundled offline STT package.",
-            "BadgeGreen",
         )
 
         grid = QGridLayout()

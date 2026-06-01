@@ -64,10 +64,8 @@ class LocalVoicesWorkflowMixin:
         layout.setSpacing(16)
         self.page_header(
             layout,
-            "VOICES",
             "Local Voices",
             "Manage local voice profiles, collect modeling datasets and configure XTTS-v2 training.",
-            "BadgeGreen",
         )
 
         self.local_voice_tabs = QTabWidget()

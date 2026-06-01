@@ -601,10 +601,8 @@ class SubtitlesWorkflowMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "SRT",
             "Subtitles",
             "Embed an SRT track without re-encoding or burn subtitles directly into the video frames.",
-            "BadgeBlue",
         )
 
         grid = QGridLayout()

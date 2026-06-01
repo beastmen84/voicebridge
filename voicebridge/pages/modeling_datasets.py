@@ -411,10 +411,8 @@ class ModelingDatasetsWorkflowMixin:
         if include_header:
             self.page_header(
                 layout,
-                "MODELING",
                 "Modeling Datasets",
                 "Collect authorized audio clips and exact text pairs before future voice model training.",
-                "BadgeGreen",
             )
 
         grid = QGridLayout()

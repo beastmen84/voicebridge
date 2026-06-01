@@ -314,10 +314,8 @@ class VoiceProfilesWorkflowMixin:
         if include_header:
             self.page_header(
                 layout,
-                "PROFILES",
                 "Voice Profiles",
                 "Manage local reference voices for future Local TTS generation.",
-                "BadgeGreen",
             )
 
         grid = QGridLayout()

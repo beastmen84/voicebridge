@@ -1119,10 +1119,8 @@ class AudioCleanupWorkflowMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "AUDIO",
             "Audio Cleanup",
             "Remove, silence or fade short AI TTS artifacts and hallucinated fragments, not full audio edits.",
-            "BadgeGreen",
         )
 
         grid = QGridLayout()

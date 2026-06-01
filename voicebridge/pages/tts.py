@@ -1738,10 +1738,8 @@ class TtsWorkflowMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "TTS",
             "Text to Speech",
             "Generate MP3 with online Edge voices or prepared local voice profiles.",
-            "BadgeBlue",
         )
 
         main_grid = QGridLayout()

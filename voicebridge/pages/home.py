@@ -40,10 +40,10 @@ class HomePageMixin:
         page, layout = self.page_container()
         self.page_header(
             layout,
-            "DASHBOARD",
             "Convert, transcribe and subtitle",
             "Online text-to-speech, offline speech-to-text and practical video subtitle tools in one workspace.",
-            "BadgeBlue",
+            badge="DASHBOARD",
+            badge_name="BadgeBlue",
         )
 
         home_grid = QGridLayout()

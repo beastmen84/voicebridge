@@ -86,17 +86,18 @@ class PageBuilderMixin(HomePageMixin):
         return scroll, layout
 
     @staticmethod
-    def page_header(layout, badge, title, subtitle, badge_name):
+    def page_header(layout, title, subtitle, badge="", badge_name="BadgeBlue"):
         header = QVBoxLayout()
         header.setSpacing(4)
-        badge_label = QLabel(badge)
-        badge_label.setObjectName(badge_name)
+        if badge:
+            badge_label = QLabel(badge)
+            badge_label.setObjectName(badge_name)
+            header.addWidget(badge_label)
         title_label = QLabel(title)
         title_label.setObjectName("PageTitle")
         subtitle_label = QLabel(subtitle)
         subtitle_label.setObjectName("PageSubtitle")
         subtitle_label.setWordWrap(True)
-        header.addWidget(badge_label)
         header.addWidget(title_label)
         header.addWidget(subtitle_label)
         layout.addLayout(header)

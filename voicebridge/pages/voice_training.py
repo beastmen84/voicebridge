@@ -224,10 +224,8 @@ class VoiceTrainingWorkflowMixin:
         if include_header:
             self.page_header(
                 layout,
-                "TRAINING",
                 "Training",
                 "Run configured local voice training jobs.",
-                "BadgeGreen",
             )
 
         jobs_card = Card("Training jobs")

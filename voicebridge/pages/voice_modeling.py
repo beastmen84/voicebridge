@@ -406,10 +406,8 @@ class VoiceModelingWorkflowMixin:
         if include_header:
             self.page_header(
                 layout,
-                "TRAINING",
                 "Voice Modeling",
                 "Validate an exported dataset and prepare a controlled XTTS-v2 training job configuration.",
-                "BadgeGreen",
             )
 
         grid = QGridLayout()

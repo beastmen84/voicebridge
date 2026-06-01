@@ -97,6 +97,8 @@ Le voci `Multilingual` vengono indicate come `auto language`; per testi italiani
 ### Local Voices, Voice Profiles e Local TTS
 
 Le funzioni locali per la voce sono raccolte in `Local Voices`, con tab `Profiles`, `Datasets` e `Modeling`.
+Il tab `Datasets` si abilita dopo aver creato almeno un profilo `Modeling dataset`; il tab `Modeling` si abilita
+quando esiste almeno un export dataset valido in `modeling_exports`.
 
 1. Aprire `Local Voices > Profiles`.
 2. Creare un profilo `Reference clone` con un file audio autorizzato e consenso confermato.

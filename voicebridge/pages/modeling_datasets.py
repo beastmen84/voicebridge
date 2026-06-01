@@ -59,6 +59,7 @@ class ModelingDatasetsWorkflowMixin:
             save_modeling_datasets(self.modeling_datasets)
         if hasattr(self, "modeling_datasets_list"):
             self.refresh_modeling_datasets_page()
+        self.update_local_voice_tabs()
 
     def selected_modeling_dataset(self) -> ModelingDataset | None:
         dataset_id = getattr(self, "selected_modeling_dataset_id", "")
@@ -368,6 +369,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_status.setText(
             f"Exported {result['exported_clips']} ready clip(s) to {export_dir}."
         )
+        self.update_local_voice_tabs()
         self.show_info("Modeling Datasets", f"Dataset exported:\n{export_dir}")
         open_path(export_dir)
 

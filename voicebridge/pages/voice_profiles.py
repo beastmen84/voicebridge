@@ -250,6 +250,7 @@ class VoiceProfilesWorkflowMixin:
         self.refresh_voice_profiles_list()
         self.refresh_local_voice_profile_combo(profile["id"])
         self.profile_status_label.setText(f"Saved: {profile['name']} | {voice_profile_status(profile)}")
+        self.update_local_voice_tabs()
 
     def delete_selected_voice_profile(self) -> None:
         if self.voice_profile_is_recording():
@@ -264,6 +265,7 @@ class VoiceProfilesWorkflowMixin:
         self.new_voice_profile()
         self.refresh_voice_profiles_list()
         self.refresh_local_voice_profile_combo()
+        self.update_local_voice_tabs()
         if failed_paths:
             self.profile_status_label.setText(
                 f"Deleted profile. Could not delete {len(failed_paths)} linked audio file(s)."

@@ -48,6 +48,8 @@ class PageBuilderMixin(HomePageMixin):
             self.refresh_stt_preflight_async()
         if index == 4:
             self.sync_video_subtitle_inputs_from_stt()
+        if index == 2:
+            self.update_local_voice_tabs()
 
     def update_navigation_state(self):
         if not hasattr(self, "nav_home"):

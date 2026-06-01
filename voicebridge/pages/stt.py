@@ -381,6 +381,8 @@ class SttWorkflowMixin:
             mode,
             "--model",
             model,
+            "--model-dir",
+            str(stt_model_dir()),
             "--language",
             language,
             "--device",
@@ -616,6 +618,8 @@ class SttWorkflowMixin:
             "download_align",
             "--language",
             language_code,
+            "--model-dir",
+            str(stt_model_dir()),
             "--device",
             "cpu",
         ]

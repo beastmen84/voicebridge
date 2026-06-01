@@ -54,6 +54,52 @@ def test_stt_alignment_model_ready_checks_language_file(monkeypatch, tmp_path: P
     assert app_paths.stt_alignment_model_ready("it")
 
 
+def test_stt_model_dir_uses_source_models_when_dist_has_no_models(monkeypatch, tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "dist" / "VoiceBridge"
+    bundle_dir.mkdir(parents=True)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: bundle_dir)
+
+    source_model_dir = tmp_path / "models" / "whisperx"
+    for spec in app_paths.stt_whisper_model_required_file_specs():
+        write_sized_file(source_model_dir / spec.filename, spec.min_bytes)
+
+    assert app_paths.stt_model_dir() == source_model_dir.resolve()
+    assert app_paths.stt_whisper_model_ready()
+
+
+def test_stt_model_dir_downloads_to_source_models_for_project_dist(monkeypatch, tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "dist" / "VoiceBridge"
+    bundle_dir.mkdir(parents=True)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: bundle_dir)
+
+    assert app_paths.stt_model_dir() == (tmp_path / "models" / "whisperx").resolve()
+
+
+def test_model_dir_fallback_also_works_for_worker_scripts_in_project_dist(monkeypatch, tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "dist" / "VoiceBridge"
+    bundle_dir.mkdir(parents=True)
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: bundle_dir)
+
+    assert app_paths.stt_model_dir() == (tmp_path / "models" / "whisperx").resolve()
+
+
+def test_local_tts_model_dir_uses_source_models_for_project_dist(monkeypatch, tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "dist" / "VoiceBridge"
+    bundle_dir.mkdir(parents=True)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_paths, "external_base_dir", lambda: bundle_dir)
+
+    source_model_dir = tmp_path / "models" / "coqui"
+    cache_dir = source_model_dir / "tts" / "tts_models--multilingual--multi-dataset--xtts_v2"
+    for spec in app_paths.local_tts_model_required_file_specs():
+        write_sized_file(cache_dir / spec.filename, spec.min_bytes)
+
+    assert app_paths.local_tts_model_dir() == source_model_dir.resolve()
+    assert app_paths.local_tts_model_ready()
+
+
 def test_local_tts_dvae_ready_checks_xtts_cache_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(app_paths, "external_base_dir", lambda: tmp_path)
 

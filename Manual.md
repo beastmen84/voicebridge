@@ -45,8 +45,10 @@ Il pacchetto ML offline puo' includere:
 - Silero VAD
 - ffmpeg tramite `imageio-ffmpeg`
 
-La cartella `models` puo' essere distribuita gia' pronta oppure lasciata assente. Se Whisper `large-v3`
-non e' presente, la pagina `Transcription` mostra `Download Whisper large-v3` e scarica il modello STT,
+Il build standard non copia `models` dentro `dist\VoiceBridge`, cosi' sul PC di sviluppo non si duplicano molti GB.
+Quando viene eseguita dal dist creato dentro al progetto, l'app cerca prima eventuali modelli in
+`dist\VoiceBridge\models`, poi riusa la cartella condivisa `models` nella root del progetto. Se Whisper `large-v3`
+non e' presente in nessuna cache valida, la pagina `Transcription` mostra `Download Whisper large-v3` e scarica il modello STT,
 Silero VAD e i dati NLTK necessari. I modelli di allineamento per SRT restano scaricabili su richiesta
 quando si seleziona o si rileva una lingua non disponibile offline.
 

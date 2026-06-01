@@ -22,6 +22,66 @@ def external_base_dir():
     return source_base_dir()
 
 
+def bundled_models_root():
+    return external_base_dir() / "models"
+
+
+def source_tree_models_root():
+    base_dir = external_base_dir()
+    if getattr(sys, "frozen", False):
+        if base_dir.parent.name.lower() == "dist":
+            return base_dir.parent.parent / "models"
+        return None
+    if base_dir.parent.name.lower() == "dist":
+        return base_dir.parent.parent / "models"
+    return base_dir / "models"
+
+
+def unique_paths(paths):
+    unique = []
+    seen = set()
+    for path in paths:
+        if path is None:
+            continue
+        resolved = Path(path).resolve()
+        key = str(resolved).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(resolved)
+    return unique
+
+
+def model_root_candidates():
+    return unique_paths((bundled_models_root(), source_tree_models_root()))
+
+
+def models_download_root():
+    source_models = source_tree_models_root()
+    if source_models is not None and source_models.parent.exists():
+        return source_models.resolve()
+    return bundled_models_root().resolve()
+
+
+def model_subdir(root, *parts):
+    path = Path(root)
+    for part in parts:
+        path /= part
+    return path
+
+
+def resolve_models_root(*subdir_parts, required_specs=()):
+    candidates = model_root_candidates()
+    if required_specs:
+        for root in candidates:
+            if required_files_ready(model_subdir(root, *subdir_parts), required_specs):
+                return root
+    for root in candidates:
+        if model_subdir(root, *subdir_parts).exists():
+            return root
+    return models_download_root()
+
+
 def ml_python_path():
     base_dir = external_base_dir()
     bundled_ml_python = base_dir / "python-ml" / "python.exe"
@@ -46,7 +106,7 @@ def local_tts_worker_path():
 
 
 def stt_models_root():
-    return external_base_dir() / "models"
+    return resolve_models_root("whisperx", required_specs=stt_whisper_model_required_file_specs())
 
 
 def stt_model_dir():
@@ -84,7 +144,12 @@ def stt_alignment_model_ready(language_code):
 
 
 def local_tts_model_dir():
-    return stt_models_root() / "coqui"
+    return resolve_models_root(
+        "coqui",
+        "tts",
+        "tts_models--multilingual--multi-dataset--xtts_v2",
+        required_specs=local_tts_model_required_file_specs(),
+    ) / "coqui"
 
 
 def local_tts_model_cache_dir():

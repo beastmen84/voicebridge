@@ -32,6 +32,13 @@ dist\VoiceBridge\VoiceBridge.exe
 
 Distribuire sempre tutta la cartella `VoiceBridge`, non solo l'eseguibile.
 
+Il bundle include runtime e strumenti necessari, ma il build standard non copia `models` dentro `dist\VoiceBridge` per evitare duplicazioni da molti GB.
+I modelli vengono risolti in questo ordine:
+
+1. `dist\VoiceBridge\models`, se esiste e contiene modelli validi.
+2. `models` nella root del progetto sorgente, quando si esegue il dist creato dentro al progetto.
+3. Download dall'app, se nessuna cache valida viene trovata.
+
 Il bundle puo' includere:
 
 - runtime Python ML condiviso in `python-ml`
@@ -41,7 +48,7 @@ Il bundle puo' includere:
 - Coqui XTTS-v2 e asset training opzionali
 - ffmpeg tramite `imageio-ffmpeg`
 
-La cartella `models` puo' essere distribuita gia' pronta oppure lasciata assente. In quel caso l'app mostra i pulsanti di download per i prerequisiti mancanti, come Whisper `large-v3`, XTTS-v2 e asset training XTTS.
+La cartella `models` puo' essere distribuita manualmente oppure lasciata assente. In quel caso l'app mostra i pulsanti di download per i prerequisiti mancanti, come Whisper `large-v3`, XTTS-v2 e asset training XTTS.
 
 ## Requisiti utente
 
@@ -114,13 +121,13 @@ Sincronizzare solo runtime ML:
 .\sync_stt_bundle.ps1 -RuntimeOnly
 ```
 
-Sincronizzare solo modelli:
+Sincronizzare manualmente anche i modelli nel dist, solo se si vuole creare un bundle completamente offline:
 
 ```powershell
 .\sync_stt_bundle.ps1 -ModelsOnly
 ```
 
-Build completo:
+Build completo standard, senza copia dei modelli:
 
 ```powershell
 .\build_exe.ps1

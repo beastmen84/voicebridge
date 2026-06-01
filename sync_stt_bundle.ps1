@@ -1,9 +1,14 @@
 param(
     [switch]$RuntimeOnly,
-    [switch]$ModelsOnly
+    [switch]$ModelsOnly,
+    [switch]$IncludeModels
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($RuntimeOnly -and ($ModelsOnly -or $IncludeModels)) {
+    throw "Choose either -RuntimeOnly or a model-copy option, not both."
+}
 
 function Invoke-RobocopyChecked {
     param(
@@ -65,7 +70,7 @@ if (-not $ModelsOnly) {
     }
 }
 
-if (-not $RuntimeOnly) {
+if ($ModelsOnly -or $IncludeModels) {
     $modelsDir = Join-Path $PSScriptRoot "models"
     if (!(Test-Path $modelsDir)) {
         throw "Models folder not found. Run prepare_stt_models.py first: $modelsDir"
@@ -73,4 +78,16 @@ if (-not $RuntimeOnly) {
     Invoke-RobocopyChecked -Source $modelsDir -Destination (Join-Path $bundleDir "models")
 }
 
-Write-Host "STT bundle synchronized: $bundleDir"
+if ($RuntimeOnly -or (-not $ModelsOnly -and -not $IncludeModels)) {
+    $bundledModelsDir = Join-Path $bundleDir "models"
+    if (Test-Path $bundledModelsDir) {
+        $resolvedBundle = (Resolve-Path $bundleDir).Path
+        $resolvedModels = (Resolve-Path $bundledModelsDir).Path
+        if (-not $resolvedModels.StartsWith($resolvedBundle, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to delete models outside bundle folder: $resolvedModels"
+        }
+        Remove-Item -LiteralPath $resolvedModels -Recurse -Force
+    }
+}
+
+Write-Host "Offline ML bundle synchronized: $bundleDir"

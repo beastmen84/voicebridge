@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $bundleDir = Join-Path $PSScriptRoot "dist\VoiceBridge"
 $preserveRoot = Join-Path $PSScriptRoot "dist\.preserve-stt-$PID"
-$preserveNames = @("python-ml", "models", ".stt-bin")
+$preserveNames = @("python-ml", ".stt-bin")
 
 if ($Clean) {
     $buildDir = Join-Path $PSScriptRoot "build"
@@ -66,6 +66,16 @@ finally {
 
 if (!(Test-Path $bundleDir)) {
     throw "Expected bundle folder not found: $bundleDir"
+}
+
+$bundledModelsDir = Join-Path $bundleDir "models"
+if (Test-Path $bundledModelsDir) {
+    $resolvedBundle = (Resolve-Path $bundleDir).Path
+    $resolvedModels = (Resolve-Path $bundledModelsDir).Path
+    if (-not $resolvedModels.StartsWith($resolvedBundle, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to delete models outside bundle folder: $resolvedModels"
+    }
+    Remove-Item -LiteralPath $resolvedModels -Recurse -Force
 }
 
 Copy-Item -Path (Join-Path $PSScriptRoot "stt_worker.py") -Destination $bundleDir -Force

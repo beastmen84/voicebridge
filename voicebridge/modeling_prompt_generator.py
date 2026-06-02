@@ -5,7 +5,7 @@ from typing import TypedDict
 from voicebridge.languages import normalize_language_code
 from voicebridge.voice_profiles import VOICE_PROFILE_LANGUAGES
 
-MODELING_PROMPT_CORPUS_VERSION = "1.2"
+MODELING_PROMPT_CORPUS_VERSION = "1.3"
 MODELING_PROMPT_SOURCE_GENERATED = f"generated_prompt:{MODELING_PROMPT_CORPUS_VERSION}"
 MODELING_PROMPT_SOURCE_PROVIDED = "provided_text"
 MODELING_PROMPT_DEFAULT_MAX_CHARS = 450
@@ -1338,6 +1338,656 @@ MODELING_PROMPT_CORPUS_EXTENSIONS: dict[str, ModelingPromptCorpus] = {
 }
 
 
+MODELING_PROMPT_CORPUS_EXPANSION_1_3: dict[str, ModelingPromptCorpus] = {
+    "it": {
+        "short": (
+            "Sposto il bicchiere a sinistra e tengo ferma la pagina.",
+            "La stanza resta silenziosa mentre preparo la prossima ripresa.",
+            "Leggo una riga, faccio una pausa e ascolto il silenzio.",
+            "La voce parte morbida e finisce con la stessa cura.",
+        ),
+        "medium": (
+            "Prima di ogni registrazione controllo il testo, la distanza e il livello.",
+            "Se una parola è insolita, rallento appena per pronunciarla bene.",
+            "La frase passa da un'azione semplice a una descrizione più lunga.",
+            "Mantengo il volume uniforme mentre cambio leggermente espressione.",
+        ),
+        "question": (
+            "Dobbiamo registrare questa riga di nuovo con un ritmo più lento?",
+            "Il microfono è rimasto nella stessa posizione durante la frase?",
+            "Si sente chiaramente la consonante finale?",
+            "La stanza è abbastanza silenziosa per un'altra ripresa?",
+        ),
+        "numbers": (
+            "Segno 6 clip brevi, 15 minuti di prova e 28 note.",
+            "Il microfono resta a 25 centimetri, non a 10.",
+            "Alle 7:45 leggo 4 esempi e salvo 1 file.",
+            "La terza ripresa dura 36 secondi e contiene 5 pause pulite.",
+        ),
+        "names": (
+            "Nora chiede a Marco di leggere mentre Elena controlla la lista.",
+            "Luca, Sofia e Amir scelgono un angolo tranquillo per registrare.",
+            "Bianca passa la cartella a Paolo e aspetta vicino alla finestra.",
+            "Clara saluta Matteo, regola il supporto e ricomincia.",
+        ),
+        "punctuation": (
+            "Fermati qui; respira una volta, poi continua con l'idea successiva.",
+            "Chiaro, stabile e semplice: questo è l'obiettivo.",
+            "Se la sedia si muove, aspetta! Ricomincia dopo il rumore.",
+            "Ricorda: il silenzio prima e dopo la riga aiuta il montaggio.",
+        ),
+    },
+    "en": {
+        "short": (
+            "I move the glass left and keep the page still.",
+            "The room stays quiet while I prepare the next take.",
+            "I read one line, pause, and listen to the silence.",
+            "The voice starts softly and ends with the same care.",
+        ),
+        "medium": (
+            "Before each recording, I check the text, the distance, and the level.",
+            "If a word is unusual, I slow down just enough to pronounce it clearly.",
+            "The sentence moves from a simple action to a longer description.",
+            "I keep the volume even while changing expression slightly.",
+        ),
+        "question": (
+            "Should we record this line again with a slower pace?",
+            "Did the microphone stay in the same position during the sentence?",
+            "Can you hear the final consonant clearly?",
+            "Is the room quiet enough for another take?",
+        ),
+        "numbers": (
+            "I mark 6 short clips, 15 minutes of practice, and 28 notes.",
+            "The microphone stays 25 centimeters away, not 10.",
+            "At 7:45 I read 4 examples and save 1 file.",
+            "The third take lasts 36 seconds and has 5 clean pauses.",
+        ),
+        "names": (
+            "Nora asks Marco to read while Elena checks the list.",
+            "Luca, Sofia, and Amir choose a quiet corner for recording.",
+            "Bianca gives Paolo the folder and waits near the window.",
+            "Clara greets Matteo, adjusts the stand, and starts again.",
+        ),
+        "punctuation": (
+            "Stop here; breathe once, then continue with the next idea.",
+            "Clear, steady, and simple: that is the target.",
+            "If the chair moves, wait! Start again after the noise.",
+            "Remember: silence before and after the line helps editing.",
+        ),
+    },
+    "es": {
+        "short": (
+            "Muevo el vaso a la izquierda y mantengo quieta la página.",
+            "La sala queda en silencio mientras preparo la siguiente toma.",
+            "Leo una línea, hago una pausa y escucho el silencio.",
+            "La voz empieza suave y termina con el mismo cuidado.",
+        ),
+        "medium": (
+            "Antes de cada grabación reviso el texto, la distancia y el nivel.",
+            "Si una palabra es poco común, bajo el ritmo para pronunciarla bien.",
+            "La frase pasa de una acción simple a una descripción más larga.",
+            "Mantengo el volumen parejo mientras cambio un poco la expresión.",
+        ),
+        "question": (
+            "¿Debemos grabar esta línea otra vez con un ritmo más lento?",
+            "¿El micrófono quedó en la misma posición durante la frase?",
+            "¿Se oye con claridad la consonante final?",
+            "¿La sala está bastante silenciosa para otra toma?",
+        ),
+        "numbers": (
+            "Marco 6 clips cortos, 15 minutos de práctica y 28 notas.",
+            "El micrófono queda a 25 centímetros, no a 10.",
+            "A las 7:45 leo 4 ejemplos y guardo 1 archivo.",
+            "La tercera toma dura 36 segundos e incluye 5 pausas limpias.",
+        ),
+        "names": (
+            "Nora pide a Marco que lea mientras Elena revisa la lista.",
+            "Luca, Sofía y Amir eligen un rincón tranquilo para grabar.",
+            "Bianca entrega la carpeta a Paolo y espera junto a la ventana.",
+            "Clara saluda a Mateo, ajusta el soporte y empieza de nuevo.",
+        ),
+        "punctuation": (
+            "Detente aquí; respira una vez y continúa con la siguiente idea.",
+            "Claro, estable y sencillo: ese es el objetivo.",
+            "¡Si la silla se mueve, espera! Empieza de nuevo después del ruido.",
+            "Recuerda: el silencio antes y después de la línea ayuda a editar.",
+        ),
+    },
+    "fr": {
+        "short": (
+            "Je déplace le verre à gauche et je garde la page immobile.",
+            "La pièce reste silencieuse pendant que je prépare la prise suivante.",
+            "Je lis une ligne, je fais une pause et j'écoute le silence.",
+            "La voix commence doucement et finit avec le même soin.",
+        ),
+        "medium": (
+            "Avant chaque enregistrement, je vérifie le texte, la distance et le niveau.",
+            "Si un mot est inhabituel, je ralentis juste assez pour bien le prononcer.",
+            "La phrase passe d'une action simple à une description plus longue.",
+            "Je garde un volume régulier tout en changeant légèrement l'expression.",
+        ),
+        "question": (
+            "Faut-il enregistrer cette ligne encore une fois avec un rythme plus lent?",
+            "Le micro est-il resté dans la même position pendant la phrase?",
+            "Entend-on clairement la consonne finale?",
+            "La pièce est-elle assez silencieuse pour une autre prise?",
+        ),
+        "numbers": (
+            "Je note 6 clips courts, 15 minutes d'exercice et 28 remarques.",
+            "Le micro reste à 25 centimètres, pas à 10.",
+            "À 7:45 je lis 4 exemples et j'enregistre 1 fichier.",
+            "La troisième prise dure 36 secondes et contient 5 pauses propres.",
+        ),
+        "names": (
+            "Nora demande à Marco de lire pendant qu'Elena vérifie la liste.",
+            "Luca, Sofia et Amir choisissent un coin calme pour enregistrer.",
+            "Bianca donne le dossier à Paolo et attend près de la fenêtre.",
+            "Clara salue Mateo, règle le support et recommence.",
+        ),
+        "punctuation": (
+            "Arrête-toi ici; respire une fois, puis continue avec l'idée suivante.",
+            "Clair, stable et simple: voilà l'objectif.",
+            "Si la chaise bouge, attends! Recommence après le bruit.",
+            "Rappel: le silence avant et après la ligne aide le montage.",
+        ),
+    },
+    "de": {
+        "short": (
+            "Ich stelle das Glas nach links und halte die Seite ruhig.",
+            "Der Raum bleibt still, während ich die nächste Aufnahme vorbereite.",
+            "Ich lese eine Zeile, pausiere und höre auf die Stille.",
+            "Die Stimme beginnt weich und endet mit derselben Sorgfalt.",
+        ),
+        "medium": (
+            "Vor jeder Aufnahme prüfe ich den Text, den Abstand und den Pegel.",
+            "Wenn ein Wort ungewöhnlich ist, werde ich etwas langsamer und spreche es klar aus.",
+            "Der Satz führt von einer einfachen Handlung zu einer längeren Beschreibung.",
+            "Ich halte die Lautstärke gleichmäßig und ändere den Ausdruck nur leicht.",
+        ),
+        "question": (
+            "Sollen wir diese Zeile noch einmal in langsamerem Tempo aufnehmen?",
+            "Blieb das Mikrofon während des Satzes an derselben Stelle?",
+            "Hört man den letzten Konsonanten deutlich?",
+            "Ist der Raum still genug für eine weitere Aufnahme?",
+        ),
+        "numbers": (
+            "Ich markiere 6 kurze Clips, 15 Minuten Übung und 28 Notizen.",
+            "Das Mikrofon bleibt 25 Zentimeter entfernt, nicht 10.",
+            "Um 7:45 lese ich 4 Beispiele und speichere 1 Datei.",
+            "Die dritte Aufnahme dauert 36 Sekunden und hat 5 saubere Pausen.",
+        ),
+        "names": (
+            "Nora bittet Marco zu lesen, während Elena die Liste prüft.",
+            "Luca, Sofia und Amir wählen eine ruhige Ecke für die Aufnahme.",
+            "Bianca gibt Paolo die Mappe und wartet am Fenster.",
+            "Clara begrüßt Matteo, richtet den Ständer aus und beginnt erneut.",
+        ),
+        "punctuation": (
+            "Halte hier an; atme einmal und fahre dann mit der nächsten Idee fort.",
+            "Klar, stabil und einfach: Das ist das Ziel.",
+            "Wenn der Stuhl sich bewegt, warte! Beginne nach dem Geräusch erneut.",
+            "Denke daran: Stille vor und nach der Zeile hilft beim Schnitt.",
+        ),
+    },
+    "pt": {
+        "short": (
+            "Movo o copo para a esquerda e mantenho a página parada.",
+            "A sala fica silenciosa enquanto preparo a próxima tomada.",
+            "Leio uma linha, faço uma pausa e escuto o silêncio.",
+            "A voz começa suave e termina com o mesmo cuidado.",
+        ),
+        "medium": (
+            "Antes de cada gravação, confiro o texto, a distância e o nível.",
+            "Se uma palavra é incomum, reduzo um pouco o ritmo para pronunciá-la bem.",
+            "A frase passa de uma ação simples para uma descrição mais longa.",
+            "Mantenho o volume uniforme enquanto mudo levemente a expressão.",
+        ),
+        "question": (
+            "Devemos gravar esta linha de novo com um ritmo mais lento?",
+            "O microfone ficou na mesma posição durante a frase?",
+            "Dá para ouvir claramente a consoante final?",
+            "A sala está silenciosa o suficiente para outra tomada?",
+        ),
+        "numbers": (
+            "Marco 6 clipes curtos, 15 minutos de prática e 28 notas.",
+            "O microfone fica a 25 centímetros, não a 10.",
+            "Às 7:45 leio 4 exemplos e salvo 1 arquivo.",
+            "A terceira tomada dura 36 segundos e tem 5 pausas limpas.",
+        ),
+        "names": (
+            "Nora pede a Marco que leia enquanto Elena confere a lista.",
+            "Luca, Sofia e Amir escolhem um canto calmo para gravar.",
+            "Bianca entrega a pasta a Paolo e espera perto da janela.",
+            "Clara cumprimenta Mateo, ajusta o suporte e começa de novo.",
+        ),
+        "punctuation": (
+            "Pare aqui; respire uma vez e continue com a próxima ideia.",
+            "Claro, estável e simples: esse é o objetivo.",
+            "Se a cadeira se mexer, espere! Comece de novo depois do ruído.",
+            "Lembrete: silêncio antes e depois da linha ajuda na edição.",
+        ),
+    },
+    "pl": {
+        "short": (
+            "Przesuwam szklankę w lewo i trzymam kartkę nieruchomo.",
+            "Pokój zostaje cichy, gdy przygotowuję następne ujęcie.",
+            "Czytam jedną linię, robię pauzę i słucham ciszy.",
+            "Głos zaczyna się miękko i kończy z taką samą starannością.",
+        ),
+        "medium": (
+            "Przed każdym nagraniem sprawdzam tekst, odległość i poziom.",
+            "Jeśli słowo jest nietypowe, zwalniam tylko trochę, aby wymówić je wyraźnie.",
+            "Zdanie przechodzi od prostej czynności do dłuższego opisu.",
+            "Utrzymuję równą głośność, lekko zmieniając ekspresję.",
+        ),
+        "question": (
+            "Czy mamy nagrać tę linię ponownie w wolniejszym tempie?",
+            "Czy mikrofon pozostał w tej samej pozycji podczas zdania?",
+            "Czy końcową spółgłoskę słychać wyraźnie?",
+            "Czy pokój jest dość cichy na kolejne ujęcie?",
+        ),
+        "numbers": (
+            "Zaznaczam 6 krótkich klipów, 15 minut ćwiczeń i 28 notatek.",
+            "Mikrofon zostaje w odległości 25 centymetrów, nie 10.",
+            "O 7:45 czytam 4 przykłady i zapisuję 1 plik.",
+            "Trzecie ujęcie trwa 36 sekund i ma 5 czystych pauz.",
+        ),
+        "names": (
+            "Nora prosi Marka o czytanie, a Elena sprawdza listę.",
+            "Luca, Sofia i Amir wybierają spokojny kąt do nagrania.",
+            "Bianka daje Pawłowi folder i czeka przy oknie.",
+            "Klara wita Mateusza, ustawia statyw i zaczyna od nowa.",
+        ),
+        "punctuation": (
+            "Zatrzymaj się tutaj; weź oddech, potem przejdź do następnej myśli.",
+            "Jasno, stabilnie i prosto: taki jest cel.",
+            "Jeśli krzesło się poruszy, poczekaj! Zacznij ponownie po hałasie.",
+            "Pamiętaj: cisza przed i po linii pomaga przy montażu.",
+        ),
+    },
+    "tr": {
+        "short": (
+            "Bardağı sola alıp sayfayı sabit tutuyorum.",
+            "Sonraki kaydı hazırlarken oda sessiz kalır.",
+            "Bir satır okur, durur ve sessizliği dinlerim.",
+            "Ses yumuşak başlar ve aynı özenle biter.",
+        ),
+        "medium": (
+            "Her kayıttan önce metni, mesafeyi ve ses seviyesini kontrol ederim.",
+            "Bir kelime alışılmadıksa, onu net söylemek için biraz yavaşlarım.",
+            "Cümle basit bir hareketten daha uzun bir açıklamaya geçer.",
+            "İfadeyi hafifçe değiştirirken ses düzeyini dengede tutarım.",
+        ),
+        "question": (
+            "Bu satırı daha yavaş bir ritimle yeniden kaydetmeli miyiz?",
+            "Cümle boyunca mikrofon aynı konumda kaldı mı?",
+            "Son ünsüz açıkça duyuluyor mu?",
+            "Oda başka bir kayıt için yeterince sessiz mi?",
+        ),
+        "numbers": (
+            "6 kısa klip, 15 dakika prova ve 28 not işaretliyorum.",
+            "Mikrofon 25 santimetre uzakta kalır, 10 değil.",
+            "7:45'te 4 örnek okur ve 1 dosya kaydederim.",
+            "Üçüncü kayıt 36 saniye sürer ve 5 temiz duraklama içerir.",
+        ),
+        "names": (
+            "Nora Marco'dan okumasını isterken Elena listeyi kontrol eder.",
+            "Luca, Sofia ve Amir kayıt için sessiz bir köşe seçer.",
+            "Bianca dosyayı Paolo'ya verir ve pencerenin yanında bekler.",
+            "Clara Matteo'yu selamlar, ayağı ayarlar ve yeniden başlar.",
+        ),
+        "punctuation": (
+            "Burada dur; bir kez nefes al, sonra sonraki fikre geç.",
+            "Açık, dengeli ve sade: hedef budur.",
+            "Sandalye hareket ederse bekle! Gürültüden sonra yeniden başla.",
+            "Unutma: satırdan önceki ve sonraki sessizlik düzenlemeye yardım eder.",
+        ),
+    },
+    "ru": {
+        "short": (
+            "Я сдвигаю стакан влево и держу страницу неподвижно.",
+            "Комната остается тихой, пока я готовлю следующий дубль.",
+            "Я читаю одну строку, делаю паузу и слушаю тишину.",
+            "Голос начинается мягко и заканчивается с той же аккуратностью.",
+        ),
+        "medium": (
+            "Перед каждой записью я проверяю текст, расстояние и уровень.",
+            "Если слово непривычное, я немного замедляюсь, чтобы произнести его ясно.",
+            "Фраза переходит от простого действия к более длинному описанию.",
+            "Я держу громкость ровной, слегка меняя выражение.",
+        ),
+        "question": (
+            "Нужно записать эту строку еще раз в более медленном темпе?",
+            "Микрофон оставался в том же положении во время фразы?",
+            "Хорошо слышен последний согласный звук?",
+            "В комнате достаточно тихо для еще одного дубля?",
+        ),
+        "numbers": (
+            "Я отмечаю 6 коротких клипов, 15 минут практики и 28 заметок.",
+            "Микрофон остается на расстоянии 25 сантиметров, не 10.",
+            "В 7:45 я читаю 4 примера и сохраняю 1 файл.",
+            "Третий дубль длится 36 секунд и содержит 5 чистых пауз.",
+        ),
+        "names": (
+            "Нора просит Марко читать, пока Елена проверяет список.",
+            "Лука, София и Амир выбирают тихий угол для записи.",
+            "Бианка передает Паоло папку и ждет у окна.",
+            "Клара приветствует Маттео, поправляет стойку и начинает снова.",
+        ),
+        "punctuation": (
+            "Остановись здесь; вдохни один раз, затем продолжай следующую мысль.",
+            "Ясно, ровно и просто: это наша цель.",
+            "Если стул двигается, подожди! Начни снова после шума.",
+            "Помни: тишина до и после строки помогает монтажу.",
+        ),
+    },
+    "nl": {
+        "short": (
+            "Ik schuif het glas naar links en houd de pagina stil.",
+            "De kamer blijft stil terwijl ik de volgende opname voorbereid.",
+            "Ik lees één regel, pauzeer en luister naar de stilte.",
+            "De stem begint zacht en eindigt met dezelfde zorg.",
+        ),
+        "medium": (
+            "Voor elke opname controleer ik de tekst, de afstand en het niveau.",
+            "Als een woord ongewoon is, vertraag ik net genoeg om het duidelijk uit te spreken.",
+            "De zin gaat van een eenvoudige handeling naar een langere beschrijving.",
+            "Ik houd het volume gelijk terwijl ik de expressie licht verander.",
+        ),
+        "question": (
+            "Moeten we deze regel opnieuw opnemen met een langzamer tempo?",
+            "Bleef de microfoon tijdens de zin op dezelfde plaats?",
+            "Is de laatste medeklinker duidelijk te horen?",
+            "Is de kamer stil genoeg voor nog een opname?",
+        ),
+        "numbers": (
+            "Ik markeer 6 korte clips, 15 minuten oefening en 28 notities.",
+            "De microfoon blijft 25 centimeter weg, niet 10.",
+            "Om 7:45 lees ik 4 voorbeelden en sla ik 1 bestand op.",
+            "De derde opname duurt 36 seconden en heeft 5 schone pauzes.",
+        ),
+        "names": (
+            "Nora vraagt Marco te lezen terwijl Elena de lijst controleert.",
+            "Luca, Sofia en Amir kiezen een stille hoek om op te nemen.",
+            "Bianca geeft Paolo de map en wacht bij het raam.",
+            "Clara groet Matteo, zet de standaard goed en begint opnieuw.",
+        ),
+        "punctuation": (
+            "Stop hier; adem één keer en ga dan verder met het volgende idee.",
+            "Helder, stabiel en eenvoudig: dat is het doel.",
+            "Als de stoel beweegt, wacht! Begin opnieuw na het geluid.",
+            "Onthoud: stilte voor en na de regel helpt bij de montage.",
+        ),
+    },
+    "cs": {
+        "short": (
+            "Posunu sklenici doleva a držím stránku v klidu.",
+            "Místnost zůstává tichá, zatímco připravuji další záběr.",
+            "Přečtu jeden řádek, udělám pauzu a poslouchám ticho.",
+            "Hlas začíná měkce a končí se stejnou péčí.",
+        ),
+        "medium": (
+            "Před každou nahrávkou kontroluji text, vzdálenost a úroveň.",
+            "Když je slovo neobvyklé, trochu zpomalím, abych ho vyslovil jasně.",
+            "Věta přechází od jednoduché činnosti k delšímu popisu.",
+            "Držím hlasitost vyrovnanou a jen lehce měním výraz.",
+        ),
+        "question": (
+            "Máme tuto řádku nahrát znovu pomalejším tempem?",
+            "Zůstal mikrofon během věty na stejném místě?",
+            "Je poslední souhláska slyšet zřetelně?",
+            "Je místnost dost tichá pro další záběr?",
+        ),
+        "numbers": (
+            "Označím 6 krátkých klipů, 15 minut cvičení a 28 poznámek.",
+            "Mikrofon zůstává ve vzdálenosti 25 centimetrů, ne 10.",
+            "V 7:45 čtu 4 příklady a ukládám 1 soubor.",
+            "Třetí záběr trvá 36 sekund a má 5 čistých pauz.",
+        ),
+        "names": (
+            "Nora žádá Marka, aby četl, zatímco Elena kontroluje seznam.",
+            "Luca, Sofia a Amir vybírají tichý kout pro nahrávání.",
+            "Bianka podá Paolovi složku a čeká u okna.",
+            "Klára pozdraví Mattea, upraví stojan a začne znovu.",
+        ),
+        "punctuation": (
+            "Zastav se tady; jednou se nadechni a pokračuj další myšlenkou.",
+            "Jasně, stabilně a jednoduše: to je cíl.",
+            "Když se židle pohne, počkej! Začni znovu po hluku.",
+            "Pamatuj: ticho před řádkem a po něm pomáhá při střihu.",
+        ),
+    },
+    "ar": {
+        "short": (
+            "أحرك الكأس إلى اليسار وأبقي الصفحة ثابتة.",
+            "تبقى الغرفة هادئة بينما أجهز اللقطة التالية.",
+            "أقرأ سطرا واحدا، أتوقف قليلا، ثم أستمع إلى الصمت.",
+            "يبدأ الصوت بلطف وينتهي بالعناية نفسها.",
+        ),
+        "medium": (
+            "قبل كل تسجيل أراجع النص والمسافة ومستوى الصوت.",
+            "إذا كانت الكلمة غير مألوفة، أبطئ قليلا كي أنطقها بوضوح.",
+            "تنتقل الجملة من فعل بسيط إلى وصف أطول.",
+            "أحافظ على مستوى صوت ثابت مع تغيير بسيط في التعبير.",
+        ),
+        "question": (
+            "هل نسجل هذا السطر مرة أخرى بإيقاع أبطأ؟",
+            "هل بقي الميكروفون في الموضع نفسه أثناء الجملة؟",
+            "هل تسمع الحرف الأخير بوضوح؟",
+            "هل الغرفة هادئة بما يكفي لتسجيل آخر؟",
+        ),
+        "numbers": (
+            "أضع علامة على 6 مقاطع قصيرة و15 دقيقة تدريب و28 ملاحظة.",
+            "يبقى الميكروفون على بعد 25 سنتيمترا، وليس 10.",
+            "في 7:45 أقرأ 4 أمثلة وأحفظ ملفا واحدا.",
+            "تستمر اللقطة الثالثة 36 ثانية وفيها 5 وقفات نظيفة.",
+        ),
+        "names": (
+            "تطلب نورا من ماركو القراءة بينما تتحقق إلينا من القائمة.",
+            "يختار لوكا وصوفيا وأمير زاوية هادئة للتسجيل.",
+            "تعطي بيانكا الملف إلى باولو وتنتظر قرب النافذة.",
+            "تحيي كلارا ماتيو، تضبط الحامل، ثم تبدأ من جديد.",
+        ),
+        "punctuation": (
+            "توقف هنا؛ خذ نفسا واحدا، ثم تابع الفكرة التالية.",
+            "واضح، ثابت وبسيط: هذا هو الهدف.",
+            "إذا تحرك الكرسي، انتظر! ابدأ من جديد بعد الضجيج.",
+            "تذكر: الصمت قبل السطر وبعده يساعد في المونتاج.",
+        ),
+    },
+    "zh-cn": {
+        "short": (
+            "我把杯子移到左边，并让纸页保持不动。",
+            "我准备下一段录音时，房间保持安静。",
+            "我读一行，停一下，然后听房间里的安静。",
+            "声音轻柔地开始，也用同样的细心结束。",
+        ),
+        "medium": (
+            "每次录音前，我检查文本、距离和音量。",
+            "如果一个词不常见，我会稍微放慢，把它说清楚。",
+            "句子从一个简单动作，过渡到更长的描述。",
+            "我保持音量稳定，同时让表达有一点变化。",
+        ),
+        "question": (
+            "我们要用更慢的节奏再录这一行吗？",
+            "说完整句话时，麦克风保持在同一个位置了吗？",
+            "最后一个辅音听得清楚吗？",
+            "房间足够安静，可以再录一次吗？",
+        ),
+        "numbers": (
+            "我标记6个短片段、15分钟练习和28条笔记。",
+            "麦克风保持25厘米的距离，不是10厘米。",
+            "7:45的时候，我读4个例子并保存1个文件。",
+            "第三次录音长36秒，里面有5个干净停顿。",
+        ),
+        "names": (
+            "诺拉请马尔科朗读，埃琳娜检查清单。",
+            "卢卡、索菲亚和阿米尔选择安静的角落录音。",
+            "比安卡把文件夹交给保罗，然后在窗边等待。",
+            "克拉拉向马泰奥问好，调好支架，然后重新开始。",
+        ),
+        "punctuation": (
+            "在这里停下；吸一次气，然后继续下一个想法。",
+            "清楚、稳定、简单：这就是目标。",
+            "如果椅子动了，就等一下！噪音结束后重新开始。",
+            "记住：句子前后的安静有助于后期编辑。",
+        ),
+    },
+    "ja": {
+        "short": (
+            "コップを左に動かし、ページを動かさないようにします。",
+            "次の録音を準備する間、部屋は静かなままです。",
+            "一行を読み、少し止まり、静けさを聞きます。",
+            "声はやわらかく始まり、同じ丁寧さで終わります。",
+        ),
+        "medium": (
+            "それぞれの録音の前に、文章、距離、音量を確認します。",
+            "珍しい言葉があるときは、少しゆっくり読んではっきり発音します。",
+            "文は簡単な動作から、少し長い説明へ進みます。",
+            "表情を少し変えながら、音量は安定させます。",
+        ),
+        "question": (
+            "この行を、もっとゆっくりしたテンポでもう一度録音しますか？",
+            "文を読む間、マイクは同じ位置にありましたか？",
+            "最後の子音ははっきり聞こえますか？",
+            "もう一度録音できるくらい、部屋は静かですか？",
+        ),
+        "numbers": (
+            "短いクリップ6個、練習15分、メモ28件を記録します。",
+            "マイクは25センチ離します。10センチではありません。",
+            "7:45に例を4つ読み、ファイルを1つ保存します。",
+            "3回目の録音は36秒で、きれいな間が5回あります。",
+        ),
+        "names": (
+            "ノラはマルコに読んでもらい、エレナはリストを確認します。",
+            "ルカ、ソフィア、アミールは録音用の静かな角を選びます。",
+            "ビアンカはパオロにフォルダーを渡し、窓の近くで待ちます。",
+            "クララはマテオに挨拶し、スタンドを直してもう一度始めます。",
+        ),
+        "punctuation": (
+            "ここで止まり、一度息を吸ってから、次の考えに進みます。",
+            "明瞭で、安定して、簡単に：それが目標です。",
+            "椅子が動いたら待ちましょう！音が消えてから始めます。",
+            "覚えてください：行の前後の静けさは編集に役立ちます。",
+        ),
+    },
+    "hu": {
+        "short": (
+            "Balra tolom a poharat, és mozdulatlanul tartom a lapot.",
+            "A szoba csendes marad, amíg előkészítem a következő felvételt.",
+            "Elolvasok egy sort, megállok, és meghallgatom a csendet.",
+            "A hang lágyan indul, és ugyanolyan gonddal ér véget.",
+        ),
+        "medium": (
+            "Minden felvétel előtt ellenőrzöm a szöveget, a távolságot és a hangerőt.",
+            "Ha egy szó szokatlan, kicsit lassítok, hogy tisztán ejtsem ki.",
+            "A mondat egy egyszerű cselekvéstől egy hosszabb leírásig jut el.",
+            "Egyenletesen tartom a hangerőt, miközben kissé változtatom a kifejezést.",
+        ),
+        "question": (
+            "Vegyük fel újra ezt a sort lassabb tempóval?",
+            "A mikrofon ugyanabban a helyzetben maradt a mondat alatt?",
+            "Tisztán hallható az utolsó mássalhangzó?",
+            "Elég csendes a szoba egy újabb felvételhez?",
+        ),
+        "numbers": (
+            "Megjelölök 6 rövid klipet, 15 perc gyakorlást és 28 jegyzetet.",
+            "A mikrofon 25 centiméterre marad, nem 10-re.",
+            "7:45-kor 4 példát olvasok, és elmentek 1 fájlt.",
+            "A harmadik felvétel 36 másodpercig tart, és 5 tiszta szünet van benne.",
+        ),
+        "names": (
+            "Nóra megkéri Marcót, hogy olvasson, miközben Elena ellenőrzi a listát.",
+            "Luca, Sofia és Amir csendes sarkot választ a felvételhez.",
+            "Bianka átadja a mappát Paolónak, és az ablaknál vár.",
+            "Klára üdvözli Matteót, beállítja az állványt, és újrakezdi.",
+        ),
+        "punctuation": (
+            "Itt állj meg; vegyél egy levegőt, majd folytasd a következő gondolattal.",
+            "Tiszta, stabil és egyszerű: ez a cél.",
+            "Ha a szék megmozdul, várj! A zaj után kezdd újra.",
+            "Ne feledd: a sor előtti és utáni csend segít a vágásban.",
+        ),
+    },
+    "ko": {
+        "short": (
+            "컵을 왼쪽으로 옮기고 종이를 움직이지 않게 둡니다.",
+            "다음 녹음을 준비하는 동안 방은 조용하게 유지됩니다.",
+            "한 줄을 읽고, 잠시 멈추고, 조용함을 듣습니다.",
+            "목소리는 부드럽게 시작하고 같은 정성으로 끝납니다.",
+        ),
+        "medium": (
+            "각 녹음 전에 글, 거리, 음량을 확인합니다.",
+            "낯선 단어가 나오면 조금 천천히 말해 분명하게 발음합니다.",
+            "문장은 간단한 행동에서 조금 긴 설명으로 이어집니다.",
+            "표현을 조금 바꾸면서도 음량은 고르게 유지합니다.",
+        ),
+        "question": (
+            "이 줄을 더 느린 속도로 다시 녹음할까요?",
+            "문장을 읽는 동안 마이크가 같은 위치에 있었나요?",
+            "마지막 자음이 분명하게 들리나요?",
+            "방이 또 한 번 녹음하기에 충분히 조용한가요?",
+        ),
+        "numbers": (
+            "짧은 클립 6개, 연습 15분, 메모 28개를 표시합니다.",
+            "마이크는 25센티미터 떨어져 있고, 10센티미터가 아닙니다.",
+            "7:45에 예시 4개를 읽고 파일 1개를 저장합니다.",
+            "세 번째 녹음은 36초이고 깨끗한 멈춤이 5번 있습니다.",
+        ),
+        "names": (
+            "노라는 마르코에게 읽어 달라고 하고, 엘레나는 목록을 확인합니다.",
+            "루카, 소피아, 아미르는 녹음할 조용한 구석을 고릅니다.",
+            "비앙카는 파올로에게 폴더를 주고 창가에서 기다립니다.",
+            "클라라는 마테오에게 인사하고, 스탠드를 맞춘 뒤 다시 시작합니다.",
+        ),
+        "punctuation": (
+            "여기서 멈추고, 한 번 숨을 쉰 뒤 다음 생각을 이어가세요.",
+            "분명하고, 안정적이고, 단순하게: 이것이 목표입니다.",
+            "의자가 움직이면 기다리세요! 소음이 끝난 뒤 다시 시작합니다.",
+            "기억하세요: 줄 앞뒤의 조용함은 편집에 도움이 됩니다.",
+        ),
+    },
+    "hi": {
+        "short": (
+            "मैं गिलास को बाईं ओर सरकाता हूं और पन्ने को स्थिर रखता हूं।",
+            "अगली रिकॉर्डिंग की तैयारी तक कमरा शांत रहता है।",
+            "मैं एक पंक्ति पढ़ता हूं, रुकता हूं और शांति सुनता हूं।",
+            "आवाज़ नरमी से शुरू होती है और उसी ध्यान से समाप्त होती है।",
+        ),
+        "medium": (
+            "हर रिकॉर्डिंग से पहले मैं पाठ, दूरी और स्तर जांचता हूं।",
+            "अगर कोई शब्द अनोखा हो, तो मैं उसे साफ बोलने के लिए थोड़ा धीमा करता हूं।",
+            "वाक्य एक सरल क्रिया से थोड़े लंबे वर्णन तक जाता है।",
+            "अभिव्यक्ति थोड़ी बदलते हुए भी मैं आवाज़ का स्तर समान रखता हूं।",
+        ),
+        "question": (
+            "क्या हम इस पंक्ति को धीमी गति से फिर रिकॉर्ड करें?",
+            "क्या वाक्य के दौरान माइक्रोफोन उसी जगह रहा?",
+            "क्या अंतिम व्यंजन साफ सुनाई देता है?",
+            "क्या कमरा एक और रिकॉर्डिंग के लिए पर्याप्त शांत है?",
+        ),
+        "numbers": (
+            "मैं 6 छोटे क्लिप, 15 मिनट अभ्यास और 28 नोट चिह्नित करता हूं।",
+            "माइक्रोफोन 25 सेंटीमीटर दूर रहता है, 10 नहीं।",
+            "7:45 पर मैं 4 उदाहरण पढ़ता हूं और 1 फाइल सेव करता हूं।",
+            "तीसरी रिकॉर्डिंग 36 सेकंड की है और उसमें 5 साफ रुकावटें हैं।",
+        ),
+        "names": (
+            "नोरा मार्को से पढ़ने को कहती है, जबकि एलेना सूची जांचती है।",
+            "लूका, सोफिया और आमिर रिकॉर्डिंग के लिए शांत कोना चुनते हैं।",
+            "बियांका पाओलो को फोल्डर देती है और खिड़की के पास इंतजार करती है।",
+            "क्लारा मातेओ को नमस्ते कहती है, स्टैंड ठीक करती है और फिर शुरू करती है।",
+        ),
+        "punctuation": (
+            "यहीं रुकिए; एक बार सांस लीजिए, फिर अगला विचार जारी रखें।",
+            "साफ, स्थिर और सरल: यही लक्ष्य है।",
+            "अगर कुर्सी हिले, तो रुकिए! शोर खत्म होने के बाद फिर शुरू करें।",
+            "याद रखें: पंक्ति से पहले और बाद की शांति संपादन में मदद करती है।",
+        ),
+    },
+}
+
+
 def merge_prompt_corpus(
     base: dict[str, ModelingPromptCorpus],
     extensions: dict[str, ModelingPromptCorpus],
@@ -1356,6 +2006,7 @@ def merge_prompt_corpus(
 
 
 MODELING_PROMPT_CORPUS = merge_prompt_corpus(MODELING_PROMPT_CORPUS, MODELING_PROMPT_CORPUS_EXTENSIONS)
+MODELING_PROMPT_CORPUS = merge_prompt_corpus(MODELING_PROMPT_CORPUS, MODELING_PROMPT_CORPUS_EXPANSION_1_3)
 
 
 def generate_modeling_prompt(

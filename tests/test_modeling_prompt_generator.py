@@ -22,9 +22,11 @@ def test_prompt_corpus_covers_voice_profile_languages() -> None:
         assert prompt.language_code == modeling_prompt_language_key(language_code)
         assert prompt.source == MODELING_PROMPT_SOURCE_GENERATED
         assert len(prompt.text) <= 450
-        assert modeling_prompt_available_count(language_code) == 262_144
+        assert modeling_prompt_available_count(language_code) == 2_985_984
         corpus = prompt_generator.MODELING_PROMPT_CORPUS[prompt.language_code]
-        assert all(len(corpus[slot_name]) == 8 for slot_name in prompt_generator.PROMPT_SLOT_ORDER)
+        assert all(len(corpus[slot_name]) == 12 for slot_name in prompt_generator.PROMPT_SLOT_ORDER)
+        for slot_name in prompt_generator.PROMPT_SLOT_ORDER:
+            assert len(set(corpus[slot_name])) == len(corpus[slot_name]), (language_code, slot_name)
         assert "?" in prompt.text or "؟" in prompt.text or "？" in prompt.text or "か" in prompt.text
         assert any(character.isdigit() for character in prompt.text)
 

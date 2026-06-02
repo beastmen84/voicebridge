@@ -174,15 +174,15 @@ def recommended_voices(voices: list[Voice]) -> list[Voice]:
     for voice in voices:
         voices_by_locale.setdefault(voice.get("Locale", ""), []).append(voice)
 
-    locales = sorted(
+    locale_codes = sorted(
         voices_by_locale,
-        key=lambda locale: (-len(voices_by_locale[locale]), locale),
+        key=lambda locale_code: (-len(voices_by_locale[locale_code]), locale_code),
     )[:RECOMMENDED_VOICE_LOCALES]
 
     recommended = []
     used_short_names = set()
-    for locale in locales:
-        locale_voices = sorted(voices_by_locale[locale], key=voice_recommendation_key)
+    for locale_code in locale_codes:
+        locale_voices = sorted(voices_by_locale[locale_code], key=voice_recommendation_key)
         voices_added_for_locale = 0
         for gender in ("Female", "Male"):
             gender_voice = next(

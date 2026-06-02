@@ -31,10 +31,12 @@ from voicebridge.modeling_datasets import (
     export_modeling_dataset,
     load_modeling_datasets,
     modeling_clip_audio_path,
+    modeling_clip_export_block_reason,
     modeling_clip_status_label,
     modeling_clip_transcript_path,
     modeling_clip_verification_status,
     modeling_dataset_dir,
+    modeling_dataset_export_disabled_reason,
     modeling_dataset_exportable,
     modeling_dataset_guided_prompt_texts,
     modeling_dataset_guided_prompt_usage,
@@ -186,6 +188,67 @@ def test_guided_clip_verification_status_transitions(tmp_path: Path) -> None:
     assert retried["verification_text"] == ""
     assert modeling_clip_verification_status(no_transcript) == MODELING_VERIFICATION_NOT_REQUIRED
     assert modeling_clip_verification_status(free_clip) == MODELING_VERIFICATION_NOT_REQUIRED
+
+
+def test_modeling_clip_export_block_reason_explains_guided_verification_state(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    guided_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        transcript_text="Read this exact sentence.",
+        transcript_source="generated_prompt:1.1",
+        duration_seconds=12.0,
+        clip_id="guided",
+    )
+    matched = update_modeling_clip_verification(
+        guided_clip,
+        status=MODELING_VERIFICATION_MATCH_OK,
+        score=99.0,
+        detected_text="Read this exact sentence.",
+        details="Similarity: 100.0%",
+    )
+    review = update_modeling_clip_verification(
+        guided_clip,
+        status=MODELING_VERIFICATION_NEEDS_REVIEW,
+        score=70.0,
+        detected_text="Different sentence.",
+        details="Needs review",
+    )
+    excluded = toggle_modeling_clip_export_exclusion(matched)
+    missing_audio = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=tmp_path / "missing.wav",
+        transcript_text="Missing audio.",
+        duration_seconds=12.0,
+        clip_id="missing",
+    )
+    no_text = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        duration_seconds=12.0,
+        clip_id="no-text",
+    )
+
+    assert modeling_clip_export_block_reason(guided_clip) == (
+        "Guided clip needs text verification. Use Verify text."
+    )
+    assert modeling_clip_export_block_reason(matched) == ""
+    assert modeling_clip_export_block_reason(review) == "Text verification needs review before export."
+    assert modeling_clip_export_block_reason(excluded) == "Clip is manually excluded from export."
+    assert modeling_clip_export_block_reason(missing_audio) == "Missing WAV file."
+    assert modeling_clip_export_block_reason(no_text) == "Transcript text is empty."
 
 
 def test_modeling_clip_export_exclusion_toggle_round_trip(tmp_path: Path) -> None:
@@ -458,6 +521,7 @@ def test_modeling_dataset_exportable_blocks_unverified_guided_clips(tmp_path: Pa
     assert summary["readiness"] == MODELING_DATASET_USABLE
     assert summary["verification_pending_clips"] == 5
     assert modeling_dataset_exportable(dataset) is False
+    assert modeling_dataset_export_disabled_reason(dataset).startswith("No exportable ready clips.")
     with pytest.raises(ValueError, match="No exportable ready clips"):
         export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
@@ -499,6 +563,7 @@ def test_export_modeling_dataset_rejects_before_usable_readiness(tmp_path: Path)
     )
 
     assert modeling_dataset_exportable(dataset) is False
+    assert modeling_dataset_export_disabled_reason(dataset).startswith("Export requires Usable readiness")
     with pytest.raises(ValueError, match="Usable readiness"):
         export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
@@ -691,6 +756,7 @@ def test_modeling_dataset_summary_reports_target_dataset(tmp_path: Path) -> None
     assert summary["issues"] == []
     assert any("High-quality duration reached" in recommendation for recommendation in summary["recommendations"])
     assert "Target progress: 60/60 clips, 30m 00s/30m 00s" in summary_text
+    assert "Exportable clips: 60/60 ready clips" in summary_text
     assert "Recommended target: 60-120 ready clips, 30m 00s-60m 00s clean audio" in summary_text
     assert "Dataset tier: High quality" in summary_text
 

@@ -250,11 +250,29 @@ def modeling_clip_verification_status(clip: ModelingClip) -> str:
 
 
 def modeling_clip_export_blocked(clip: ModelingClip) -> bool:
+    return bool(modeling_clip_export_block_reason(clip))
+
+
+def modeling_clip_export_block_reason(clip: ModelingClip) -> str:
+    status = modeling_clip_display_status(clip)
+    if status == MODELING_CLIP_MISSING_AUDIO:
+        return "Missing WAV file."
+    if status == MODELING_CLIP_NEEDS_TRANSCRIPT:
+        return "Transcript text is empty."
     if bool(clip.get("excluded_from_export", False)):
-        return True
+        return "Clip is manually excluded from export."
     if clip.get("mode") != MODELING_CLIP_TEXT_GUIDED:
-        return False
-    return modeling_clip_verification_status(clip) in MODELING_VERIFICATION_EXPORT_BLOCKING
+        return ""
+    verification_status = modeling_clip_verification_status(clip)
+    return {
+        MODELING_VERIFICATION_NOT_REQUIRED: "Guided clip requires text verification.",
+        MODELING_VERIFICATION_UNVERIFIED: "Guided clip needs text verification. Use Verify text.",
+        MODELING_VERIFICATION_PENDING: "Text verification is still running.",
+        MODELING_VERIFICATION_MATCH_OK: "",
+        MODELING_VERIFICATION_NEEDS_REVIEW: "Text verification needs review before export.",
+        MODELING_VERIFICATION_ERROR: "Text verification failed. Check STT setup or retry verification.",
+        MODELING_VERIFICATION_SKIPPED: "Text verification was skipped.",
+    }.get(verification_status, "Guided clip requires text verification.")
 
 
 def modeling_dataset_readiness_label(readiness: str) -> str:
@@ -414,11 +432,13 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
 
 def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
     summary = modeling_dataset_summary(dataset)
+    exportable_clips = ready_modeling_export_clips(dataset)
     lines = [
         f"Export readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
         f"Dataset tier: {modeling_dataset_tier_label(summary['dataset_tier'])}",
         f"Language: {dataset['language_code']}",
         f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
+        f"Exportable clips: {len(exportable_clips)}/{summary['ready_clips']} ready clips",
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
         f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
@@ -463,10 +483,22 @@ def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
 
 
 def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
-    return (
-        modeling_dataset_summary(dataset)["readiness"] in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}
-        and bool(ready_modeling_export_clips(dataset))
-    )
+    return not modeling_dataset_export_disabled_reason(dataset)
+
+
+def modeling_dataset_export_disabled_reason(dataset: ModelingDataset) -> str:
+    summary = modeling_dataset_summary(dataset)
+    if summary["readiness"] not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
+        return (
+            "Export requires Usable readiness: collect at least 5 ready clips "
+            "and 60 seconds of ready audio."
+        )
+    if not ready_modeling_export_clips(dataset):
+        return (
+            "No exportable ready clips. Guided clips require Match OK; excluded clips, "
+            "verification errors and clips needing review are skipped."
+        )
+    return ""
 
 
 def modeling_dataset_guided_prompt_texts(dataset: ModelingDataset) -> tuple[str, ...]:

@@ -48,14 +48,17 @@ from voicebridge.modeling_datasets import (
     load_modeling_datasets,
     modeling_clip_audio_path,
     modeling_clip_can_verify_transcript,
+    modeling_clip_export_block_reason,
     modeling_clip_status_label,
     modeling_clip_verification_label,
     modeling_clip_verification_status,
     modeling_dataset_dir,
+    modeling_dataset_export_disabled_reason,
     modeling_dataset_exportable,
     modeling_dataset_guided_prompt_texts,
     modeling_dataset_guided_prompt_usage,
     modeling_dataset_summary_text,
+    ready_modeling_export_clips,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     toggle_modeling_clip_export_exclusion,
@@ -273,8 +276,11 @@ class ModelingDatasetsWorkflowMixin:
         if details:
             verification_lines.extend(["", details])
         sections.append("Text verification\n" + "\n".join(verification_lines))
-        if clip.get("excluded_from_export", False):
-            sections.append("Export\nExcluded from export.")
+        export_reason = modeling_clip_export_block_reason(clip)
+        if export_reason:
+            sections.append("Export\nNot exportable: " + export_reason)
+        else:
+            sections.append("Export\nExportable.")
         return "\n\n".join(sections)
 
     def selected_modeling_audio_device(self) -> int | None:
@@ -588,7 +594,7 @@ class ModelingDatasetsWorkflowMixin:
             self.replace_modeling_clip(dataset, updated_clip)
             save_modeling_datasets(self.modeling_datasets)
             self.refresh_modeling_datasets_page()
-            self.modeling_dataset_status.setText("Text verification unavailable.")
+            self.modeling_dataset_status.setText("Text verification unavailable; guided clip is not exportable.")
             return
 
         pending_clip = update_modeling_clip_verification(
@@ -610,7 +616,7 @@ class ModelingDatasetsWorkflowMixin:
             }
         )
         self.modeling_verification_queued_clip_ids.add(queue_key)
-        self.modeling_dataset_status.setText("Text verification queued.")
+        self.modeling_dataset_status.setText("Text verification queued; guided clip is not exportable until Match OK.")
         self.start_next_modeling_clip_verification()
 
     def start_next_modeling_clip_verification(self) -> None:
@@ -731,11 +737,11 @@ class ModelingDatasetsWorkflowMixin:
                 self.selected_modeling_clip_id = updated_clip["id"]
                 self.refresh_modeling_datasets_page()
                 if updated_clip["verification_status"] == MODELING_VERIFICATION_MATCH_OK:
-                    self.modeling_dataset_status.setText("Text verification passed.")
+                    self.modeling_dataset_status.setText("Text verification Match OK; clip is exportable if included.")
                 elif updated_clip["verification_status"] == MODELING_VERIFICATION_NEEDS_REVIEW:
-                    self.modeling_dataset_status.setText("Text verification needs review.")
+                    self.modeling_dataset_status.setText("Text verification needs review; clip is not exportable.")
                 else:
-                    self.modeling_dataset_status.setText("Text verification failed.")
+                    self.modeling_dataset_status.setText("Text verification failed; clip is not exportable.")
             else:
                 self.modeling_dataset_status.setText("Skipped stale text verification result.")
         self.start_next_modeling_clip_verification()
@@ -772,12 +778,21 @@ class ModelingDatasetsWorkflowMixin:
             self.show_error("Modeling Datasets", str(exc))
             return
         export_dir = result["export_dir"]
+        skipped_clips = result["skipped_clips"]
         self.modeling_dataset_status.setText(
-            f"Exported {result['exported_clips']} ready clip(s) to {export_dir}."
+            f"Exported {result['exported_clips']} exportable clip(s); "
+            f"skipped {skipped_clips} non-exportable clip(s)."
         )
         self.refresh_voice_modeling_exports(export_dir)
         self.update_local_voice_tabs()
-        self.show_info("Modeling Datasets", f"Dataset exported:\n{export_dir}")
+        self.show_info(
+            "Modeling Datasets",
+            (
+                f"Dataset exported:\n{export_dir}\n\n"
+                f"Exported clips: {result['exported_clips']}\n"
+                f"Skipped clips: {skipped_clips}"
+            ),
+        )
         open_path(export_dir)
 
     def send_modeling_clip_to_transcription(self) -> None:
@@ -806,26 +821,99 @@ class ModelingDatasetsWorkflowMixin:
         text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
         can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
         self.modeling_record_text_button.setEnabled(can_record_from_text)
+        if can_record_from_text:
+            self.modeling_record_text_button.setToolTip("Record the text currently shown in the clip text box.")
+        elif has_dataset:
+            self.modeling_record_text_button.setToolTip(
+                f"Paste, load or generate text up to {MODELING_GUIDED_TEXT_MAX_CHARS} characters."
+            )
+        else:
+            self.modeling_record_text_button.setToolTip("Select a modeling dataset first.")
         self.modeling_record_free_button.setEnabled(has_dataset)
+        self.modeling_record_free_button.setToolTip(
+            "Record up to 60 seconds without prepared text." if has_dataset else "Select a modeling dataset first."
+        )
         self.modeling_load_text_button.setEnabled(has_dataset)
+        self.modeling_load_text_button.setToolTip(
+            "Load custom text for a guided clip." if has_dataset else "Select a modeling dataset first."
+        )
         self.modeling_generate_text_button.setEnabled(has_dataset)
+        self.modeling_generate_text_button.setToolTip(
+            "Generate an unused guided prompt for this dataset language."
+            if has_dataset
+            else "Select a modeling dataset first."
+        )
         self.modeling_reset_prompt_history_button.setEnabled(
             bool(dataset and dataset.get("guided_prompt_history"))
         )
+        self.modeling_reset_prompt_history_button.setToolTip(
+            "Reset generated prompt history. Saved clip texts still prevent duplicates."
+            if dataset and dataset.get("guided_prompt_history")
+            else "No generated prompt history to reset."
+        )
         self.modeling_save_text_button.setEnabled(clip is not None)
+        self.modeling_save_text_button.setToolTip(
+            "Save transcript text. Guided clips must be verified again before export."
+            if clip
+            else "Select a clip first."
+        )
         self.modeling_delete_clip_button.setEnabled(clip is not None)
+        self.modeling_delete_clip_button.setToolTip(
+            "Delete this clip and its sidecar files. Guided prompt history is not freed automatically."
+            if clip
+            else "Select a clip first."
+        )
         self.modeling_play_clip_button.setEnabled(has_clip_audio)
+        self.modeling_play_clip_button.setToolTip(
+            "Play the selected clip audio." if has_clip_audio else "Select a clip with an existing WAV file."
+        )
         self.modeling_open_clip_button.setEnabled(has_clip_audio)
+        self.modeling_open_clip_button.setToolTip(
+            "Open the selected clip audio file." if has_clip_audio else "Select a clip with an existing WAV file."
+        )
         self.modeling_transcribe_clip_button.setEnabled(has_clip_audio)
+        self.modeling_transcribe_clip_button.setToolTip(
+            "Send this clip to the Transcription page." if has_clip_audio else "Select a clip with audio first."
+        )
         self.modeling_retry_clip_button.setEnabled(can_retry_clip)
+        self.modeling_retry_clip_button.setToolTip(
+            "Record this guided clip again with the same text."
+            if can_retry_clip
+            else "Retry recording is available for guided clips with transcript text."
+        )
         self.modeling_verify_clip_button.setEnabled(can_verify_clip)
+        self.modeling_verify_clip_button.setToolTip(
+            "Run Whisper verification against the expected text."
+            if can_verify_clip
+            else "Verify text requires a guided clip with audio and transcript text."
+        )
         self.modeling_toggle_export_clip_button.setEnabled(clip is not None)
         if clip and clip.get("excluded_from_export", False):
             self.modeling_toggle_export_clip_button.setText("Include export")
+            self.modeling_toggle_export_clip_button.setToolTip(
+                "Allow this clip to be exported if it also meets transcript and verification requirements."
+            )
         else:
             self.modeling_toggle_export_clip_button.setText("Exclude export")
+            self.modeling_toggle_export_clip_button.setToolTip(
+                "Keep this clip in the dataset but skip it during dataset export."
+                if clip
+                else "Select a clip first."
+            )
         self.modeling_open_dataset_folder_button.setEnabled(has_dataset)
+        self.modeling_open_dataset_folder_button.setToolTip(
+            "Open the dataset folder." if has_dataset else "Select a modeling dataset first."
+        )
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
+        if dataset:
+            disabled_reason = modeling_dataset_export_disabled_reason(dataset)
+            exportable_count = len(ready_modeling_export_clips(dataset))
+            self.modeling_export_dataset_button.setToolTip(
+                disabled_reason
+                or f"Export {exportable_count} clip(s) that are ready and pass export checks."
+            )
+        else:
+            self.modeling_export_dataset_button.setToolTip("Select a modeling dataset first.")
 
     def build_modeling_datasets_page(self, include_header: bool = True):
         page, layout = self.page_container()

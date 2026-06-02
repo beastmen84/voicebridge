@@ -46,6 +46,8 @@ from voicebridge.constants import (
     VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL,
     VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
 )
+from voicebridge.ffmpeg_jobs import ffmpeg_progress_percent as ffmpeg_job_progress_percent
+from voicebridge.ffmpeg_jobs import should_keep_ffmpeg_log_line
 from voicebridge.file_checks import ensure_free_space
 from voicebridge.media_tools import (
     SubtitleStyle,
@@ -512,13 +514,13 @@ class SubtitlesWorkflowMixin:
             line = raw_line.strip()
             if not line:
                 continue
-            progress_percent = self.ffmpeg_progress_percent(line, duration_seconds)
+            progress_percent = ffmpeg_job_progress_percent(line, duration_seconds)
             if progress_percent is not None:
                 if progress_percent > last_progress_percent:
                     last_progress_percent = progress_percent
                     self.post(self.update_video_progress_percent, progress_percent)
                 continue
-            if self.is_ffmpeg_progress_line(line):
+            if not should_keep_ffmpeg_log_line(line):
                 continue
             recent_output.append(line)
             recent_output = recent_output[-12:]

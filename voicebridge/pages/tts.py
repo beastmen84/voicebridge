@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -74,6 +73,7 @@ from voicebridge.local_voice_sources import (
 )
 from voicebridge.media_tools import audio_duration_seconds, concatenate_mp3_files, convert_audio_to_mp3
 from voicebridge.models import TtsSegment
+from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
 from voicebridge.readers import (
     SUPPORTED_FILETYPES,
     TESSERACT_NOT_INSTALLED_TEXT,
@@ -1226,45 +1226,32 @@ class TtsWorkflowMixin:
             "--model-dir",
             str(local_tts_model_dir()),
         ]
-        recent_output = []
+
+        def handle_worker_output(output: WorkerProcessOutput) -> None:
+            if output.is_progress:
+                if output.progress_percent is not None:
+                    self.post(self.update_tts_progress_percent, output.progress_percent)
+                return
+            if output.is_status:
+                self.post(self.tts_status.setText, output.status or "")
+
         try:
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            process = subprocess.Popen(
+            result = run_worker_process_job(
                 command,
                 cwd=str(external_base_dir()),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=creationflags,
+                on_process_start=lambda process: setattr(self, "tts_process", process),
+                on_output=handle_worker_output,
+                should_cancel=lambda: self.tts_cancel_requested,
+                recent_output_limit=12,
             )
-            self.tts_process = process
-            assert process.stdout is not None
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith("PROGRESS: "):
-                    try:
-                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                    except ValueError:
-                        continue
-                    self.post(self.update_tts_progress_percent, progress_percent)
-                    continue
-                recent_output.append(line)
-                recent_output = recent_output[-12:]
-                if line.startswith("STATUS: "):
-                    self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
-                if self.tts_cancel_requested and process.poll() is None:
-                    process.terminate()
-            return_code = process.wait()
-            if self.tts_cancel_requested:
+            if result.cancelled:
                 self.post(self.conversion_cancelled)
                 return
-            if return_code != 0:
-                raise RuntimeError("\n".join(recent_output[-8:]) or f"XTTS-v2 download exited with code {return_code}.")
+            if result.return_code != 0:
+                raise RuntimeError(
+                    "\n".join(result.recent_output[-8:])
+                    or f"XTTS-v2 download exited with code {result.return_code}."
+                )
             self.post(self.local_tts_model_download_succeeded)
         except (OSError, RuntimeError, TimeoutError, AssertionError) as exc:
             self.post(self.conversion_failed, str(exc))
@@ -1340,45 +1327,32 @@ class TtsWorkflowMixin:
         return command
 
     def run_local_tts_worker_command(self, command, progress_start=0.0, progress_end=100.0):
-        recent_output = []
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(
-            command,
-            cwd=str(external_base_dir()),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=creationflags,
-        )
-        self.tts_process = process
-        try:
-            assert process.stdout is not None
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith("PROGRESS: "):
-                    try:
-                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                    except ValueError:
-                        continue
-                    mapped_progress = progress_start + ((progress_end - progress_start) * (progress_percent / 100))
+        def handle_worker_output(output: WorkerProcessOutput) -> None:
+            if output.is_progress:
+                if output.progress_percent is not None:
+                    mapped_progress = progress_start + (
+                        (progress_end - progress_start) * (output.progress_percent / 100)
+                    )
                     self.post(self.update_tts_progress_percent, mapped_progress)
-                    continue
-                recent_output.append(line)
-                recent_output = recent_output[-12:]
-                if line.startswith("STATUS: "):
-                    self.post(self.tts_status.setText, line.removeprefix("STATUS: "))
-                if self.tts_cancel_requested and process.poll() is None:
-                    process.terminate()
-            return_code = process.wait()
-            if self.tts_cancel_requested:
+                return
+            if output.is_status:
+                self.post(self.tts_status.setText, output.status or "")
+
+        try:
+            result = run_worker_process_job(
+                command,
+                cwd=str(external_base_dir()),
+                on_process_start=lambda process: setattr(self, "tts_process", process),
+                on_output=handle_worker_output,
+                should_cancel=lambda: self.tts_cancel_requested,
+                recent_output_limit=12,
+            )
+            if result.cancelled:
                 raise TtsCancelled()
-            if return_code != 0:
-                raise RuntimeError("\n".join(recent_output[-8:]) or f"Local TTS exited with code {return_code}.")
+            if result.return_code != 0:
+                raise RuntimeError(
+                    "\n".join(result.recent_output[-8:]) or f"Local TTS exited with code {result.return_code}."
+                )
         finally:
             self.tts_process = None
 

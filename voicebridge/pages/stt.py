@@ -552,46 +552,35 @@ class SttWorkflowMixin:
             "--model-dir",
             str(stt_model_dir()),
         ]
-        recent_output = []
         completion_callback = None
         completion_args = ()
+
+        def handle_worker_output(output: WorkerProcessOutput) -> None:
+            if output.is_progress:
+                if output.progress_percent is not None:
+                    self.post(self.update_stt_progress_percent, output.progress_percent)
+                return
+            self.post(self.append_stt_log, output.line)
+            if output.is_status:
+                self.post(self.stt_status.setText, output.status or "")
+
         try:
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            process = subprocess.Popen(
+            result = run_worker_process_job(
                 command,
                 cwd=str(external_base_dir()),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=creationflags,
+                stdin=None,
+                on_process_start=lambda process: setattr(self, "stt_process", process),
+                on_output=handle_worker_output,
+                should_cancel=lambda: self.stt_cancel_requested,
+                recent_output_limit=12,
             )
-            self.stt_process = process
-            assert process.stdout is not None
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith("PROGRESS: "):
-                    try:
-                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                    except ValueError:
-                        continue
-                    self.post(self.update_stt_progress_percent, progress_percent)
-                    continue
-                recent_output.append(line)
-                recent_output = recent_output[-12:]
-                self.post(self.append_stt_log, line)
-                if line.startswith("STATUS: "):
-                    self.post(self.stt_status.setText, line.removeprefix("STATUS: "))
-                if self.stt_cancel_requested and process.poll() is None:
-                    process.terminate()
-            return_code = process.wait()
-            if self.stt_cancel_requested:
+            if result.cancelled:
                 completion_callback = self.stt_job_cancelled
-            elif return_code != 0:
-                message = "\n".join(recent_output[-8:]) or f"Whisper model download exited with code {return_code}."
+            elif result.return_code != 0:
+                message = (
+                    "\n".join(result.recent_output[-8:])
+                    or f"Whisper model download exited with code {result.return_code}."
+                )
                 completion_callback = self.stt_job_failed
                 completion_args = (message,)
             else:

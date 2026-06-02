@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import gcd
 from typing import TypedDict
 
 from voicebridge.languages import normalize_language_code
@@ -36,6 +37,7 @@ class NoUnusedModelingPromptError(ValueError):
 
 
 PROMPT_SLOT_ORDER = ("short", "medium", "question", "numbers", "names", "punctuation")
+PROMPT_SLOT_STRIDE_DIGITS = (1, 3, 5, 7, 11, 13)
 
 MODELING_PROMPT_CORPUS: dict[str, ModelingPromptCorpus] = {
     "it": {
@@ -1383,9 +1385,10 @@ def generate_modeling_prompt(
 
 def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_chars: int) -> str:
     selected: list[str] = []
+    variant_index = prompt_variant_index(seed, corpus)
     for slot_index, slot_name in enumerate(PROMPT_SLOT_ORDER):
         slot = corpus[slot_name]
-        sentence = slot[slot_sentence_index(seed, corpus, slot_index, len(slot))]
+        sentence = slot[slot_sentence_index(variant_index, corpus, slot_index, len(slot))]
         candidate = normalize_prompt_text(" ".join((*selected, sentence)))
         if len(candidate) <= max_chars:
             selected.append(sentence)
@@ -1396,13 +1399,41 @@ def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_cha
     return normalize_prompt_text(fallback[:max_chars])
 
 
-def slot_sentence_index(seed: int, corpus: ModelingPromptCorpus, slot_index: int, slot_length: int) -> int:
+def prompt_variant_index(seed: int, corpus: ModelingPromptCorpus) -> int:
+    variant_count = modeling_prompt_variant_count(corpus)
+    if variant_count <= 1:
+        return 0
+    return (seed * prompt_variant_stride(corpus)) % variant_count
+
+
+def prompt_variant_stride(corpus: ModelingPromptCorpus) -> int:
+    variant_count = modeling_prompt_variant_count(corpus)
+    if variant_count <= 1:
+        return 1
+    stride = 0
+    multiplier = 1
+    for slot_index, slot_name in enumerate(PROMPT_SLOT_ORDER):
+        slot_length = max(1, len(corpus[slot_name]))
+        digit = 0
+        if slot_length > 1:
+            digit = PROMPT_SLOT_STRIDE_DIGITS[slot_index] % slot_length or 1
+        stride += digit * multiplier
+        multiplier *= slot_length
+    stride %= variant_count
+    if stride == 0:
+        stride = 1
+    while gcd(stride, variant_count) != 1:
+        stride = (stride + 1) % variant_count or 1
+    return stride
+
+
+def slot_sentence_index(variant_index: int, corpus: ModelingPromptCorpus, slot_index: int, slot_length: int) -> int:
     if slot_length <= 1:
         return 0
     divisor = 1
     for previous_slot in PROMPT_SLOT_ORDER[:slot_index]:
         divisor *= max(1, len(corpus[previous_slot]))
-    return (seed // divisor) % slot_length
+    return (variant_index // divisor) % slot_length
 
 
 def modeling_prompt_variant_count(corpus: ModelingPromptCorpus) -> int:

@@ -38,6 +38,22 @@ def test_prompt_generation_avoids_recent_duplicates() -> None:
     assert len(set(prompts)) == len(prompts)
 
 
+def test_prompt_generation_varies_all_slots_in_short_runs() -> None:
+    prompts: list[str] = []
+    corpus = prompt_generator.MODELING_PROMPT_CORPUS["it"]
+    slot_values = {slot_name: set() for slot_name in prompt_generator.PROMPT_SLOT_ORDER}
+
+    for _index in range(10):
+        prompt = generate_modeling_prompt("it", used_texts=tuple(prompts))
+        prompts.append(prompt.text)
+        for slot_name in prompt_generator.PROMPT_SLOT_ORDER:
+            sentence = next((entry for entry in corpus[slot_name] if entry in prompt.text), None)
+            assert sentence is not None, slot_name
+            slot_values[slot_name].add(sentence)
+
+    assert all(len(values) > 1 for values in slot_values.values())
+
+
 def test_prompt_generation_avoids_duplicates_across_languages() -> None:
     for language_code in VOICE_PROFILE_LANGUAGES:
         prompts: list[str] = []

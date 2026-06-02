@@ -1,3 +1,8 @@
+import os
+import subprocess
+import tempfile
+import threading
+from contextlib import suppress
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,11 +21,23 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
+from voicebridge.app_paths import (
+    external_base_dir,
+    stt_model_dir,
+    stt_python_path,
+    stt_whisper_model_ready,
+    stt_worker_path,
+)
 from voicebridge.audio_recorder import AudioRecorderError, list_input_devices
+from voicebridge.constants import STT_MODEL
 from voicebridge.modeling_clip_recording_dialog import ModelingClipRecordingDialog
 from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     MODELING_CLIP_TEXT_GUIDED,
+    MODELING_VERIFICATION_ERROR,
+    MODELING_VERIFICATION_MATCH_OK,
+    MODELING_VERIFICATION_NEEDS_REVIEW,
+    MODELING_VERIFICATION_PENDING,
     ModelingClip,
     ModelingDataset,
     add_modeling_dataset_guided_prompt_history,
@@ -30,7 +47,10 @@ from voicebridge.modeling_datasets import (
     export_modeling_dataset,
     load_modeling_datasets,
     modeling_clip_audio_path,
+    modeling_clip_can_verify_transcript,
     modeling_clip_status_label,
+    modeling_clip_verification_label,
+    modeling_clip_verification_status,
     modeling_dataset_dir,
     modeling_dataset_exportable,
     modeling_dataset_guided_prompt_texts,
@@ -38,7 +58,10 @@ from voicebridge.modeling_datasets import (
     modeling_dataset_summary_text,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
+    toggle_modeling_clip_export_exclusion,
+    update_modeling_clip_recording,
     update_modeling_clip_transcript,
+    update_modeling_clip_verification,
     write_modeling_clip_transcript,
 )
 from voicebridge.modeling_prompt_generator import (
@@ -49,6 +72,7 @@ from voicebridge.modeling_prompt_generator import (
     generated_prompt_source,
     normalize_prompt_text,
 )
+from voicebridge.modeling_verification import compare_transcript_to_expected, read_whisper_markdown_text
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
@@ -63,6 +87,9 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_datasets = load_modeling_datasets()
         self.selected_modeling_dataset_id = ""
         self.selected_modeling_clip_id = ""
+        self.modeling_verification_queue = []
+        self.modeling_verification_running = False
+        self.modeling_verification_queued_clip_ids = set()
         self.sync_modeling_datasets_with_profiles(save=False)
 
     def sync_modeling_datasets_with_profiles(self, *, save: bool = True) -> None:
@@ -84,6 +111,15 @@ class ModelingDatasetsWorkflowMixin:
             return None
         clip_id = getattr(self, "selected_modeling_clip_id", "")
         return next((clip for clip in dataset["clips"] if clip["id"] == clip_id), None)
+
+    @staticmethod
+    def replace_modeling_clip(dataset: ModelingDataset, updated_clip: ModelingClip) -> bool:
+        for index, existing in enumerate(dataset["clips"]):
+            if existing["id"] == updated_clip["id"]:
+                dataset["clips"][index] = updated_clip
+                dataset["updated_at"] = updated_clip["updated_at"]
+                return True
+        return False
 
     def refresh_modeling_datasets_page(self) -> None:
         self.refresh_modeling_datasets_list()
@@ -170,9 +206,11 @@ class ModelingDatasetsWorkflowMixin:
                     mode = "Text"
                 else:
                     mode = "Free"
+                verification_label = modeling_clip_verification_label(modeling_clip_verification_status(clip))
+                export_label = " | Excluded" if clip.get("excluded_from_export", False) else ""
                 label = (
                     f"C. {index} | {modeling_clip_status_label(clip['status'])} | "
-                    f"{clip['duration_seconds']:.1f}s | {mode}"
+                    f"{clip['duration_seconds']:.1f}s | {mode} | {verification_label}{export_label}"
                 )
                 item = QListWidgetItem(label)
                 item.setData(Qt.ItemDataRole.UserRole, clip["id"])
@@ -207,13 +245,37 @@ class ModelingDatasetsWorkflowMixin:
             self.modeling_clip_details.setPlainText("")
             self.modeling_generated_prompt_text = ""
             return
+        verification_status = modeling_clip_verification_status(clip)
         self.modeling_dataset_status.setText(
-            f"Selected {dataset['name']} | {modeling_clip_status_label(clip['status'])}."
+            f"Selected {dataset['name']} | {modeling_clip_status_label(clip['status'])} | "
+            f"{modeling_clip_verification_label(verification_status)}."
         )
         self.modeling_clip_text_edit.setPlainText(clip.get("transcript_text", ""))
-        self.modeling_clip_details.setPlainText(clip.get("quality_details", ""))
+        self.modeling_clip_details.setPlainText(self.modeling_clip_details_text(clip))
         self.modeling_generated_prompt_text = ""
         self.update_modeling_text_counter()
+
+    @staticmethod
+    def modeling_clip_details_text(clip: ModelingClip) -> str:
+        sections = []
+        quality_details = clip.get("quality_details", "").strip()
+        if quality_details:
+            sections.append("Audio quality\n" + quality_details)
+        verification_status = modeling_clip_verification_status(clip)
+        verification_lines = [f"Status: {modeling_clip_verification_label(verification_status)}"]
+        score = float(clip.get("verification_score", 0.0) or 0.0)
+        if score:
+            verification_lines.append(f"Score: {score:.1f}%")
+        checked_at = clip.get("verification_checked_at", "").strip()
+        if checked_at:
+            verification_lines.append(f"Checked at: {checked_at}")
+        details = clip.get("verification_details", "").strip()
+        if details:
+            verification_lines.extend(["", details])
+        sections.append("Text verification\n" + "\n".join(verification_lines))
+        if clip.get("excluded_from_export", False):
+            sections.append("Export\nExcluded from export.")
+        return "\n\n".join(sections)
 
     def selected_modeling_audio_device(self) -> int | None:
         try:
@@ -375,6 +437,8 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_generated_prompt_text = ""
         self.refresh_modeling_datasets_page()
         self.modeling_dataset_status.setText(f"Saved clip: {modeling_clip_status_label(clip['status'])}.")
+        if modeling_clip_can_verify_transcript(clip):
+            self.queue_modeling_clip_verification(dataset, clip)
 
     def save_modeling_clip_transcript_from_editor(self) -> None:
         dataset = self.selected_modeling_dataset()
@@ -382,16 +446,14 @@ class ModelingDatasetsWorkflowMixin:
         if not dataset or not clip:
             return
         updated_clip = update_modeling_clip_transcript(clip, self.modeling_clip_text_edit.toPlainText())
-        for index, existing in enumerate(dataset["clips"]):
-            if existing["id"] == clip["id"]:
-                dataset["clips"][index] = updated_clip
-                break
-        dataset["updated_at"] = updated_clip["updated_at"]
+        self.replace_modeling_clip(dataset, updated_clip)
         write_modeling_clip_transcript(updated_clip)
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = updated_clip["id"]
         self.refresh_modeling_datasets_page()
         self.modeling_dataset_status.setText("Transcript saved.")
+        if modeling_clip_can_verify_transcript(updated_clip):
+            self.queue_modeling_clip_verification(dataset, updated_clip)
 
     def update_modeling_text_counter(self) -> None:
         if not hasattr(self, "modeling_clip_text_counter"):
@@ -431,6 +493,252 @@ class ModelingDatasetsWorkflowMixin:
         self.selected_modeling_clip_id = ""
         self.refresh_modeling_datasets_page()
         self.modeling_dataset_status.setText("Clip deleted.")
+
+    def retry_selected_modeling_clip_recording(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        clip = self.selected_modeling_clip()
+        if not dataset or not clip:
+            return
+        if clip.get("mode") != MODELING_CLIP_TEXT_GUIDED or not clip.get("transcript_text", "").strip():
+            self.show_error("Modeling Datasets", "Retry recording is available for guided clips with text.")
+            return
+        device_index = self.selected_modeling_audio_device()
+        if device_index is None:
+            return
+        retry_audio_path = modeling_clip_audio_path(dataset, f"{clip['id']}-retry-{uuid4().hex[:8]}")
+        dialog = ModelingClipRecordingDialog(
+            title="Retry guided recording",
+            output_path=retry_audio_path,
+            device_index=device_index,
+            prompt_text=clip["transcript_text"],
+            max_seconds=MODELING_RECORD_MAX_SECONDS,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.recording_path is None:
+            self.modeling_dataset_status.setText("Retry cancelled.")
+            return
+        old_audio_path = Path(clip["audio_path"])
+        updated_clip = update_modeling_clip_recording(
+            clip,
+            audio_path=dialog.recording_path,
+            duration_seconds=dialog.duration_seconds,
+            quality_details=dialog.quality_details,
+        )
+        if old_audio_path != Path(updated_clip["audio_path"]):
+            with suppress(OSError):
+                old_audio_path.unlink(missing_ok=True)
+        self.replace_modeling_clip(dataset, updated_clip)
+        save_modeling_datasets(self.modeling_datasets)
+        self.selected_modeling_clip_id = updated_clip["id"]
+        self.refresh_modeling_datasets_page()
+        self.modeling_dataset_status.setText("Recording replaced; text verification queued.")
+        self.queue_modeling_clip_verification(dataset, updated_clip)
+
+    def toggle_selected_modeling_clip_export_exclusion(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        clip = self.selected_modeling_clip()
+        if not dataset or not clip:
+            return
+        updated_clip = toggle_modeling_clip_export_exclusion(clip)
+        self.replace_modeling_clip(dataset, updated_clip)
+        save_modeling_datasets(self.modeling_datasets)
+        self.selected_modeling_clip_id = updated_clip["id"]
+        self.refresh_modeling_datasets_page()
+        if updated_clip.get("excluded_from_export", False):
+            self.modeling_dataset_status.setText("Clip excluded from export.")
+        else:
+            self.modeling_dataset_status.setText("Clip included in export.")
+
+    def verify_selected_modeling_clip_text(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        clip = self.selected_modeling_clip()
+        if not dataset or not clip:
+            return
+        if not modeling_clip_can_verify_transcript(clip):
+            self.show_error("Modeling Datasets", "Select a guided clip with audio and text.")
+            return
+        self.queue_modeling_clip_verification(dataset, clip)
+
+    def queue_modeling_clip_verification(
+        self,
+        dataset: ModelingDataset,
+        clip: ModelingClip,
+    ) -> None:
+        if not modeling_clip_can_verify_transcript(clip):
+            return
+        queue_key = f"{dataset['id']}:{clip['id']}"
+        if queue_key in self.modeling_verification_queued_clip_ids:
+            self.modeling_dataset_status.setText("Text verification is already queued.")
+            return
+        python_path = stt_python_path()
+        worker_path = stt_worker_path()
+        preflight_error = ""
+        if not python_path.is_file():
+            preflight_error = f"STT Python runtime missing: {python_path}"
+        elif not worker_path.is_file():
+            preflight_error = f"STT worker missing: {worker_path}"
+        elif not stt_whisper_model_ready():
+            preflight_error = f"Whisper large-v3 model not downloaded: {stt_model_dir()}"
+        if preflight_error:
+            updated_clip = update_modeling_clip_verification(
+                clip,
+                status=MODELING_VERIFICATION_ERROR,
+                details=preflight_error,
+            )
+            self.replace_modeling_clip(dataset, updated_clip)
+            save_modeling_datasets(self.modeling_datasets)
+            self.refresh_modeling_datasets_page()
+            self.modeling_dataset_status.setText("Text verification unavailable.")
+            return
+
+        pending_clip = update_modeling_clip_verification(
+            clip,
+            status=MODELING_VERIFICATION_PENDING,
+            details="Waiting for Whisper transcript verification.",
+        )
+        self.replace_modeling_clip(dataset, pending_clip)
+        save_modeling_datasets(self.modeling_datasets)
+        self.selected_modeling_clip_id = pending_clip["id"]
+        self.refresh_modeling_datasets_page()
+        self.modeling_verification_queue.append(
+            {
+                "dataset_id": dataset["id"],
+                "clip_id": pending_clip["id"],
+                "audio_path": pending_clip["audio_path"],
+                "expected_text": pending_clip["transcript_text"],
+                "language_code": pending_clip.get("language_code", dataset["language_code"]),
+            }
+        )
+        self.modeling_verification_queued_clip_ids.add(queue_key)
+        self.modeling_dataset_status.setText("Text verification queued.")
+        self.start_next_modeling_clip_verification()
+
+    def start_next_modeling_clip_verification(self) -> None:
+        if self.modeling_verification_running or not self.modeling_verification_queue:
+            return
+        job = self.modeling_verification_queue.pop(0)
+        self.modeling_verification_running = True
+        threading.Thread(target=self.modeling_clip_verification_worker, args=(job,), daemon=True).start()
+
+    def modeling_clip_verification_worker(self, job: dict[str, str]) -> None:
+        dataset_id = job["dataset_id"]
+        clip_id = job["clip_id"]
+        audio_path = job["audio_path"]
+        expected_text = job["expected_text"]
+        language_code = (job.get("language_code") or "auto").strip().lower() or "auto"
+        device = getattr(self, "preferred_stt_device_key", "auto")
+        if device == "cuda" and not getattr(self, "stt_cuda_available", False):
+            device = "auto"
+        result = {
+            "status": MODELING_VERIFICATION_ERROR,
+            "score": 0.0,
+            "detected_text": "",
+            "details": "Text verification failed before Whisper could run.",
+        }
+        try:
+            with tempfile.TemporaryDirectory(prefix="voicebridge-modeling-verify-") as temp_dir:
+                output_path = Path(temp_dir) / "transcript.md"
+                command = [
+                    str(stt_python_path()),
+                    str(stt_worker_path()),
+                    "--media",
+                    audio_path,
+                    "--output",
+                    str(output_path),
+                    "--mode",
+                    "transcript",
+                    "--model",
+                    STT_MODEL,
+                    "--model-dir",
+                    str(stt_model_dir()),
+                    "--language",
+                    language_code,
+                    "--device",
+                    device,
+                    "--batch-size",
+                    "1",
+                    "--offline",
+                ]
+                recent_output: list[str] = []
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(external_base_dir()),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=creationflags,
+                    env=os.environ.copy(),
+                )
+                assert process.stdout is not None
+                for raw_line in process.stdout:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    recent_output.append(line)
+                    recent_output = recent_output[-10:]
+                return_code = process.wait()
+                if return_code != 0:
+                    details = "\n".join(recent_output) or f"Whisper verification exited with code {return_code}."
+                    raise RuntimeError(details)
+                detected_text = read_whisper_markdown_text(output_path)
+                result = compare_transcript_to_expected(expected_text, detected_text)
+        except (OSError, RuntimeError, AssertionError, ValueError) as exc:
+            result = {
+                "status": MODELING_VERIFICATION_ERROR,
+                "score": 0.0,
+                "detected_text": "",
+                "details": str(exc),
+            }
+        self.post(
+            self.finish_modeling_clip_verification,
+            dataset_id,
+            clip_id,
+            audio_path,
+            expected_text,
+            result,
+        )
+
+    def finish_modeling_clip_verification(
+        self,
+        dataset_id: str,
+        clip_id: str,
+        audio_path: str,
+        expected_text: str,
+        result: dict[str, object],
+    ) -> None:
+        queue_key = f"{dataset_id}:{clip_id}"
+        self.modeling_verification_queued_clip_ids.discard(queue_key)
+        self.modeling_verification_running = False
+        dataset = next((entry for entry in self.modeling_datasets if entry["id"] == dataset_id), None)
+        clip = None
+        if dataset:
+            clip = next((entry for entry in dataset["clips"] if entry["id"] == clip_id), None)
+        if dataset and clip:
+            if clip.get("audio_path") == audio_path and clip.get("transcript_text") == expected_text:
+                updated_clip = update_modeling_clip_verification(
+                    clip,
+                    status=str(result.get("status", MODELING_VERIFICATION_ERROR)),
+                    score=float(result.get("score", 0.0) or 0.0),
+                    detected_text=str(result.get("detected_text", "")),
+                    details=str(result.get("details", "")),
+                )
+                self.replace_modeling_clip(dataset, updated_clip)
+                save_modeling_datasets(self.modeling_datasets)
+                self.selected_modeling_clip_id = updated_clip["id"]
+                self.refresh_modeling_datasets_page()
+                if updated_clip["verification_status"] == MODELING_VERIFICATION_MATCH_OK:
+                    self.modeling_dataset_status.setText("Text verification passed.")
+                elif updated_clip["verification_status"] == MODELING_VERIFICATION_NEEDS_REVIEW:
+                    self.modeling_dataset_status.setText("Text verification needs review.")
+                else:
+                    self.modeling_dataset_status.setText("Text verification failed.")
+            else:
+                self.modeling_dataset_status.setText("Skipped stale text verification result.")
+        self.start_next_modeling_clip_verification()
 
     def play_selected_modeling_clip(self) -> None:
         clip = self.selected_modeling_clip()
@@ -489,6 +797,12 @@ class ModelingDatasetsWorkflowMixin:
         has_dataset = dataset is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
         has_exportable_clips = bool(dataset and modeling_dataset_exportable(dataset))
+        can_verify_clip = bool(clip and modeling_clip_can_verify_transcript(clip))
+        can_retry_clip = bool(
+            clip
+            and clip.get("mode") == MODELING_CLIP_TEXT_GUIDED
+            and clip.get("transcript_text", "").strip()
+        )
         text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
         can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
         self.modeling_record_text_button.setEnabled(can_record_from_text)
@@ -503,6 +817,13 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_play_clip_button.setEnabled(has_clip_audio)
         self.modeling_open_clip_button.setEnabled(has_clip_audio)
         self.modeling_transcribe_clip_button.setEnabled(has_clip_audio)
+        self.modeling_retry_clip_button.setEnabled(can_retry_clip)
+        self.modeling_verify_clip_button.setEnabled(can_verify_clip)
+        self.modeling_toggle_export_clip_button.setEnabled(clip is not None)
+        if clip and clip.get("excluded_from_export", False):
+            self.modeling_toggle_export_clip_button.setText("Include export")
+        else:
+            self.modeling_toggle_export_clip_button.setText("Exclude export")
         self.modeling_open_dataset_folder_button.setEnabled(has_dataset)
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
 
@@ -555,15 +876,24 @@ class ModelingDatasetsWorkflowMixin:
         clip_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_play_clip_button = QPushButton("Play")
         self.modeling_open_clip_button = QPushButton("Open audio")
+        self.modeling_retry_clip_button = QPushButton("Retry recording")
+        self.modeling_verify_clip_button = QPushButton("Verify text")
+        self.modeling_toggle_export_clip_button = QPushButton("Exclude export")
         self.modeling_delete_clip_button = QPushButton("Delete clip")
         self.modeling_transcribe_clip_button = QPushButton("Open in Transcription")
         self.modeling_play_clip_button.clicked.connect(self.play_selected_modeling_clip)
         self.modeling_open_clip_button.clicked.connect(self.open_selected_modeling_clip)
+        self.modeling_retry_clip_button.clicked.connect(self.retry_selected_modeling_clip_recording)
+        self.modeling_verify_clip_button.clicked.connect(self.verify_selected_modeling_clip_text)
+        self.modeling_toggle_export_clip_button.clicked.connect(self.toggle_selected_modeling_clip_export_exclusion)
         self.modeling_delete_clip_button.clicked.connect(self.delete_selected_modeling_clip)
         self.modeling_transcribe_clip_button.clicked.connect(self.send_modeling_clip_to_transcription)
         clip_actions.addWidget(self.modeling_play_clip_button)
         clip_actions.addWidget(self.modeling_open_clip_button)
         clip_actions.addWidget(self.modeling_transcribe_clip_button)
+        clip_actions.addWidget(self.modeling_retry_clip_button)
+        clip_actions.addWidget(self.modeling_verify_clip_button)
+        clip_actions.addWidget(self.modeling_toggle_export_clip_button)
         clip_actions.addStretch(1)
         clip_actions.addWidget(self.modeling_delete_clip_button)
         clips_card.content_layout.addWidget(self.modeling_clips_list)

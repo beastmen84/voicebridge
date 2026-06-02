@@ -152,6 +152,8 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
    pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
 5. Per una clip libera, usare `Free record`; registra per massimo 60 secondi e la clip viene salvata come `Needs transcript`.
 6. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
+7. Le clip guidate con audio e testo vengono mandate in verifica Whisper in background: l'utente puo' continuare a
+   registrare mentre lo stato passa da `Checking text` a `Match OK`, `Needs review` o `Check error`.
 
 I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,
 testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
@@ -159,16 +161,21 @@ Le clip create con il generatore mantengono nel JSON la sorgente `generated_prom
 rimane il transcript esatto associato alla registrazione. Il generatore non ricicla automaticamente prompt gia' usati:
 se il pool e' esaurito, bisogna usare testo custom, caricare uno script o premere `Reset guided history`. Il reset
 cancella solo la cronologia dei prompt proposti; i testi gia' salvati nelle clip restano comunque esclusi dai duplicati.
+Se una clip guidata va in `Needs review`, usare `Retry recording` per rifare l'audio con lo stesso testo, correggere il
+transcript e premere `Save transcript`, oppure `Exclude export` per tenerla nel dataset senza copiarla nel training export.
+`Verify text` rilancia il controllo Whisper sulla clip selezionata. Eliminare una clip non libera la cronologia del prompt
+generato: per riusare volontariamente i testi guidati serve `Reset guided history`.
 La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata utile, clip senza transcript, audio mancanti
-e segnali come clip troppo corte/lunghe, volume basso, clipping o SNR stimato basso. L'app separa `Export readiness`
+stato verifica testo e segnali come clip troppo corte/lunghe, volume basso, clipping o SNR stimato basso. L'app separa `Export readiness`
 dal livello reale del dataset: `Usable` richiede almeno 5 clip pronte e 60 secondi di audio ed e' pensato soprattutto
 per testare la pipeline. Il livello qualitativo viene invece letto dai minuti effettivi validati: test tecnico sotto
 5 minuti, base 5-15 minuti, recommended 15-30 minuti, high quality 30-60 minuti e premium oltre 60 minuti.
 Il target consigliato per una voce da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 `Export dataset` e' disponibile solo da stato `Usable` in poi e crea una copia pronta per training in
 `modeling_exports\<nome profilo>-<timestamp>` con `wavs`, `metadata.csv` in formato `wavs/clip.wav|testo` e
-`dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente e non modifica i
-file di lavoro.
+`dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente; per le clip
+guidate esclude anche verifiche `Checking text`, `Needs review`, `Check error` e clip marcate manualmente come escluse.
+L'export non modifica i file di lavoro.
 
 ### Local Voices > Setup
 

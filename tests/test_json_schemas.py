@@ -22,13 +22,17 @@ def test_app_json_version_supported_accepts_current_and_legacy_int_version() -> 
 
 
 def test_modeling_datasets_supports_previous_schema_version() -> None:
-    assert current_schema_version(MODELING_DATASETS_JSON_KIND) == "1.1"
+    assert current_schema_version(MODELING_DATASETS_JSON_KIND) == "1.2"
     assert app_json_version_supported(
         {"schema_version": "1.0", "kind": MODELING_DATASETS_JSON_KIND},
         kind=MODELING_DATASETS_JSON_KIND,
     )
     assert app_json_version_supported(
         {"schema_version": "1.1", "kind": MODELING_DATASETS_JSON_KIND},
+        kind=MODELING_DATASETS_JSON_KIND,
+    )
+    assert app_json_version_supported(
+        {"schema_version": "1.2", "kind": MODELING_DATASETS_JSON_KIND},
         kind=MODELING_DATASETS_JSON_KIND,
     )
 

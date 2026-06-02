@@ -190,10 +190,16 @@ class VoiceBridgeQt(
     modeling_save_text_button: QPushButton
     modeling_play_clip_button: QPushButton
     modeling_open_clip_button: QPushButton
+    modeling_retry_clip_button: QPushButton
+    modeling_verify_clip_button: QPushButton
+    modeling_toggle_export_clip_button: QPushButton
     modeling_delete_clip_button: QPushButton
     modeling_transcribe_clip_button: QPushButton
     modeling_clip_audio_output: Any
     modeling_clip_media_player: Any
+    modeling_verification_queue: list[dict[str, str]]
+    modeling_verification_running: bool
+    modeling_verification_queued_clip_ids: set[str]
 
     voice_modeling_export_info: VoiceModelingExportInfo | None
     voice_modeling_export_combo: QComboBox

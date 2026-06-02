@@ -12,12 +12,15 @@ from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     MODELING_CLIP_NEEDS_TRANSCRIPT,
     MODELING_CLIP_READY,
+    MODELING_CLIP_TEXT_GUIDED,
     MODELING_DATASET_GOOD,
     MODELING_DATASET_NOT_READY,
     MODELING_DATASET_TIER_BASE,
     MODELING_DATASET_TIER_HIGH_QUALITY,
     MODELING_DATASET_TIER_TEST,
     MODELING_DATASET_USABLE,
+    MODELING_VERIFICATION_MATCH_OK,
+    MODELING_VERIFICATION_NEEDS_REVIEW,
     add_modeling_dataset_guided_prompt_history,
     build_modeling_clip,
     build_modeling_dataset_for_profile,
@@ -36,7 +39,9 @@ from voicebridge.modeling_datasets import (
     modeling_datasets_root,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
+    toggle_modeling_clip_export_exclusion,
     update_modeling_clip_transcript,
+    update_modeling_clip_verification,
     write_modeling_clip_transcript,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, VOICE_PROFILE_REFERENCE, build_voice_profile
@@ -216,6 +221,118 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
         assert export_audio_path == exported_clip["export_audio_path"]
         assert transcript_text == exported_clip["transcript_text"]
         assert (export_dir / export_audio_path).read_bytes() == f"RIFF ready {index}".encode()
+
+
+def test_export_modeling_dataset_skips_guided_clips_that_need_review(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"guided-{index}.wav"
+        audio_path.write_bytes(f"RIFF guided {index}".encode())
+        clip = build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_TEXT_GUIDED,
+            audio_path=audio_path,
+            transcript_text=f"Guided clip {index}",
+            transcript_source="generated_prompt:1.1",
+            duration_seconds=12.0,
+            quality_details="RMS level: 8%\nInput clipping: 0.00%",
+            clip_id=f"guided-{index}",
+        )
+        dataset["clips"].append(
+            update_modeling_clip_verification(
+                clip,
+                status=MODELING_VERIFICATION_NEEDS_REVIEW if index == 2 else MODELING_VERIFICATION_MATCH_OK,
+                score=74.0 if index == 2 else 96.0,
+                detected_text=f"Guided clip {index}",
+                details="Test verification result",
+            )
+        )
+
+    result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+    export_data = json.loads((Path(result["export_dir"]) / "dataset.json").read_text(encoding="utf-8"))
+
+    assert result["exported_clips"] == 4
+    assert result["skipped_clips"] == 1
+    assert {clip["id"] for clip in export_data["exported_clips"]} == {
+        "guided-0",
+        "guided-1",
+        "guided-3",
+        "guided-4",
+    }
+
+
+def test_export_modeling_dataset_skips_manually_excluded_clips(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"ready-{index}.wav"
+        audio_path.write_bytes(f"RIFF ready {index}".encode())
+        clip = build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=audio_path,
+            transcript_text=f"Ready clip {index}",
+            duration_seconds=12.0,
+            quality_details="RMS level: 8%\nInput clipping: 0.00%",
+            clip_id=f"ready-{index}",
+        )
+        dataset["clips"].append(toggle_modeling_clip_export_exclusion(clip) if index == 3 else clip)
+
+    result = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+
+    assert result["exported_clips"] == 4
+    assert result["skipped_clips"] == 1
+
+
+def test_modeling_dataset_exportable_requires_at_least_one_unblocked_clip(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"blocked-{index}.wav"
+        audio_path.write_bytes(f"RIFF blocked {index}".encode())
+        clip = build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_TEXT_GUIDED,
+            audio_path=audio_path,
+            transcript_text=f"Blocked clip {index}",
+            transcript_source="generated_prompt:1.1",
+            duration_seconds=12.0,
+            quality_details="RMS level: 8%\nInput clipping: 0.00%",
+            clip_id=f"blocked-{index}",
+        )
+        dataset["clips"].append(
+            update_modeling_clip_verification(
+                clip,
+                status=MODELING_VERIFICATION_NEEDS_REVIEW,
+                score=50.0,
+                detected_text="Different words",
+                details="Needs review",
+            )
+        )
+
+    assert modeling_dataset_summary(dataset)["readiness"] == MODELING_DATASET_USABLE
+    assert modeling_dataset_exportable(dataset) is False
+    with pytest.raises(ValueError, match="No exportable ready clips"):
+        export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
 
 
 def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> None:

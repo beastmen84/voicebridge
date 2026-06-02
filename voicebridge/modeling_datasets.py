@@ -35,6 +35,18 @@ MODELING_CLIP_FREE_RECORDING = "free_recording"
 MODELING_CLIP_READY = "ready"
 MODELING_CLIP_NEEDS_TRANSCRIPT = "needs_transcript"
 MODELING_CLIP_MISSING_AUDIO = "missing_audio"
+MODELING_VERIFICATION_NOT_REQUIRED = "not_required"
+MODELING_VERIFICATION_UNVERIFIED = "unverified"
+MODELING_VERIFICATION_PENDING = "pending"
+MODELING_VERIFICATION_MATCH_OK = "match_ok"
+MODELING_VERIFICATION_NEEDS_REVIEW = "needs_review"
+MODELING_VERIFICATION_ERROR = "error"
+MODELING_VERIFICATION_SKIPPED = "skipped"
+MODELING_VERIFICATION_EXPORT_BLOCKING = {
+    MODELING_VERIFICATION_PENDING,
+    MODELING_VERIFICATION_NEEDS_REVIEW,
+    MODELING_VERIFICATION_ERROR,
+}
 MODELING_DATASET_NOT_READY = "not_ready"
 MODELING_DATASET_USABLE = "usable"
 MODELING_DATASET_GOOD = "good"
@@ -74,6 +86,12 @@ class ModelingClip(TypedDict):
     duration_seconds: float
     quality_details: str
     status: str
+    verification_status: str
+    verification_score: float
+    verification_text: str
+    verification_details: str
+    verification_checked_at: str
+    excluded_from_export: bool
     created_at: str
     updated_at: str
 
@@ -101,6 +119,10 @@ class ModelingDatasetSummary(TypedDict):
     low_level_clips: int
     clipping_clips: int
     noisy_clips: int
+    verification_pending_clips: int
+    verification_review_clips: int
+    verification_error_clips: int
+    excluded_clips: int
     readiness: str
     dataset_tier: str
     target_reached: bool
@@ -188,6 +210,52 @@ def modeling_clip_status_label(status: str) -> str:
     }.get(status, status.replace("_", " ").title())
 
 
+def modeling_clip_verification_label(status: str) -> str:
+    return {
+        MODELING_VERIFICATION_NOT_REQUIRED: "No text check",
+        MODELING_VERIFICATION_UNVERIFIED: "Text check pending",
+        MODELING_VERIFICATION_PENDING: "Checking text",
+        MODELING_VERIFICATION_MATCH_OK: "Match OK",
+        MODELING_VERIFICATION_NEEDS_REVIEW: "Needs review",
+        MODELING_VERIFICATION_ERROR: "Check error",
+        MODELING_VERIFICATION_SKIPPED: "Check skipped",
+    }.get(status, status.replace("_", " ").title())
+
+
+def modeling_clip_can_verify_transcript(clip: ModelingClip) -> bool:
+    return (
+        clip.get("mode") == MODELING_CLIP_TEXT_GUIDED
+        and bool(clip.get("transcript_text", "").strip())
+        and Path(clip.get("audio_path", "")).is_file()
+    )
+
+
+def modeling_clip_verification_status(clip: ModelingClip) -> str:
+    status = clip.get("verification_status", "")
+    valid_statuses = {
+        MODELING_VERIFICATION_NOT_REQUIRED,
+        MODELING_VERIFICATION_UNVERIFIED,
+        MODELING_VERIFICATION_PENDING,
+        MODELING_VERIFICATION_MATCH_OK,
+        MODELING_VERIFICATION_NEEDS_REVIEW,
+        MODELING_VERIFICATION_ERROR,
+        MODELING_VERIFICATION_SKIPPED,
+    }
+    if status in valid_statuses:
+        return status
+    if clip.get("mode") == MODELING_CLIP_TEXT_GUIDED and clip.get("transcript_text", "").strip():
+        return MODELING_VERIFICATION_UNVERIFIED
+    return MODELING_VERIFICATION_NOT_REQUIRED
+
+
+def modeling_clip_export_blocked(clip: ModelingClip) -> bool:
+    if bool(clip.get("excluded_from_export", False)):
+        return True
+    if clip.get("mode") != MODELING_CLIP_TEXT_GUIDED:
+        return False
+    return modeling_clip_verification_status(clip) in MODELING_VERIFICATION_EXPORT_BLOCKING
+
+
 def modeling_dataset_readiness_label(readiness: str) -> str:
     return {
         MODELING_DATASET_NOT_READY: "Not ready",
@@ -231,8 +299,21 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
     low_level_clips = 0
     clipping_clips = 0
     noisy_clips = 0
+    verification_pending_clips = 0
+    verification_review_clips = 0
+    verification_error_clips = 0
+    excluded_clips = 0
 
     for clip in dataset["clips"]:
+        verification_status = modeling_clip_verification_status(clip)
+        if bool(clip.get("excluded_from_export", False)):
+            excluded_clips += 1
+        if verification_status in {MODELING_VERIFICATION_UNVERIFIED, MODELING_VERIFICATION_PENDING}:
+            verification_pending_clips += 1
+        if verification_status == MODELING_VERIFICATION_NEEDS_REVIEW:
+            verification_review_clips += 1
+        if verification_status == MODELING_VERIFICATION_ERROR:
+            verification_error_clips += 1
         status = modeling_clip_display_status(clip)
         if status == MODELING_CLIP_MISSING_AUDIO:
             missing_audio_clips += 1
@@ -261,7 +342,14 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
 
     average_ready_duration_seconds = ready_duration_seconds / ready_clips if ready_clips else 0.0
     quality_warning_count = short_ready_clips + long_ready_clips + low_level_clips + clipping_clips + noisy_clips
-    issue_count = quality_warning_count + pending_transcript_clips + missing_audio_clips
+    issue_count = (
+        quality_warning_count
+        + pending_transcript_clips
+        + missing_audio_clips
+        + verification_pending_clips
+        + verification_review_clips
+        + verification_error_clips
+    )
     if ready_clips >= MODELING_GOOD_READY_CLIPS and ready_duration_seconds >= MODELING_GOOD_READY_SECONDS:
         readiness = MODELING_DATASET_GOOD if issue_count == 0 else MODELING_DATASET_USABLE
     elif ready_clips >= MODELING_MIN_READY_CLIPS and ready_duration_seconds >= MODELING_MIN_READY_SECONDS:
@@ -279,6 +367,10 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         low_level_clips=low_level_clips,
         clipping_clips=clipping_clips,
         noisy_clips=noisy_clips,
+        verification_pending_clips=verification_pending_clips,
+        verification_review_clips=verification_review_clips,
+        verification_error_clips=verification_error_clips,
+        excluded_clips=excluded_clips,
     )
     dataset_tier = modeling_dataset_duration_tier(ready_duration_seconds)
     recommendations = modeling_dataset_summary_recommendations(
@@ -303,6 +395,10 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         "low_level_clips": low_level_clips,
         "clipping_clips": clipping_clips,
         "noisy_clips": noisy_clips,
+        "verification_pending_clips": verification_pending_clips,
+        "verification_review_clips": verification_review_clips,
+        "verification_error_clips": verification_error_clips,
+        "excluded_clips": excluded_clips,
         "readiness": readiness,
         "dataset_tier": dataset_tier,
         "target_reached": target_reached,
@@ -325,6 +421,12 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
         f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
+        (
+            "Text verification: "
+            f"{summary['verification_pending_clips']} pending, "
+            f"{summary['verification_review_clips']} needs review, "
+            f"{summary['verification_error_clips']} error"
+        ),
         (
             f"Target progress: {summary['ready_clips']}/{MODELING_TARGET_READY_CLIPS} clips, "
             f"{format_modeling_dataset_duration(summary['ready_duration_seconds'])}/"
@@ -355,11 +457,15 @@ def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
     return [
         clip for clip in dataset["clips"]
         if modeling_clip_display_status(clip) == MODELING_CLIP_READY
+        and not modeling_clip_export_blocked(clip)
     ]
 
 
 def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
-    return modeling_dataset_summary(dataset)["readiness"] in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}
+    return (
+        modeling_dataset_summary(dataset)["readiness"] in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}
+        and bool(ready_modeling_export_clips(dataset))
+    )
 
 
 def modeling_dataset_guided_prompt_texts(dataset: ModelingDataset) -> tuple[str, ...]:
@@ -415,11 +521,12 @@ def export_modeling_dataset(
     export_root: Path | None = None,
     timestamp: str | None = None,
 ) -> ModelingDatasetExportResult:
-    if not modeling_dataset_exportable(dataset):
+    summary = modeling_dataset_summary(dataset)
+    if summary["readiness"] not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
         raise ValueError("Dataset export requires at least Usable readiness.")
     ready_clips = ready_modeling_export_clips(dataset)
     if not ready_clips:
-        raise ValueError("No ready clips are available for export.")
+        raise ValueError("No exportable ready clips are available.")
 
     export_dir = unique_export_dir(modeling_dataset_export_dir(dataset, timestamp=timestamp, export_root=export_root))
     wavs_dir = export_dir / "wavs"
@@ -445,12 +552,13 @@ def export_modeling_dataset(
                 "export_audio_path": relative_audio_path,
                 "transcript_text": transcript_text,
                 "transcript_source": clip.get("transcript_source", ""),
+                "verification_status": modeling_clip_verification_status(clip),
+                "verification_score": _float(clip.get("verification_score")),
                 "duration_seconds": _float(clip.get("duration_seconds")),
             }
         )
 
     metadata_path.write_text("\n".join(metadata_lines) + "\n", encoding="utf-8")
-    summary = modeling_dataset_summary(dataset)
     dataset_json_path.write_text(
         json.dumps(
             with_schema_metadata(
@@ -513,6 +621,10 @@ def modeling_dataset_summary_issues(
     low_level_clips: int,
     clipping_clips: int,
     noisy_clips: int,
+    verification_pending_clips: int,
+    verification_review_clips: int,
+    verification_error_clips: int,
+    excluded_clips: int,
 ) -> list[str]:
     issues = []
     if ready_clips == 0:
@@ -527,6 +639,14 @@ def modeling_dataset_summary_issues(
         issues.append(f"{pending_transcript_clips} clip(s) need transcript text.")
     if missing_audio_clips:
         issues.append(f"{missing_audio_clips} clip(s) are missing their WAV file.")
+    if verification_pending_clips:
+        issues.append(f"{verification_pending_clips} guided clip(s) still need transcript verification.")
+    if verification_review_clips:
+        issues.append(f"{verification_review_clips} guided clip(s) need text review before export.")
+    if verification_error_clips:
+        issues.append(f"{verification_error_clips} guided clip(s) could not be verified automatically.")
+    if excluded_clips:
+        issues.append(f"{excluded_clips} clip(s) are excluded from export.")
     if short_ready_clips:
         issues.append(f"{short_ready_clips} ready clip(s) are shorter than {MODELING_MIN_READY_CLIP_SECONDS:.0f}s.")
     if long_ready_clips:
@@ -630,6 +750,16 @@ def build_modeling_clip(
         "duration_seconds": max(0.0, float(duration_seconds)),
         "quality_details": quality_details.strip(),
         "status": MODELING_CLIP_READY if transcript_text else MODELING_CLIP_NEEDS_TRANSCRIPT,
+        "verification_status": (
+            MODELING_VERIFICATION_UNVERIFIED
+            if normalized_mode == MODELING_CLIP_TEXT_GUIDED and transcript_text
+            else MODELING_VERIFICATION_NOT_REQUIRED
+        ),
+        "verification_score": 0.0,
+        "verification_text": "",
+        "verification_details": "",
+        "verification_checked_at": "",
+        "excluded_from_export": False,
         "created_at": timestamp,
         "updated_at": timestamp,
     }
@@ -645,6 +775,69 @@ def update_modeling_clip_transcript(
     updated["transcript_text"] = transcript_text.strip()
     updated["transcript_source"] = transcript_source.strip()
     updated["status"] = MODELING_CLIP_READY if updated["transcript_text"] else MODELING_CLIP_NEEDS_TRANSCRIPT
+    updated["verification_status"] = (
+        MODELING_VERIFICATION_UNVERIFIED
+        if updated.get("mode") == MODELING_CLIP_TEXT_GUIDED and updated["transcript_text"]
+        else MODELING_VERIFICATION_NOT_REQUIRED
+    )
+    updated["verification_score"] = 0.0
+    updated["verification_text"] = ""
+    updated["verification_details"] = ""
+    updated["verification_checked_at"] = ""
+    updated["updated_at"] = utc_timestamp()
+    return updated  # type: ignore[return-value]
+
+
+def update_modeling_clip_recording(
+    clip: ModelingClip,
+    *,
+    audio_path: str | Path,
+    duration_seconds: float,
+    quality_details: str,
+) -> ModelingClip:
+    updated = dict(clip)
+    updated["audio_path"] = str(Path(audio_path))
+    updated["duration_seconds"] = max(0.0, float(duration_seconds))
+    updated["quality_details"] = quality_details.strip()
+    updated["status"] = (
+        MODELING_CLIP_READY
+        if updated.get("transcript_text", "").strip()
+        else MODELING_CLIP_NEEDS_TRANSCRIPT
+    )
+    updated["verification_status"] = (
+        MODELING_VERIFICATION_UNVERIFIED
+        if updated.get("mode") == MODELING_CLIP_TEXT_GUIDED and updated.get("transcript_text", "").strip()
+        else MODELING_VERIFICATION_NOT_REQUIRED
+    )
+    updated["verification_score"] = 0.0
+    updated["verification_text"] = ""
+    updated["verification_details"] = ""
+    updated["verification_checked_at"] = ""
+    updated["updated_at"] = utc_timestamp()
+    return updated  # type: ignore[return-value]
+
+
+def update_modeling_clip_verification(
+    clip: ModelingClip,
+    *,
+    status: str,
+    score: float = 0.0,
+    detected_text: str = "",
+    details: str = "",
+) -> ModelingClip:
+    updated = dict(clip)
+    updated["verification_status"] = status
+    updated["verification_score"] = max(0.0, min(100.0, float(score)))
+    updated["verification_text"] = detected_text.strip()
+    updated["verification_details"] = details.strip()
+    updated["verification_checked_at"] = utc_timestamp()
+    updated["updated_at"] = updated["verification_checked_at"]
+    return updated  # type: ignore[return-value]
+
+
+def toggle_modeling_clip_export_exclusion(clip: ModelingClip) -> ModelingClip:
+    updated = dict(clip)
+    updated["excluded_from_export"] = not bool(updated.get("excluded_from_export", False))
     updated["updated_at"] = utc_timestamp()
     return updated  # type: ignore[return-value]
 
@@ -710,10 +903,17 @@ def normalized_modeling_clip(value: Any) -> ModelingClip | None:
         "duration_seconds": _float(value.get("duration_seconds")),
         "quality_details": _string_or_default(value.get("quality_details")),
         "status": status,
+        "verification_status": _string_or_default(value.get("verification_status")),
+        "verification_score": _float(value.get("verification_score")),
+        "verification_text": _string_or_default(value.get("verification_text")),
+        "verification_details": _string_or_default(value.get("verification_details")),
+        "verification_checked_at": _string_or_default(value.get("verification_checked_at")),
+        "excluded_from_export": bool(value.get("excluded_from_export", False)),
         "created_at": _string_or_default(value.get("created_at"), timestamp),
         "updated_at": _string_or_default(value.get("updated_at"), timestamp),
     }
     clip["status"] = modeling_clip_display_status(clip)
+    clip["verification_status"] = modeling_clip_verification_status(clip)
     return clip
 
 

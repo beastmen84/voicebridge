@@ -10,7 +10,7 @@ La guida operativa completa e' in [Manual.md](Manual.md).
 - Local TTS opzionale con profili vocali autorizzati e Coqui XTTS-v2.
 - TTS singola voce o multi-voce a blocchi, con output MP3 unico e timeline JSON dei blocchi.
 - Gestione profili vocali locali, dataset per voice modeling, setup e training XTTS-v2.
-- Generazione locale di testi guidati e sicuri per dataset vocali multilingua.
+- Generazione locale di testi guidati e sicuri per dataset vocali multilingua, con verifica Whisper in background.
 - Speech to text offline con WhisperX e Whisper `large-v3`.
 - Transcript Markdown, sottotitoli `.srt` automatici e sottotitoli da transcript fornito.
 - Embed o burn-in di sottotitoli su video.

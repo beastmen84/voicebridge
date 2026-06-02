@@ -15,6 +15,11 @@ from voicebridge.json_schemas import (
     app_json_version_supported,
     with_schema_metadata,
 )
+from voicebridge.modeling_prompt_generator import (
+    generated_prompt_source,
+    modeling_prompt_available_count,
+    normalize_prompt_text,
+)
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
@@ -79,6 +84,7 @@ class ModelingDataset(TypedDict):
     name: str
     language_code: str
     clips: list[ModelingClip]
+    guided_prompt_history: list[str]
     created_at: str
     updated_at: str
 
@@ -100,6 +106,8 @@ class ModelingDatasetSummary(TypedDict):
     target_reached: bool
     target_clips_percent: int
     target_duration_percent: int
+    guided_prompt_used_count: int
+    guided_prompt_available_count: int
     issues: list[str]
     recommendations: list[str]
 
@@ -278,6 +286,7 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         readiness=readiness,
         dataset_tier=dataset_tier,
     )
+    guided_prompt_used_count, guided_prompt_available = modeling_dataset_guided_prompt_usage(dataset)
     target_reached = (
         ready_clips >= MODELING_TARGET_READY_CLIPS
         and ready_duration_seconds >= MODELING_TARGET_READY_SECONDS
@@ -299,6 +308,8 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         "target_reached": target_reached,
         "target_clips_percent": _progress_percent(ready_clips, MODELING_TARGET_READY_CLIPS),
         "target_duration_percent": _progress_percent(ready_duration_seconds, MODELING_TARGET_READY_SECONDS),
+        "guided_prompt_used_count": guided_prompt_used_count,
+        "guided_prompt_available_count": guided_prompt_available,
         "issues": issues,
         "recommendations": recommendations,
     }
@@ -313,6 +324,7 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
         f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
+        f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
         (
             f"Target progress: {summary['ready_clips']}/{MODELING_TARGET_READY_CLIPS} clips, "
             f"{format_modeling_dataset_duration(summary['ready_duration_seconds'])}/"
@@ -348,6 +360,53 @@ def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
 
 def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
     return modeling_dataset_summary(dataset)["readiness"] in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}
+
+
+def modeling_dataset_guided_prompt_texts(dataset: ModelingDataset) -> tuple[str, ...]:
+    used: list[str] = []
+    seen: set[str] = set()
+    for text in (*dataset.get("guided_prompt_history", []), *generated_clip_prompt_texts(dataset)):
+        normalized_text = normalize_prompt_text(text)
+        if not normalized_text or normalized_text in seen:
+            continue
+        used.append(normalized_text)
+        seen.add(normalized_text)
+    return tuple(used)
+
+
+def generated_clip_prompt_texts(dataset: ModelingDataset) -> tuple[str, ...]:
+    return tuple(
+        clip.get("transcript_text", "")
+        for clip in dataset["clips"]
+        if generated_prompt_source(clip.get("transcript_source", ""))
+    )
+
+
+def modeling_dataset_guided_prompt_usage(dataset: ModelingDataset) -> tuple[int, int]:
+    return (
+        len(modeling_dataset_guided_prompt_texts(dataset)),
+        modeling_prompt_available_count(dataset["language_code"]),
+    )
+
+
+def add_modeling_dataset_guided_prompt_history(dataset: ModelingDataset, text: str) -> bool:
+    normalized_text = normalize_prompt_text(text)
+    if not normalized_text:
+        return False
+    history = dataset["guided_prompt_history"]
+    if normalized_text in {normalize_prompt_text(entry) for entry in history}:
+        return False
+    history.append(normalized_text)
+    dataset["updated_at"] = utc_timestamp()
+    return True
+
+
+def reset_modeling_dataset_guided_prompt_history(dataset: ModelingDataset) -> bool:
+    if not dataset["guided_prompt_history"]:
+        return False
+    dataset["guided_prompt_history"] = []
+    dataset["updated_at"] = utc_timestamp()
+    return True
 
 
 def export_modeling_dataset(
@@ -535,6 +594,7 @@ def build_modeling_dataset_for_profile(
         "name": profile["name"],
         "language_code": profile["language_code"],
         "clips": existing["clips"] if existing else [],
+        "guided_prompt_history": existing.get("guided_prompt_history", []) if existing else [],
         "created_at": existing["created_at"] if existing else timestamp,
         "updated_at": timestamp,
     }
@@ -673,12 +733,14 @@ def normalized_modeling_dataset(value: Any) -> ModelingDataset | None:
             clip = normalized_modeling_clip(raw_clip)
             if clip is not None:
                 clips.append(clip)
+    guided_prompt_history = normalized_guided_prompt_history(value.get("guided_prompt_history"))
     dataset: ModelingDataset = {
         "id": dataset_id,
         "profile_id": profile_id,
         "name": name,
         "language_code": _string_or_default(value.get("language_code"), "it"),
         "clips": clips,
+        "guided_prompt_history": guided_prompt_history,
         "created_at": _string_or_default(value.get("created_at"), timestamp),
         "updated_at": _string_or_default(value.get("updated_at"), timestamp),
     }
@@ -736,6 +798,22 @@ def ensure_modeling_datasets_for_profiles(
     modeling_profile_ids = {profile["id"] for profile in modeling_profiles}
     orphaned = [dataset for dataset in datasets if dataset["profile_id"] not in modeling_profile_ids]
     return [*synced, *orphaned], changed
+
+
+def normalized_guided_prompt_history(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    prompts: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized_text = normalize_prompt_text(item)
+        if not normalized_text or normalized_text in seen:
+            continue
+        prompts.append(normalized_text)
+        seen.add(normalized_text)
+    return prompts
 
 
 def _float(value: Any) -> float:

@@ -8,6 +8,10 @@ MODELING_PROMPT_CORPUS_VERSION = "1.0"
 MODELING_PROMPT_SOURCE_GENERATED = f"generated_prompt:{MODELING_PROMPT_CORPUS_VERSION}"
 MODELING_PROMPT_SOURCE_PROVIDED = "provided_text"
 MODELING_PROMPT_DEFAULT_MAX_CHARS = 450
+NO_UNUSED_MODELING_PROMPTS_MESSAGE = (
+    "No unused guided prompts are available for this dataset. "
+    "Add custom text, upload a script, or reset guided prompt history."
+)
 
 
 class ModelingPromptCorpus(TypedDict):
@@ -25,6 +29,10 @@ class GeneratedModelingPrompt:
     language_code: str
     corpus_version: str
     source: str
+
+
+class NoUnusedModelingPromptError(ValueError):
+    pass
 
 
 PROMPT_SLOT_ORDER = ("short", "medium", "question", "numbers", "names", "punctuation")
@@ -599,13 +607,7 @@ def generate_modeling_prompt(
                 source=MODELING_PROMPT_SOURCE_GENERATED,
             )
 
-    prompt = build_prompt_from_corpus(corpus, seed=len(used_texts), max_chars=max_chars)
-    return GeneratedModelingPrompt(
-        text=prompt,
-        language_code=language_key,
-        corpus_version=MODELING_PROMPT_CORPUS_VERSION,
-        source=MODELING_PROMPT_SOURCE_GENERATED,
-    )
+    raise NoUnusedModelingPromptError(NO_UNUSED_MODELING_PROMPTS_MESSAGE)
 
 
 def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_chars: int) -> str:
@@ -637,6 +639,10 @@ def modeling_prompt_variant_count(corpus: ModelingPromptCorpus) -> int:
     for slot_name in PROMPT_SLOT_ORDER:
         count *= max(1, len(corpus[slot_name]))
     return count
+
+
+def modeling_prompt_available_count(language_code: str) -> int:
+    return modeling_prompt_variant_count(MODELING_PROMPT_CORPUS[modeling_prompt_language_key(language_code)])
 
 
 def modeling_prompt_language_key(language_code: str) -> str:

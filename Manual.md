@@ -145,7 +145,8 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 2. Aprire `Local Voices > Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
 3. Per il flusso consigliato, usare `Generate guided text`: l'app compone un testo locale e sicuro dalla lingua del
    dataset, con frasi prevalidate e varieta' di ritmo, domande, numeri, nomi e punteggiatura. Poi usare
-   `Record from text`.
+   `Record from text`. Il contatore `Guided prompts: usati / disponibili` mostra quante combinazioni guidate sono gia'
+   state consumate nel dataset.
 4. Per una clip guidata avanzata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una
    singola clip e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi,
    pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
@@ -155,7 +156,9 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,
 testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
 Le clip create con il generatore mantengono nel JSON la sorgente `generated_prompt:<versione corpus>`; il testo mostrato
-rimane il transcript esatto associato alla registrazione.
+rimane il transcript esatto associato alla registrazione. Il generatore non ricicla automaticamente prompt gia' usati:
+se il pool e' esaurito, bisogna usare testo custom, caricare uno script o premere `Reset guided history`. Il reset
+cancella solo la cronologia dei prompt proposti; i testi gia' salvati nelle clip restano comunque esclusi dai duplicati.
 La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata utile, clip senza transcript, audio mancanti
 e segnali come clip troppo corte/lunghe, volume basso, clipping o SNR stimato basso. L'app separa `Export readiness`
 dal livello reale del dataset: `Usable` richiede almeno 5 clip pronte e 60 secondi di audio ed e' pensato soprattutto

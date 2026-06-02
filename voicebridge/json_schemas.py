@@ -1,6 +1,7 @@
 from typing import Any
 
 SCHEMA_VERSION_1_0 = "1.0"
+SCHEMA_VERSION_1_1 = "1.1"
 
 SETTINGS_JSON_KIND = "voicebridge_settings"
 VOICE_PROFILES_JSON_KIND = "voicebridge_voice_profiles"
@@ -15,13 +16,17 @@ VOICE_MODELING_TRAINING_RESULT_JSON_KIND = "voicebridge_voice_modeling_training_
 APP_JSON_SCHEMA_VERSIONS = {
     SETTINGS_JSON_KIND: SCHEMA_VERSION_1_0,
     VOICE_PROFILES_JSON_KIND: SCHEMA_VERSION_1_0,
-    MODELING_DATASETS_JSON_KIND: SCHEMA_VERSION_1_0,
+    MODELING_DATASETS_JSON_KIND: SCHEMA_VERSION_1_1,
     MODELING_DATASET_EXPORT_JSON_KIND: SCHEMA_VERSION_1_0,
     TTS_TIMELINE_JSON_KIND: SCHEMA_VERSION_1_0,
     LOCAL_TTS_CHUNKS_JSON_KIND: SCHEMA_VERSION_1_0,
     VOICE_MODELING_JOB_CONFIG_JSON_KIND: SCHEMA_VERSION_1_0,
     VOICE_MODELING_TRAINING_STATE_JSON_KIND: SCHEMA_VERSION_1_0,
     VOICE_MODELING_TRAINING_RESULT_JSON_KIND: SCHEMA_VERSION_1_0,
+}
+
+APP_JSON_SUPPORTED_SCHEMA_VERSIONS = {
+    MODELING_DATASETS_JSON_KIND: {SCHEMA_VERSION_1_0, SCHEMA_VERSION_1_1},
 }
 
 
@@ -55,7 +60,8 @@ def app_json_version_supported(
         version = schema_version_value(data.get("version"))
     if not version:
         return allow_legacy_missing
-    return version == current_schema_version(kind)
+    supported_versions = APP_JSON_SUPPORTED_SCHEMA_VERSIONS.get(kind, {current_schema_version(kind)})
+    return version in supported_versions
 
 
 def app_json_metadata_needs_refresh(data: Any, kind: str) -> bool:

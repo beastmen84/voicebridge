@@ -18,6 +18,7 @@ from voicebridge.modeling_datasets import (
     MODELING_DATASET_TIER_HIGH_QUALITY,
     MODELING_DATASET_TIER_TEST,
     MODELING_DATASET_USABLE,
+    add_modeling_dataset_guided_prompt_history,
     build_modeling_clip,
     build_modeling_dataset_for_profile,
     ensure_modeling_datasets_for_profiles,
@@ -28,9 +29,12 @@ from voicebridge.modeling_datasets import (
     modeling_clip_transcript_path,
     modeling_dataset_dir,
     modeling_dataset_exportable,
+    modeling_dataset_guided_prompt_texts,
+    modeling_dataset_guided_prompt_usage,
     modeling_dataset_summary,
     modeling_dataset_summary_text,
     modeling_datasets_root,
+    reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
@@ -111,6 +115,40 @@ def test_modeling_clip_transcript_sidecar(tmp_path: Path) -> None:
     assert updated["status"] == MODELING_CLIP_READY
     assert Path(updated["transcript_path"]).read_text(encoding="utf-8") == "Hello world\n"
     assert modeling_clip_status_label(updated["status"]) == "Ready"
+
+
+def test_modeling_dataset_guided_prompt_history_counts_unique_used_prompts(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    assert add_modeling_dataset_guided_prompt_history(dataset, "Prompt one") is True
+    assert add_modeling_dataset_guided_prompt_history(dataset, "Prompt one") is False
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=audio_path,
+            transcript_text="Prompt two",
+            transcript_source="generated_prompt:1.0",
+            duration_seconds=12.0,
+            clip_id="clip",
+        )
+    )
+
+    used_count, available_count = modeling_dataset_guided_prompt_usage(dataset)
+
+    assert used_count == 2
+    assert available_count == 729
+    assert modeling_dataset_guided_prompt_texts(dataset) == ("Prompt one", "Prompt two")
+    assert reset_modeling_dataset_guided_prompt_history(dataset) is True
+    assert modeling_dataset_guided_prompt_texts(dataset) == ("Prompt two",)
 
 
 def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
@@ -431,3 +469,31 @@ def test_save_and_load_modeling_datasets(tmp_path: Path) -> None:
     assert saved["schema_version"] == current_schema_version(MODELING_DATASETS_JSON_KIND)
     assert saved["kind"] == MODELING_DATASETS_JSON_KIND
     assert loaded == [dataset]
+
+
+def test_load_modeling_datasets_accepts_version_1_0_without_guided_history(tmp_path: Path) -> None:
+    config_path = tmp_path / "modeling_datasets.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "kind": MODELING_DATASETS_JSON_KIND,
+                "datasets": [
+                    {
+                        "id": "dataset-1",
+                        "profile_id": "profile-1",
+                        "name": "Dataset",
+                        "language_code": "it",
+                        "clips": [],
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_modeling_datasets(config_path)
+
+    assert loaded[0]["guided_prompt_history"] == []

@@ -23,6 +23,7 @@ from voicebridge.modeling_datasets import (
     MODELING_CLIP_TEXT_GUIDED,
     ModelingClip,
     ModelingDataset,
+    add_modeling_dataset_guided_prompt_history,
     build_modeling_clip,
     delete_modeling_clip_files,
     ensure_modeling_datasets_for_profiles,
@@ -32,7 +33,10 @@ from voicebridge.modeling_datasets import (
     modeling_clip_status_label,
     modeling_dataset_dir,
     modeling_dataset_exportable,
+    modeling_dataset_guided_prompt_texts,
+    modeling_dataset_guided_prompt_usage,
     modeling_dataset_summary_text,
+    reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
@@ -40,6 +44,7 @@ from voicebridge.modeling_datasets import (
 from voicebridge.modeling_prompt_generator import (
     MODELING_PROMPT_SOURCE_GENERATED,
     MODELING_PROMPT_SOURCE_PROVIDED,
+    NoUnusedModelingPromptError,
     generate_modeling_prompt,
     generated_prompt_source,
     normalize_prompt_text,
@@ -131,8 +136,10 @@ class ModelingDatasetsWorkflowMixin:
         dataset = self.selected_modeling_dataset()
         if not dataset:
             self.modeling_dataset_summary_box.setPlainText("Create or select a modeling dataset.")
+            self.update_modeling_prompt_usage_label()
             return
         self.modeling_dataset_summary_box.setPlainText(modeling_dataset_summary_text(dataset))
+        self.update_modeling_prompt_usage_label()
 
     def refresh_modeling_clips_list(self) -> None:
         if not hasattr(self, "modeling_clips_list"):
@@ -252,21 +259,43 @@ class ModelingDatasetsWorkflowMixin:
         if not dataset:
             self.show_error("Modeling Datasets", "Select a modeling dataset first.")
             return
-        used_prompts = tuple(
-            clip.get("transcript_text", "")
-            for clip in dataset["clips"]
-            if generated_prompt_source(clip.get("transcript_source", ""))
-        )
-        prompt = generate_modeling_prompt(
-            dataset["language_code"],
-            used_texts=used_prompts,
-            max_chars=MODELING_GUIDED_TEXT_MAX_CHARS,
-        )
+        used_prompts = modeling_dataset_guided_prompt_texts(dataset)
+        try:
+            prompt = generate_modeling_prompt(
+                dataset["language_code"],
+                used_texts=used_prompts,
+                max_chars=MODELING_GUIDED_TEXT_MAX_CHARS,
+            )
+        except NoUnusedModelingPromptError as exc:
+            self.show_error("Modeling Datasets", str(exc))
+            self.modeling_dataset_status.setText("Guided prompt pool exhausted.")
+            return
+        if add_modeling_dataset_guided_prompt_history(dataset, prompt.text):
+            save_modeling_datasets(self.modeling_datasets)
         self.modeling_clip_text_edit.setPlainText(prompt.text)
         self.modeling_generated_prompt_text = prompt.text
+        self.update_modeling_prompt_usage_label()
         self.modeling_dataset_status.setText(
             f"Generated guided text ({prompt.language_code}, corpus {prompt.corpus_version})."
         )
+
+    def reset_guided_prompt_history(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            return
+        if not self.ask_question(
+            "Reset guided prompt history",
+            (
+                "Reset generated prompt history for this dataset?\n\n"
+                "Existing saved clips will still prevent duplicate guided text."
+            ),
+        ):
+            return
+        if reset_modeling_dataset_guided_prompt_history(dataset):
+            save_modeling_datasets(self.modeling_datasets)
+        self.update_modeling_dataset_summary()
+        self.update_modeling_dataset_buttons()
+        self.modeling_dataset_status.setText("Guided prompt history reset.")
 
     def record_modeling_clip_from_text(self) -> None:
         dataset = self.selected_modeling_dataset()
@@ -381,6 +410,16 @@ class ModelingDatasetsWorkflowMixin:
             self.modeling_clip_text_counter.setStyleSheet("color: #617083;")
         self.update_modeling_dataset_buttons()
 
+    def update_modeling_prompt_usage_label(self) -> None:
+        if not hasattr(self, "modeling_prompt_usage_label"):
+            return
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            self.modeling_prompt_usage_label.setText("Guided prompts: 0 / 0 used")
+            return
+        used_count, available_count = modeling_dataset_guided_prompt_usage(dataset)
+        self.modeling_prompt_usage_label.setText(f"Guided prompts: {used_count} / {available_count} used")
+
     def delete_selected_modeling_clip(self) -> None:
         dataset = self.selected_modeling_dataset()
         clip = self.selected_modeling_clip()
@@ -456,6 +495,9 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_record_free_button.setEnabled(has_dataset)
         self.modeling_load_text_button.setEnabled(has_dataset)
         self.modeling_generate_text_button.setEnabled(has_dataset)
+        self.modeling_reset_prompt_history_button.setEnabled(
+            bool(dataset and dataset.get("guided_prompt_history"))
+        )
         self.modeling_save_text_button.setEnabled(clip is not None)
         self.modeling_delete_clip_button.setEnabled(clip is not None)
         self.modeling_play_clip_button.setEnabled(has_clip_audio)
@@ -539,6 +581,8 @@ class ModelingDatasetsWorkflowMixin:
             f"0/{MODELING_GUIDED_TEXT_MAX_CHARS} characters for guided recording"
         )
         self.modeling_clip_text_counter.setObjectName("Muted")
+        self.modeling_prompt_usage_label = QLabel("Guided prompts: 0 / 0 used")
+        self.modeling_prompt_usage_label.setObjectName("Muted")
         self.modeling_clip_details = QPlainTextEdit()
         self.modeling_clip_details.setObjectName("LogBox")
         self.modeling_clip_details.setReadOnly(True)
@@ -548,17 +592,20 @@ class ModelingDatasetsWorkflowMixin:
         text_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_generate_text_button = QPushButton("Generate guided text")
         self.modeling_load_text_button = QPushButton("Load text")
+        self.modeling_reset_prompt_history_button = QPushButton("Reset guided history")
         self.modeling_record_text_button = QPushButton("Record from text")
         self.modeling_record_text_button.setObjectName("PrimaryButton")
         self.modeling_record_free_button = QPushButton("Free record")
         self.modeling_save_text_button = QPushButton("Save transcript")
         self.modeling_generate_text_button.clicked.connect(self.generate_modeling_clip_text)
         self.modeling_load_text_button.clicked.connect(self.load_modeling_clip_text_file)
+        self.modeling_reset_prompt_history_button.clicked.connect(self.reset_guided_prompt_history)
         self.modeling_record_text_button.clicked.connect(self.record_modeling_clip_from_text)
         self.modeling_record_free_button.clicked.connect(self.record_free_modeling_clip)
         self.modeling_save_text_button.clicked.connect(self.save_modeling_clip_transcript_from_editor)
         text_actions.addWidget(self.modeling_generate_text_button)
         text_actions.addWidget(self.modeling_load_text_button)
+        text_actions.addWidget(self.modeling_reset_prompt_history_button)
         text_actions.addWidget(self.modeling_record_text_button)
         text_actions.addWidget(self.modeling_record_free_button)
         text_actions.addStretch(1)
@@ -567,6 +614,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_status.setObjectName("StatusText")
         editor_card.content_layout.addWidget(self.modeling_clip_text_edit)
         editor_card.content_layout.addWidget(self.modeling_clip_text_counter)
+        editor_card.content_layout.addWidget(self.modeling_prompt_usage_label)
         editor_card.content_layout.addLayout(text_actions)
         editor_card.content_layout.addWidget(self.modeling_clip_details)
         editor_card.content_layout.addWidget(self.modeling_dataset_status)

@@ -1,7 +1,10 @@
 from voicebridge.modeling_prompt_generator import (
     MODELING_PROMPT_SOURCE_GENERATED,
+    NO_UNUSED_MODELING_PROMPTS_MESSAGE,
+    NoUnusedModelingPromptError,
     generate_modeling_prompt,
     generated_prompt_source,
+    modeling_prompt_available_count,
     modeling_prompt_language_key,
     prompt_corpus_languages_complete,
 )
@@ -37,6 +40,20 @@ def test_prompt_generation_avoids_duplicates_across_languages() -> None:
             prompts.append(prompt.text)
 
         assert len(set(prompts)) == len(prompts), language_code
+
+
+def test_prompt_generation_raises_when_pool_is_exhausted() -> None:
+    prompts: list[str] = []
+    for _index in range(modeling_prompt_available_count("it")):
+        prompt = generate_modeling_prompt("it", used_texts=tuple(prompts))
+        prompts.append(prompt.text)
+
+    try:
+        generate_modeling_prompt("it", used_texts=tuple(prompts))
+    except NoUnusedModelingPromptError as exc:
+        assert str(exc) == NO_UNUSED_MODELING_PROMPTS_MESSAGE
+    else:
+        raise AssertionError("Expected exhausted prompt pool to raise.")
 
 
 def test_prompt_generation_falls_back_to_english() -> None:

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QVBoxLayout,
 )
 
 from voicebridge.app_paths import (
@@ -1008,8 +1009,13 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_clips_list = QListWidget()
         self.modeling_clips_list.setMinimumHeight(220)
         self.modeling_clips_list.currentRowChanged.connect(lambda _row: self.modeling_clip_selection_changed())
-        clip_actions = QHBoxLayout()
+        clip_actions = QVBoxLayout()
         clip_actions.setContentsMargins(0, 0, 0, 0)
+        clip_actions.setSpacing(8)
+        clip_actions_primary = QHBoxLayout()
+        clip_actions_primary.setContentsMargins(0, 0, 0, 0)
+        clip_actions_secondary = QHBoxLayout()
+        clip_actions_secondary.setContentsMargins(0, 0, 0, 0)
         self.modeling_play_clip_button = QPushButton("Play")
         self.modeling_open_clip_button = QPushButton("Open audio")
         self.modeling_retry_clip_button = QPushButton("Retry recording")
@@ -1024,14 +1030,17 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_toggle_export_clip_button.clicked.connect(self.toggle_selected_modeling_clip_export_exclusion)
         self.modeling_delete_clip_button.clicked.connect(self.delete_selected_modeling_clip)
         self.modeling_transcribe_clip_button.clicked.connect(self.send_modeling_clip_to_transcription)
-        clip_actions.addWidget(self.modeling_play_clip_button)
-        clip_actions.addWidget(self.modeling_open_clip_button)
-        clip_actions.addWidget(self.modeling_transcribe_clip_button)
-        clip_actions.addWidget(self.modeling_retry_clip_button)
-        clip_actions.addWidget(self.modeling_verify_clip_button)
-        clip_actions.addWidget(self.modeling_toggle_export_clip_button)
-        clip_actions.addStretch(1)
-        clip_actions.addWidget(self.modeling_delete_clip_button)
+        clip_actions_primary.addWidget(self.modeling_play_clip_button)
+        clip_actions_primary.addWidget(self.modeling_open_clip_button)
+        clip_actions_primary.addWidget(self.modeling_transcribe_clip_button)
+        clip_actions_primary.addStretch(1)
+        clip_actions_secondary.addWidget(self.modeling_retry_clip_button)
+        clip_actions_secondary.addWidget(self.modeling_verify_clip_button)
+        clip_actions_secondary.addWidget(self.modeling_toggle_export_clip_button)
+        clip_actions_secondary.addStretch(1)
+        clip_actions_secondary.addWidget(self.modeling_delete_clip_button)
+        clip_actions.addLayout(clip_actions_primary)
+        clip_actions.addLayout(clip_actions_secondary)
         clips_card.content_layout.addWidget(self.modeling_clips_list)
         clips_card.content_layout.addLayout(clip_actions)
 

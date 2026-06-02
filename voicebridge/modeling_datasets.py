@@ -385,6 +385,7 @@ def export_modeling_dataset(
                 "source_audio_path": str(source_audio_path),
                 "export_audio_path": relative_audio_path,
                 "transcript_text": transcript_text,
+                "transcript_source": clip.get("transcript_source", ""),
                 "duration_seconds": _float(clip.get("duration_seconds")),
             }
         )

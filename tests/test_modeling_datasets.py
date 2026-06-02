@@ -167,6 +167,7 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
     assert export_data["language_code"] == "en"
     assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
     assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-0.wav"
+    assert export_data["exported_clips"][0]["transcript_source"] == ""
 
 
 def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> None:

@@ -143,14 +143,19 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 
 1. Creare prima un profilo in `Local Voices > Profiles` con tipo `Modeling dataset`.
 2. Aprire `Local Voices > Datasets`: l'app crea o aggiorna il dataset collegato al profilo.
-3. Per una clip guidata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una singola clip
-   e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi, pulisce il WAV
-   e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
-4. Per una clip libera, usare `Free record`; registra per massimo 60 secondi e la clip viene salvata come `Needs transcript`.
-5. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
+3. Per il flusso consigliato, usare `Generate guided text`: l'app compone un testo locale e sicuro dalla lingua del
+   dataset, con frasi prevalidate e varieta' di ritmo, domande, numeri, nomi e punteggiatura. Poi usare
+   `Record from text`.
+4. Per una clip guidata avanzata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una
+   singola clip e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi,
+   pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.
+5. Per una clip libera, usare `Free record`; registra per massimo 60 secondi e la clip viene salvata come `Needs transcript`.
+6. Per le clip libere si puo' usare `Open in Transcription` per mandare l'audio alla pagina STT, poi correggere/incollare il testo e salvarlo con `Save transcript`.
 
 I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,
 testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
+Le clip create con il generatore mantengono nel JSON la sorgente `generated_prompt:<versione corpus>`; il testo mostrato
+rimane il transcript esatto associato alla registrazione.
 La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata utile, clip senza transcript, audio mancanti
 e segnali come clip troppo corte/lunghe, volume basso, clipping o SNR stimato basso. L'app separa `Export readiness`
 dal livello reale del dataset: `Usable` richiede almeno 5 clip pronte e 60 secondi di audio ed e' pensato soprattutto

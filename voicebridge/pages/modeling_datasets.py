@@ -37,6 +37,13 @@ from voicebridge.modeling_datasets import (
     update_modeling_clip_transcript,
     write_modeling_clip_transcript,
 )
+from voicebridge.modeling_prompt_generator import (
+    MODELING_PROMPT_SOURCE_GENERATED,
+    MODELING_PROMPT_SOURCE_PROVIDED,
+    generate_modeling_prompt,
+    generated_prompt_source,
+    normalize_prompt_text,
+)
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
@@ -138,17 +145,24 @@ class ModelingDatasetsWorkflowMixin:
                 self.modeling_clips_list.addItem("Select a modeling dataset.")
                 self.modeling_clip_text_edit.clear()
                 self.modeling_clip_details.setPlainText("")
+                self.modeling_generated_prompt_text = ""
                 return
             if not dataset["clips"]:
                 self.modeling_clips_list.addItem("No clips yet.")
                 self.selected_modeling_clip_id = ""
                 self.modeling_clip_text_edit.clear()
                 self.modeling_clip_details.setPlainText("")
+                self.modeling_generated_prompt_text = ""
                 return
             if not any(clip["id"] == self.selected_modeling_clip_id for clip in dataset["clips"]):
                 self.selected_modeling_clip_id = dataset["clips"][0]["id"]
             for index, clip in enumerate(dataset["clips"], start=1):
-                mode = "Text" if clip["mode"] == MODELING_CLIP_TEXT_GUIDED else "Free"
+                if generated_prompt_source(clip.get("transcript_source", "")):
+                    mode = "Guided"
+                elif clip["mode"] == MODELING_CLIP_TEXT_GUIDED:
+                    mode = "Text"
+                else:
+                    mode = "Free"
                 label = (
                     f"C. {index} | {modeling_clip_status_label(clip['status'])} | "
                     f"{clip['duration_seconds']:.1f}s | {mode}"
@@ -178,17 +192,20 @@ class ModelingDatasetsWorkflowMixin:
             self.modeling_dataset_status.setText("Create a Voice Profile with type Modeling dataset first.")
             self.modeling_clip_text_edit.clear()
             self.modeling_clip_details.setPlainText("")
+            self.modeling_generated_prompt_text = ""
             return
         if not clip:
             self.modeling_dataset_status.setText(f"Dataset: {dataset['name']} | {len(dataset['clips'])} clip(s).")
             self.modeling_clip_text_edit.clear()
             self.modeling_clip_details.setPlainText("")
+            self.modeling_generated_prompt_text = ""
             return
         self.modeling_dataset_status.setText(
             f"Selected {dataset['name']} | {modeling_clip_status_label(clip['status'])}."
         )
         self.modeling_clip_text_edit.setPlainText(clip.get("transcript_text", ""))
         self.modeling_clip_details.setPlainText(clip.get("quality_details", ""))
+        self.modeling_generated_prompt_text = ""
         self.update_modeling_text_counter()
 
     def selected_modeling_audio_device(self) -> int | None:
@@ -227,7 +244,29 @@ class ModelingDatasetsWorkflowMixin:
             )
             return
         self.modeling_clip_text_edit.setPlainText(text)
+        self.modeling_generated_prompt_text = ""
         self.modeling_dataset_status.setText(f"Loaded text: {Path(path).name}")
+
+    def generate_modeling_clip_text(self) -> None:
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            self.show_error("Modeling Datasets", "Select a modeling dataset first.")
+            return
+        used_prompts = tuple(
+            clip.get("transcript_text", "")
+            for clip in dataset["clips"]
+            if generated_prompt_source(clip.get("transcript_source", ""))
+        )
+        prompt = generate_modeling_prompt(
+            dataset["language_code"],
+            used_texts=used_prompts,
+            max_chars=MODELING_GUIDED_TEXT_MAX_CHARS,
+        )
+        self.modeling_clip_text_edit.setPlainText(prompt.text)
+        self.modeling_generated_prompt_text = prompt.text
+        self.modeling_dataset_status.setText(
+            f"Generated guided text ({prompt.language_code}, corpus {prompt.corpus_version})."
+        )
 
     def record_modeling_clip_from_text(self) -> None:
         dataset = self.selected_modeling_dataset()
@@ -244,16 +283,34 @@ class ModelingDatasetsWorkflowMixin:
                 f"Guided clips support up to {MODELING_GUIDED_TEXT_MAX_CHARS} characters. Split this text first.",
             )
             return
-        self.record_modeling_clip(dataset, mode=MODELING_CLIP_TEXT_GUIDED, transcript_text=text)
+        generated_text = getattr(self, "modeling_generated_prompt_text", "")
+        transcript_source = (
+            MODELING_PROMPT_SOURCE_GENERATED
+            if normalize_prompt_text(text) == normalize_prompt_text(generated_text)
+            else MODELING_PROMPT_SOURCE_PROVIDED
+        )
+        self.record_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_TEXT_GUIDED,
+            transcript_text=text,
+            transcript_source=transcript_source,
+        )
 
     def record_free_modeling_clip(self) -> None:
         dataset = self.selected_modeling_dataset()
         if not dataset:
             self.show_error("Modeling Datasets", "Select a modeling dataset first.")
             return
-        self.record_modeling_clip(dataset, mode=MODELING_CLIP_FREE_RECORDING, transcript_text="")
+        self.record_modeling_clip(dataset, mode=MODELING_CLIP_FREE_RECORDING, transcript_text="", transcript_source="")
 
-    def record_modeling_clip(self, dataset: ModelingDataset, *, mode: str, transcript_text: str) -> None:
+    def record_modeling_clip(
+        self,
+        dataset: ModelingDataset,
+        *,
+        mode: str,
+        transcript_text: str,
+        transcript_source: str,
+    ) -> None:
         device_index = self.selected_modeling_audio_device()
         if device_index is None:
             return
@@ -276,7 +333,7 @@ class ModelingDatasetsWorkflowMixin:
             mode=mode,
             audio_path=dialog.recording_path,
             transcript_text=transcript_text,
-            transcript_source="provided_text" if transcript_text else "",
+            transcript_source=transcript_source if transcript_text else "",
             duration_seconds=dialog.duration_seconds,
             quality_details=dialog.quality_details,
             clip_id=clip_id,
@@ -286,6 +343,7 @@ class ModelingDatasetsWorkflowMixin:
         dataset["updated_at"] = clip["updated_at"]
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = clip["id"]
+        self.modeling_generated_prompt_text = ""
         self.refresh_modeling_datasets_page()
         self.modeling_dataset_status.setText(f"Saved clip: {modeling_clip_status_label(clip['status'])}.")
 
@@ -397,6 +455,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_record_text_button.setEnabled(can_record_from_text)
         self.modeling_record_free_button.setEnabled(has_dataset)
         self.modeling_load_text_button.setEnabled(has_dataset)
+        self.modeling_generate_text_button.setEnabled(has_dataset)
         self.modeling_save_text_button.setEnabled(clip is not None)
         self.modeling_delete_clip_button.setEnabled(clip is not None)
         self.modeling_play_clip_button.setEnabled(has_clip_audio)
@@ -487,15 +546,18 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_clip_details.setPlaceholderText("Recording quality details appear here after a clip is saved.")
         text_actions = QHBoxLayout()
         text_actions.setContentsMargins(0, 0, 0, 0)
+        self.modeling_generate_text_button = QPushButton("Generate guided text")
         self.modeling_load_text_button = QPushButton("Load text")
         self.modeling_record_text_button = QPushButton("Record from text")
         self.modeling_record_text_button.setObjectName("PrimaryButton")
         self.modeling_record_free_button = QPushButton("Free record")
         self.modeling_save_text_button = QPushButton("Save transcript")
+        self.modeling_generate_text_button.clicked.connect(self.generate_modeling_clip_text)
         self.modeling_load_text_button.clicked.connect(self.load_modeling_clip_text_file)
         self.modeling_record_text_button.clicked.connect(self.record_modeling_clip_from_text)
         self.modeling_record_free_button.clicked.connect(self.record_free_modeling_clip)
         self.modeling_save_text_button.clicked.connect(self.save_modeling_clip_transcript_from_editor)
+        text_actions.addWidget(self.modeling_generate_text_button)
         text_actions.addWidget(self.modeling_load_text_button)
         text_actions.addWidget(self.modeling_record_text_button)
         text_actions.addWidget(self.modeling_record_free_button)

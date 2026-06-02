@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONPATH: ${{ github.workspace }}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: Install Linux runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libegl1 \
+            libgl1 \
+            libportaudio2 \
+            libpulse-mainloop-glib \
+            libxkbcommon-x11-0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest ruff
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import importlib
+
+          modules = (
+              "voicebridge_qt",
+              "voicebridge.main_window",
+              "stt_worker",
+              "local_tts_worker",
+          )
+          for module_name in modules:
+              importlib.import_module(module_name)
+          PY
+
+      - name: Pytest without ML models
+        run: python -m pytest -q

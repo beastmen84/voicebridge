@@ -48,6 +48,40 @@ def test_prompt_generation_avoids_duplicates_across_languages() -> None:
         assert len(set(prompts)) == len(prompts), language_code
 
 
+def test_latin_prompt_corpus_uses_native_orthography() -> None:
+    required_characters = {
+        "it": "èù",
+        "es": "áéíóúñ¿¡",
+        "fr": "àçèéêîô",
+        "de": "äöüß",
+        "pt": "áâãçéêíóõú",
+        "pl": "ąćęłóśźż",
+        "nl": "é",
+        "cs": "áčéěíóřšůýž",
+        "hu": "áéíóöőúüű",
+    }
+    forbidden_ascii_fragments = {
+        "it": ("e'", "piu'"),
+        "es": ("microfono", "lapices", "despues", "puntuacion", "está frase"),
+        "fr": ("verifie", "verifier", "repeter", "idee", "etre"),
+        "de": ("gleichmaessig", "oeffne", "Blaetter", "fuer"),
+        "pt": ("Voce", "audio", "nao", "pontuacao"),
+        "pl": ("glos", "mozemy", "odleglosc", "krot", "podnosic", "poruszac", "taką sama"),
+        "cs": ("Muzeme", "zustava", "prirozene", "punč", "že stejné", "Pokracuj", "nema"),
+        "hu": ("szoveg", "termeszet", "rovid", "elott", "szobat", "állj még", "Mateot"),
+    }
+
+    for language_code, characters in required_characters.items():
+        corpus = prompt_generator.MODELING_PROMPT_CORPUS[language_code]
+        corpus_text = " ".join(text for slot_name in prompt_generator.PROMPT_SLOT_ORDER for text in corpus[slot_name])
+
+        missing = [character for character in characters if character not in corpus_text]
+        assert not missing, (language_code, missing)
+        assert not any(fragment in corpus_text for fragment in forbidden_ascii_fragments.get(language_code, ()))
+
+    assert all(text.startswith("¿") for text in prompt_generator.MODELING_PROMPT_CORPUS["es"]["question"])
+
+
 def test_prompt_generation_raises_when_pool_is_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     tiny_corpus = {
         "en": {

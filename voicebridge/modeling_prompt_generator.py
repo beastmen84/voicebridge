@@ -587,8 +587,9 @@ def generate_modeling_prompt(
     corpus = MODELING_PROMPT_CORPUS[language_key]
     used = {normalize_prompt_text(text) for text in used_texts if normalize_prompt_text(text)}
     max_chars = max(80, int(max_chars))
+    max_attempts = min(5000, max(1, modeling_prompt_variant_count(corpus)))
 
-    for attempt in range(max(1, len(PROMPT_SLOT_ORDER) * 2)):
+    for attempt in range(max_attempts):
         prompt = build_prompt_from_corpus(corpus, seed=len(used_texts) + attempt, max_chars=max_chars)
         if normalize_prompt_text(prompt) not in used:
             return GeneratedModelingPrompt(
@@ -611,7 +612,7 @@ def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_cha
     selected: list[str] = []
     for slot_index, slot_name in enumerate(PROMPT_SLOT_ORDER):
         slot = corpus[slot_name]
-        sentence = slot[(seed + slot_index) % len(slot)]
+        sentence = slot[slot_sentence_index(seed, corpus, slot_index, len(slot))]
         candidate = normalize_prompt_text(" ".join((*selected, sentence)))
         if len(candidate) <= max_chars:
             selected.append(sentence)
@@ -620,6 +621,22 @@ def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_cha
 
     fallback = corpus["short"][seed % len(corpus["short"])]
     return normalize_prompt_text(fallback[:max_chars])
+
+
+def slot_sentence_index(seed: int, corpus: ModelingPromptCorpus, slot_index: int, slot_length: int) -> int:
+    if slot_length <= 1:
+        return 0
+    divisor = 1
+    for previous_slot in PROMPT_SLOT_ORDER[:slot_index]:
+        divisor *= max(1, len(corpus[previous_slot]))
+    return (seed // divisor) % slot_length
+
+
+def modeling_prompt_variant_count(corpus: ModelingPromptCorpus) -> int:
+    count = 1
+    for slot_name in PROMPT_SLOT_ORDER:
+        count *= max(1, len(corpus[slot_name]))
+    return count
 
 
 def modeling_prompt_language_key(language_code: str) -> str:

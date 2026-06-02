@@ -21,11 +21,22 @@ def test_prompt_corpus_covers_voice_profile_languages() -> None:
 
 
 def test_prompt_generation_avoids_recent_duplicates() -> None:
-    first = generate_modeling_prompt("it", used_texts=())
-    second = generate_modeling_prompt("it", used_texts=(first.text,))
-    third = generate_modeling_prompt("it", used_texts=(first.text, second.text))
+    prompts: list[str] = []
+    for _index in range(20):
+        prompt = generate_modeling_prompt("it", used_texts=tuple(prompts))
+        prompts.append(prompt.text)
 
-    assert len({first.text, second.text, third.text}) == 3
+    assert len(set(prompts)) == len(prompts)
+
+
+def test_prompt_generation_avoids_duplicates_across_languages() -> None:
+    for language_code in VOICE_PROFILE_LANGUAGES:
+        prompts: list[str] = []
+        for _index in range(12):
+            prompt = generate_modeling_prompt(language_code, used_texts=tuple(prompts))
+            prompts.append(prompt.text)
+
+        assert len(set(prompts)) == len(prompts), language_code
 
 
 def test_prompt_generation_falls_back_to_english() -> None:

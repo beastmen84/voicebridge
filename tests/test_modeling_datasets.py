@@ -133,6 +133,7 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
                 mode=MODELING_CLIP_FREE_RECORDING,
                 audio_path=ready_audio,
                 transcript_text=f"Hello | world\nfrom dataset {index}",
+                transcript_source="generated_prompt:1.0" if index == 0 else "",
                 duration_seconds=12.0,
                 quality_details="RMS level: 8%\nInput clipping: 0.00%",
                 clip_id=f"ready/{index}",
@@ -157,7 +158,8 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
     assert result["exported_clips"] == 5
     assert result["skipped_clips"] == 1
     assert exported_wav.read_bytes() == b"RIFF ready 0"
-    assert metadata_path.read_text(encoding="utf-8").splitlines()[0] == (
+    metadata_lines = metadata_path.read_text(encoding="utf-8").splitlines()
+    assert metadata_lines[0] == (
         "wavs/0001_ready-0.wav|Hello , world from dataset 0"
     )
     export_data = json.loads(dataset_json_path.read_text(encoding="utf-8"))
@@ -167,7 +169,15 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
     assert export_data["language_code"] == "en"
     assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
     assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-0.wav"
-    assert export_data["exported_clips"][0]["transcript_source"] == ""
+    assert export_data["exported_clips"][0]["transcript_source"] == "generated_prompt:1.0"
+    assert len(metadata_lines) == len(export_data["exported_clips"])
+    for index, (metadata_line, exported_clip) in enumerate(
+        zip(metadata_lines, export_data["exported_clips"], strict=True)
+    ):
+        export_audio_path, transcript_text = metadata_line.split("|", 1)
+        assert export_audio_path == exported_clip["export_audio_path"]
+        assert transcript_text == exported_clip["transcript_text"]
+        assert (export_dir / export_audio_path).read_bytes() == f"RIFF ready {index}".encode()
 
 
 def test_export_modeling_dataset_rejects_without_ready_clips(tmp_path: Path) -> None:

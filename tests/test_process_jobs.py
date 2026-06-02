@@ -121,3 +121,31 @@ def test_run_worker_process_job_terminates_when_cancel_requested() -> None:
     assert result.return_code == -15
     assert result.recent_output == ("Training step 1",)
     assert process.terminated is True
+
+
+def test_run_worker_process_job_can_preserve_inherited_stdin_and_filter_recent_output() -> None:
+    process = FakeProcess(
+        [
+            "STATUS: Loading\n",
+            "SKIP: internal marker\n",
+            "Worker detail\n",
+            "PROGRESS: 75\n",
+        ],
+        return_code=1,
+    )
+    popen_calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeProcess:
+        popen_calls.append((command, kwargs))
+        return process
+
+    result = run_worker_process_job(
+        ["python", "worker.py"],
+        stdin=None,
+        include_in_recent_output=lambda output: not output.is_progress and not output.line.startswith("SKIP:"),
+        popen_factory=fake_popen,
+    )
+
+    assert result.return_code == 1
+    assert result.recent_output == ("STATUS: Loading", "Worker detail")
+    assert popen_calls[0][1]["stdin"] is None

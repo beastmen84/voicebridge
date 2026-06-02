@@ -39,6 +39,7 @@ from voicebridge.constants import (
 from voicebridge.file_checks import ensure_free_space, validate_output_path
 from voicebridge.languages import language_name
 from voicebridge.media_tools import find_ffmpeg_exe, probe_audio_info
+from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
 from voicebridge.readers import read_input_file
 from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.stt_preflight import check_stt_preflight
@@ -392,57 +393,50 @@ class SttWorkflowMixin:
         ]
         if mode == "align_text":
             command.extend(["--text", text_path])
-        recent_output = []
         missing_alignment_language = None
         prompt_alignment_language = None
+
+        def handle_worker_output(output: WorkerProcessOutput) -> None:
+            nonlocal missing_alignment_language
+            if output.line.startswith(MISSING_ALIGNMENT_PREFIX):
+                missing_alignment_language = output.line.removeprefix(MISSING_ALIGNMENT_PREFIX).strip()
+                self.post(
+                    self.append_stt_log,
+                    f"Alignment model missing for language: {missing_alignment_language}",
+                )
+                return
+            if output.is_progress:
+                if output.progress_percent is not None:
+                    self.post(self.update_stt_progress_percent, output.progress_percent)
+                return
+            self.post(self.append_stt_log, output.line)
+            if output.is_status:
+                self.post(self.stt_status.setText, output.status or "")
+
+        def include_in_recent_output(output: WorkerProcessOutput) -> bool:
+            return not output.is_progress and not output.line.startswith(MISSING_ALIGNMENT_PREFIX)
+
         try:
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            process = subprocess.Popen(
+            result = run_worker_process_job(
                 command,
                 cwd=str(external_base_dir()),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=creationflags,
+                stdin=None,
+                on_process_start=lambda process: setattr(self, "stt_process", process),
+                on_output=handle_worker_output,
+                should_cancel=lambda: self.stt_cancel_requested,
+                include_in_recent_output=include_in_recent_output,
+                recent_output_limit=12,
             )
-            self.stt_process = process
-            assert process.stdout is not None
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith(MISSING_ALIGNMENT_PREFIX):
-                    missing_alignment_language = line.removeprefix(MISSING_ALIGNMENT_PREFIX).strip()
-                    self.post(
-                        self.append_stt_log,
-                        f"Alignment model missing for language: {missing_alignment_language}",
-                    )
-                    continue
-                if line.startswith("PROGRESS: "):
-                    try:
-                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                    except ValueError:
-                        continue
-                    self.post(self.update_stt_progress_percent, progress_percent)
-                    continue
-                recent_output.append(line)
-                recent_output = recent_output[-12:]
-                self.post(self.append_stt_log, line)
-                if line.startswith("STATUS: "):
-                    self.post(self.stt_status.setText, line.removeprefix("STATUS: "))
-                if self.stt_cancel_requested and process.poll() is None:
-                    process.terminate()
-            return_code = process.wait()
-            if self.stt_cancel_requested:
+            if result.cancelled:
                 self.post(self.stt_job_cancelled)
                 return
-            if return_code != 0:
+            if result.return_code != 0:
                 if mode in STT_SRT_MODES and missing_alignment_language:
                     prompt_alignment_language = missing_alignment_language
                     return
-                raise RuntimeError("\n".join(recent_output[-8:]) or f"STT worker exited with code {return_code}.")
+                raise RuntimeError(
+                    "\n".join(result.recent_output[-8:]) or f"STT worker exited with code {result.return_code}."
+                )
             self.post(self.stt_job_succeeded, output_path, media_path)
         except (OSError, RuntimeError, AssertionError) as exc:
             self.post(self.stt_job_failed, str(exc))

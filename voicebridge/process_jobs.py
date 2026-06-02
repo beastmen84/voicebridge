@@ -4,6 +4,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 STATUS_PREFIX = "STATUS: "
 PROGRESS_PREFIX = "PROGRESS: "
@@ -49,9 +50,11 @@ def run_worker_process_job(
     command: Sequence[str],
     *,
     cwd: str | Path | None = None,
+    stdin: Any = subprocess.DEVNULL,
     on_output: Callable[[WorkerProcessOutput], None] | None = None,
     on_process_start: Callable[[subprocess.Popen[str]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    include_in_recent_output: Callable[[WorkerProcessOutput], bool] | None = None,
     recent_output_limit: int = 16,
     popen_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
 ) -> WorkerProcessResult:
@@ -60,7 +63,7 @@ def run_worker_process_job(
     process = popen_factory(
         list(command),
         cwd=str(cwd) if cwd is not None else None,
-        stdin=subprocess.DEVNULL,
+        stdin=stdin,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -80,7 +83,10 @@ def run_worker_process_job(
         output = parse_worker_process_output(line)
         if on_output is not None:
             on_output(output)
-        if not output.is_progress:
+        include_output = (
+            include_in_recent_output(output) if include_in_recent_output is not None else not output.is_progress
+        )
+        if include_output:
             recent_output.append(line)
             if recent_output_limit > 0:
                 recent_output = recent_output[-recent_output_limit:]

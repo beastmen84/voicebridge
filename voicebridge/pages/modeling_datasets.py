@@ -40,6 +40,7 @@ from voicebridge.modeling_datasets import (
     MODELING_VERIFICATION_PENDING,
     ModelingClip,
     ModelingDataset,
+    ModelingDatasetSummary,
     add_modeling_dataset_guided_prompt_history,
     build_modeling_clip,
     delete_modeling_clip_files,
@@ -53,12 +54,11 @@ from voicebridge.modeling_datasets import (
     modeling_clip_verification_label,
     modeling_clip_verification_status,
     modeling_dataset_dir,
-    modeling_dataset_export_disabled_reason,
-    modeling_dataset_exportable,
+    modeling_dataset_export_disabled_reason_from_summary,
     modeling_dataset_guided_prompt_texts,
     modeling_dataset_guided_prompt_usage,
+    modeling_dataset_summary,
     modeling_dataset_summary_text,
-    ready_modeling_export_clips,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     toggle_modeling_clip_export_exclusion,
@@ -126,14 +126,29 @@ class ModelingDatasetsWorkflowMixin:
 
     def refresh_modeling_datasets_page(self) -> None:
         self.refresh_modeling_datasets_list()
-        self.update_modeling_dataset_summary()
+        summary = self.update_modeling_dataset_summary()
         self.refresh_modeling_clips_list()
-        self.update_modeling_dataset_buttons()
+        self.update_modeling_dataset_buttons(summary)
+
+    def refresh_modeling_clip_after_metadata_change(
+        self,
+        clip: ModelingClip,
+        *,
+        refresh_dataset_list: bool = False,
+    ) -> None:
+        if refresh_dataset_list:
+            self.refresh_modeling_datasets_list()
+        summary = self.update_modeling_dataset_summary()
+        self.update_modeling_clip_list_item(clip)
+        if clip["id"] == getattr(self, "selected_modeling_clip_id", ""):
+            self.populate_modeling_clip_editor()
+        self.update_modeling_dataset_buttons(summary)
 
     def refresh_modeling_datasets_list(self) -> None:
         if not hasattr(self, "modeling_datasets_list"):
             return
         self.modeling_datasets_list.blockSignals(True)
+        self.modeling_datasets_list.setUpdatesEnabled(False)
         try:
             self.modeling_datasets_list.clear()
             modeling_profile_ids = {
@@ -158,6 +173,7 @@ class ModelingDatasetsWorkflowMixin:
                 if dataset["id"] == self.selected_modeling_dataset_id:
                     self.modeling_datasets_list.setCurrentItem(item)
         finally:
+            self.modeling_datasets_list.setUpdatesEnabled(True)
             self.modeling_datasets_list.blockSignals(False)
 
     def modeling_dataset_selection_changed(self) -> None:
@@ -165,26 +181,29 @@ class ModelingDatasetsWorkflowMixin:
         dataset_id = item.data(Qt.ItemDataRole.UserRole) if item else None
         self.selected_modeling_dataset_id = dataset_id if isinstance(dataset_id, str) else ""
         self.selected_modeling_clip_id = ""
-        self.update_modeling_dataset_summary()
+        summary = self.update_modeling_dataset_summary()
         self.refresh_modeling_clips_list()
-        self.update_modeling_dataset_buttons()
+        self.update_modeling_dataset_buttons(summary)
 
-    def update_modeling_dataset_summary(self) -> None:
+    def update_modeling_dataset_summary(self) -> ModelingDatasetSummary | None:
         if not hasattr(self, "modeling_dataset_summary_box"):
-            return
+            return None
         dataset = self.selected_modeling_dataset()
         if not dataset:
             self.modeling_dataset_summary_box.setPlainText("Create or select a modeling dataset.")
             self.update_modeling_prompt_usage_label()
-            return
-        self.modeling_dataset_summary_box.setPlainText(modeling_dataset_summary_text(dataset))
+            return None
+        summary = modeling_dataset_summary(dataset)
+        self.modeling_dataset_summary_box.setPlainText(modeling_dataset_summary_text(dataset, summary))
         self.update_modeling_prompt_usage_label()
+        return summary
 
     def refresh_modeling_clips_list(self) -> None:
         if not hasattr(self, "modeling_clips_list"):
             return
         dataset = self.selected_modeling_dataset()
         self.modeling_clips_list.blockSignals(True)
+        self.modeling_clips_list.setUpdatesEnabled(False)
         try:
             self.modeling_clips_list.clear()
             if not dataset:
@@ -203,26 +222,39 @@ class ModelingDatasetsWorkflowMixin:
             if not any(clip["id"] == self.selected_modeling_clip_id for clip in dataset["clips"]):
                 self.selected_modeling_clip_id = dataset["clips"][0]["id"]
             for index, clip in enumerate(dataset["clips"], start=1):
-                if generated_prompt_source(clip.get("transcript_source", "")):
-                    mode = "Guided"
-                elif clip["mode"] == MODELING_CLIP_TEXT_GUIDED:
-                    mode = "Text"
-                else:
-                    mode = "Free"
-                verification_label = modeling_clip_verification_label(modeling_clip_verification_status(clip))
-                export_label = " | Excluded" if clip.get("excluded_from_export", False) else ""
-                label = (
-                    f"C. {index} | {modeling_clip_status_label(clip['status'])} | "
-                    f"{clip['duration_seconds']:.1f}s | {mode} | {verification_label}{export_label}"
-                )
-                item = QListWidgetItem(label)
+                item = QListWidgetItem(self.modeling_clip_list_label(index, clip))
                 item.setData(Qt.ItemDataRole.UserRole, clip["id"])
                 self.modeling_clips_list.addItem(item)
                 if clip["id"] == self.selected_modeling_clip_id:
                     self.modeling_clips_list.setCurrentItem(item)
         finally:
+            self.modeling_clips_list.setUpdatesEnabled(True)
             self.modeling_clips_list.blockSignals(False)
         self.populate_modeling_clip_editor()
+
+    @staticmethod
+    def modeling_clip_list_label(index: int, clip: ModelingClip) -> str:
+        if generated_prompt_source(clip.get("transcript_source", "")):
+            mode = "Guided"
+        elif clip["mode"] == MODELING_CLIP_TEXT_GUIDED:
+            mode = "Text"
+        else:
+            mode = "Free"
+        verification_label = modeling_clip_verification_label(modeling_clip_verification_status(clip))
+        export_label = " | Excluded" if clip.get("excluded_from_export", False) else ""
+        return (
+            f"C. {index} | {modeling_clip_status_label(clip['status'])} | "
+            f"{clip['duration_seconds']:.1f}s | {mode} | {verification_label}{export_label}"
+        )
+
+    def update_modeling_clip_list_item(self, clip: ModelingClip) -> None:
+        if not hasattr(self, "modeling_clips_list"):
+            return
+        for row in range(self.modeling_clips_list.count()):
+            item = self.modeling_clips_list.item(row)
+            if item and item.data(Qt.ItemDataRole.UserRole) == clip["id"]:
+                item.setText(self.modeling_clip_list_label(row + 1, clip))
+                return
 
     def modeling_clip_selection_changed(self) -> None:
         item = self.modeling_clips_list.currentItem()
@@ -253,10 +285,14 @@ class ModelingDatasetsWorkflowMixin:
             f"Selected {dataset['name']} | {modeling_clip_status_label(clip['status'])} | "
             f"{modeling_clip_verification_label(verification_status)}."
         )
-        self.modeling_clip_text_edit.setPlainText(clip.get("transcript_text", ""))
+        self.modeling_clip_text_edit.blockSignals(True)
+        try:
+            self.modeling_clip_text_edit.setPlainText(clip.get("transcript_text", ""))
+        finally:
+            self.modeling_clip_text_edit.blockSignals(False)
         self.modeling_clip_details.setPlainText(self.modeling_clip_details_text(clip))
         self.modeling_generated_prompt_text = ""
-        self.update_modeling_text_counter()
+        self.update_modeling_text_counter(refresh_buttons=False)
 
     @staticmethod
     def modeling_clip_details_text(clip: ModelingClip) -> str:
@@ -456,12 +492,12 @@ class ModelingDatasetsWorkflowMixin:
         write_modeling_clip_transcript(updated_clip)
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = updated_clip["id"]
-        self.refresh_modeling_datasets_page()
+        self.refresh_modeling_clip_after_metadata_change(updated_clip, refresh_dataset_list=True)
         self.modeling_dataset_status.setText("Transcript saved.")
         if modeling_clip_can_verify_transcript(updated_clip):
             self.queue_modeling_clip_verification(dataset, updated_clip)
 
-    def update_modeling_text_counter(self) -> None:
+    def update_modeling_text_counter(self, *, refresh_buttons: bool = True) -> None:
         if not hasattr(self, "modeling_clip_text_counter"):
             return
         character_count = len(self.modeling_clip_text_edit.toPlainText().strip())
@@ -476,7 +512,8 @@ class ModelingDatasetsWorkflowMixin:
                 f"{character_count}/{MODELING_GUIDED_TEXT_MAX_CHARS} characters for guided recording"
             )
             self.modeling_clip_text_counter.setStyleSheet("color: #617083;")
-        self.update_modeling_dataset_buttons()
+        if refresh_buttons:
+            self.update_modeling_dataset_buttons()
 
     def update_modeling_prompt_usage_label(self) -> None:
         if not hasattr(self, "modeling_prompt_usage_label"):
@@ -536,7 +573,7 @@ class ModelingDatasetsWorkflowMixin:
         self.replace_modeling_clip(dataset, updated_clip)
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = updated_clip["id"]
-        self.refresh_modeling_datasets_page()
+        self.refresh_modeling_clip_after_metadata_change(updated_clip)
         self.modeling_dataset_status.setText("Recording replaced; text verification queued.")
         self.queue_modeling_clip_verification(dataset, updated_clip)
 
@@ -549,7 +586,7 @@ class ModelingDatasetsWorkflowMixin:
         self.replace_modeling_clip(dataset, updated_clip)
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = updated_clip["id"]
-        self.refresh_modeling_datasets_page()
+        self.refresh_modeling_clip_after_metadata_change(updated_clip)
         if updated_clip.get("excluded_from_export", False):
             self.modeling_dataset_status.setText("Clip excluded from export.")
         else:
@@ -593,7 +630,7 @@ class ModelingDatasetsWorkflowMixin:
             )
             self.replace_modeling_clip(dataset, updated_clip)
             save_modeling_datasets(self.modeling_datasets)
-            self.refresh_modeling_datasets_page()
+            self.refresh_modeling_clip_after_metadata_change(updated_clip)
             self.modeling_dataset_status.setText("Text verification unavailable; guided clip is not exportable.")
             return
 
@@ -605,7 +642,7 @@ class ModelingDatasetsWorkflowMixin:
         self.replace_modeling_clip(dataset, pending_clip)
         save_modeling_datasets(self.modeling_datasets)
         self.selected_modeling_clip_id = pending_clip["id"]
-        self.refresh_modeling_datasets_page()
+        self.refresh_modeling_clip_after_metadata_change(pending_clip)
         self.modeling_verification_queue.append(
             {
                 "dataset_id": dataset["id"],
@@ -735,7 +772,7 @@ class ModelingDatasetsWorkflowMixin:
                 self.replace_modeling_clip(dataset, updated_clip)
                 save_modeling_datasets(self.modeling_datasets)
                 self.selected_modeling_clip_id = updated_clip["id"]
-                self.refresh_modeling_datasets_page()
+                self.refresh_modeling_clip_after_metadata_change(updated_clip)
                 if updated_clip["verification_status"] == MODELING_VERIFICATION_MATCH_OK:
                     self.modeling_dataset_status.setText("Text verification Match OK; clip is exportable if included.")
                 elif updated_clip["verification_status"] == MODELING_VERIFICATION_NEEDS_REVIEW:
@@ -804,14 +841,22 @@ class ModelingDatasetsWorkflowMixin:
         self.stt_output_picker.set_text(output_path)
         self.show_page(3)
 
-    def update_modeling_dataset_buttons(self) -> None:
+    def update_modeling_dataset_buttons(self, dataset_summary: ModelingDatasetSummary | None = None) -> None:
         if not hasattr(self, "modeling_record_text_button"):
             return
         dataset = self.selected_modeling_dataset()
         clip = self.selected_modeling_clip()
         has_dataset = dataset is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
-        has_exportable_clips = bool(dataset and modeling_dataset_exportable(dataset))
+        dataset_summary = dataset_summary if dataset else None
+        if dataset and dataset_summary is None:
+            dataset_summary = modeling_dataset_summary(dataset)
+        export_disabled_reason = (
+            modeling_dataset_export_disabled_reason_from_summary(dataset_summary)
+            if dataset_summary
+            else "Select a modeling dataset first."
+        )
+        has_exportable_clips = bool(dataset_summary and not export_disabled_reason)
         can_verify_clip = bool(clip and modeling_clip_can_verify_transcript(clip))
         can_retry_clip = bool(
             clip
@@ -905,11 +950,10 @@ class ModelingDatasetsWorkflowMixin:
             "Open the dataset folder." if has_dataset else "Select a modeling dataset first."
         )
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
-        if dataset:
-            disabled_reason = modeling_dataset_export_disabled_reason(dataset)
-            exportable_count = len(ready_modeling_export_clips(dataset))
+        if dataset_summary:
+            exportable_count = dataset_summary["exportable_clips"]
             self.modeling_export_dataset_button.setToolTip(
-                disabled_reason
+                export_disabled_reason
                 or f"Export {exportable_count} clip(s) that are ready and pass export checks."
             )
         else:

@@ -111,6 +111,8 @@ class ModelingDataset(TypedDict):
 class ModelingDatasetSummary(TypedDict):
     total_clips: int
     ready_clips: int
+    exportable_clips: int
+    non_exportable_ready_clips: int
     pending_transcript_clips: int
     missing_audio_clips: int
     ready_duration_seconds: float
@@ -254,7 +256,10 @@ def modeling_clip_export_blocked(clip: ModelingClip) -> bool:
 
 
 def modeling_clip_export_block_reason(clip: ModelingClip) -> str:
-    status = modeling_clip_display_status(clip)
+    return _modeling_clip_export_block_reason(clip, modeling_clip_display_status(clip))
+
+
+def _modeling_clip_export_block_reason(clip: ModelingClip, status: str) -> str:
     if status == MODELING_CLIP_MISSING_AUDIO:
         return "Missing WAV file."
     if status == MODELING_CLIP_NEEDS_TRANSCRIPT:
@@ -322,6 +327,8 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
     verification_review_clips = 0
     verification_error_clips = 0
     excluded_clips = 0
+    exportable_clips = 0
+    non_exportable_ready_clips = 0
 
     for clip in dataset["clips"]:
         verification_status = modeling_clip_verification_status(clip)
@@ -342,6 +349,10 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
             continue
 
         ready_clips += 1
+        if _modeling_clip_export_block_reason(clip, status):
+            non_exportable_ready_clips += 1
+        else:
+            exportable_clips += 1
         duration_seconds = _float(clip.get("duration_seconds"))
         ready_duration_seconds += duration_seconds
         if duration_seconds < MODELING_MIN_READY_CLIP_SECONDS:
@@ -405,6 +416,8 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
     return {
         "total_clips": len(dataset["clips"]),
         "ready_clips": ready_clips,
+        "exportable_clips": exportable_clips,
+        "non_exportable_ready_clips": non_exportable_ready_clips,
         "pending_transcript_clips": pending_transcript_clips,
         "missing_audio_clips": missing_audio_clips,
         "ready_duration_seconds": round(ready_duration_seconds, 3),
@@ -430,15 +443,17 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
     }
 
 
-def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
-    summary = modeling_dataset_summary(dataset)
-    exportable_clips = ready_modeling_export_clips(dataset)
+def modeling_dataset_summary_text(
+    dataset: ModelingDataset,
+    summary: ModelingDatasetSummary | None = None,
+) -> str:
+    summary = summary or modeling_dataset_summary(dataset)
     lines = [
         f"Export readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
         f"Dataset tier: {modeling_dataset_tier_label(summary['dataset_tier'])}",
         f"Language: {dataset['language_code']}",
         f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
-        f"Exportable clips: {len(exportable_clips)}/{summary['ready_clips']} ready clips",
+        f"Exportable clips: {summary['exportable_clips']}/{summary['ready_clips']} ready clips",
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
         f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
@@ -475,11 +490,12 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
 
 
 def ready_modeling_export_clips(dataset: ModelingDataset) -> list[ModelingClip]:
-    return [
-        clip for clip in dataset["clips"]
-        if modeling_clip_display_status(clip) == MODELING_CLIP_READY
-        and not modeling_clip_export_blocked(clip)
-    ]
+    export_clips: list[ModelingClip] = []
+    for clip in dataset["clips"]:
+        status = modeling_clip_display_status(clip)
+        if status == MODELING_CLIP_READY and not _modeling_clip_export_block_reason(clip, status):
+            export_clips.append(clip)
+    return export_clips
 
 
 def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
@@ -487,13 +503,16 @@ def modeling_dataset_exportable(dataset: ModelingDataset) -> bool:
 
 
 def modeling_dataset_export_disabled_reason(dataset: ModelingDataset) -> str:
-    summary = modeling_dataset_summary(dataset)
+    return modeling_dataset_export_disabled_reason_from_summary(modeling_dataset_summary(dataset))
+
+
+def modeling_dataset_export_disabled_reason_from_summary(summary: ModelingDatasetSummary) -> str:
     if summary["readiness"] not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
         return (
             "Export requires Usable readiness: collect at least 5 ready clips "
             "and 60 seconds of ready audio."
         )
-    if not ready_modeling_export_clips(dataset):
+    if summary["exportable_clips"] <= 0:
         return (
             "No exportable ready clips. Guided clips require Match OK; excluded clips, "
             "verification errors and clips needing review are skipped."

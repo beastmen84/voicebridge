@@ -44,6 +44,9 @@ class FakeSttWorkflow(SttWorkflowMixin):
     def stt_model_download_succeeded(self) -> None:
         self.events.append(("download_succeeded", ""))
 
+    def alignment_model_download_succeeded(self, language_code: str) -> None:
+        self.events.append(("alignment_download_succeeded", language_code))
+
 
 def test_stt_model_download_thread_uses_process_runner_for_worker_output(monkeypatch, tmp_path: Path) -> None:
     calls = {}
@@ -95,4 +98,59 @@ def test_stt_model_download_thread_uses_process_runner_for_worker_output(monkeyp
     assert workflow.stt_status.messages == ["Downloading Faster Whisper"]
     assert workflow.logs == ["STATUS: Downloading Faster Whisper", "Worker detail"]
     assert workflow.events == [("finished", ""), ("download_succeeded", "")]
+    assert workflow.stt_process is None
+
+
+def test_alignment_model_download_thread_uses_process_runner_for_worker_output(monkeypatch, tmp_path: Path) -> None:
+    calls = {}
+    model_dir = tmp_path / "models"
+
+    def fake_run_worker_process_job(command, **kwargs):
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        kwargs["on_process_start"]("process")
+        kwargs["on_output"](
+            WorkerProcessOutput(
+                line="PROGRESS: 75",
+                is_progress=True,
+                progress_percent=75.0,
+            )
+        )
+        kwargs["on_output"](
+            WorkerProcessOutput(
+                line="STATUS: Downloading alignment model",
+                is_status=True,
+                status="Downloading alignment model",
+            )
+        )
+        kwargs["on_output"](WorkerProcessOutput(line="Alignment worker detail"))
+        return WorkerProcessResult(return_code=0, cancelled=False, recent_output=())
+
+    monkeypatch.setattr(stt_page, "external_base_dir", lambda: tmp_path)
+    monkeypatch.setattr(stt_page, "stt_model_dir", lambda: model_dir)
+    monkeypatch.setattr(stt_page, "run_worker_process_job", fake_run_worker_process_job)
+
+    workflow = FakeSttWorkflow()
+    workflow.alignment_model_download_thread(tmp_path / "python.exe", tmp_path / "stt_worker.py", "it")
+
+    assert calls["command"] == [
+        str(tmp_path / "python.exe"),
+        str(tmp_path / "stt_worker.py"),
+        "--mode",
+        "download_align",
+        "--language",
+        "it",
+        "--model-dir",
+        str(model_dir),
+        "--device",
+        "cpu",
+    ]
+    assert calls["kwargs"]["cwd"] == str(tmp_path)
+    assert calls["kwargs"]["stdin"] is None
+    assert calls["kwargs"]["recent_output_limit"] == 12
+    assert calls["kwargs"]["should_cancel"]() is False
+    assert workflow.progress_values == [75.0]
+    assert workflow.stt_status.messages == ["Downloading alignment model"]
+    assert workflow.logs == ["STATUS: Downloading alignment model", "Alignment worker detail"]
+    assert workflow.events == [("finished", ""), ("alignment_download_succeeded", "it")]
     assert workflow.stt_process is None

@@ -1,3 +1,6 @@
+import pytest
+
+import voicebridge.modeling_prompt_generator as prompt_generator
 from voicebridge.modeling_prompt_generator import (
     MODELING_PROMPT_SOURCE_GENERATED,
     NO_UNUSED_MODELING_PROMPTS_MESSAGE,
@@ -19,6 +22,9 @@ def test_prompt_corpus_covers_voice_profile_languages() -> None:
         assert prompt.language_code == modeling_prompt_language_key(language_code)
         assert prompt.source == MODELING_PROMPT_SOURCE_GENERATED
         assert len(prompt.text) <= 450
+        assert modeling_prompt_available_count(language_code) == 262_144
+        corpus = prompt_generator.MODELING_PROMPT_CORPUS[prompt.language_code]
+        assert all(len(corpus[slot_name]) == 8 for slot_name in prompt_generator.PROMPT_SLOT_ORDER)
         assert "?" in prompt.text or "؟" in prompt.text or "？" in prompt.text or "か" in prompt.text
         assert any(character.isdigit() for character in prompt.text)
 
@@ -42,18 +48,25 @@ def test_prompt_generation_avoids_duplicates_across_languages() -> None:
         assert len(set(prompts)) == len(prompts), language_code
 
 
-def test_prompt_generation_raises_when_pool_is_exhausted() -> None:
+def test_prompt_generation_raises_when_pool_is_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+    tiny_corpus = {
+        "en": {
+            "short": ("Tiny short.",),
+            "medium": ("Tiny medium phrase for the prompt.",),
+            "question": ("Tiny question?",),
+            "numbers": ("Tiny numbers 1 and 2.",),
+            "names": ("Tiny Nora and Leo.",),
+            "punctuation": ("Tiny ending: clear and calm.",),
+        }
+    }
+    monkeypatch.setattr(prompt_generator, "MODELING_PROMPT_CORPUS", tiny_corpus)
     prompts: list[str] = []
-    for _index in range(modeling_prompt_available_count("it")):
-        prompt = generate_modeling_prompt("it", used_texts=tuple(prompts))
+    for _index in range(modeling_prompt_available_count("en")):
+        prompt = generate_modeling_prompt("en", used_texts=tuple(prompts))
         prompts.append(prompt.text)
 
-    try:
-        generate_modeling_prompt("it", used_texts=tuple(prompts))
-    except NoUnusedModelingPromptError as exc:
-        assert str(exc) == NO_UNUSED_MODELING_PROMPTS_MESSAGE
-    else:
-        raise AssertionError("Expected exhausted prompt pool to raise.")
+    with pytest.raises(NoUnusedModelingPromptError, match=NO_UNUSED_MODELING_PROMPTS_MESSAGE):
+        generate_modeling_prompt("en", used_texts=tuple(prompts))
 
 
 def test_prompt_generation_falls_back_to_english() -> None:

@@ -146,7 +146,7 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 3. Per il flusso consigliato, usare `Generate guided text`: l'app compone un testo locale e sicuro dalla lingua del
    dataset, con frasi prevalidate e varieta' di ritmo, domande, numeri, nomi e punteggiatura. Poi usare
    `Record from text`. Il contatore `Guided prompts: usati / disponibili` mostra quante combinazioni guidate sono gia'
-   state consumate nel dataset.
+   state consumate nel dataset; con il corpus attuale ogni lingua ha 262.144 combinazioni teoriche disponibili.
 4. Per una clip guidata avanzata, caricare o incollare il testo esatto e usare `Record from text`; il testo per una
    singola clip e' limitato a 450 caratteri, la finestra mostra il testo, registra dal microfono per massimo 60 secondi,
    pulisce il WAV e permette `Ascolta`, `Mantieni`, `Ritenta` o `Annulla`.

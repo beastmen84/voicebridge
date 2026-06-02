@@ -32,6 +32,8 @@ from voicebridge.constants import (
     AUDIO_CLEANUP_REMOVE_LABEL,
     AUDIO_CLEANUP_SILENCE_LABEL,
 )
+from voicebridge.ffmpeg_jobs import ffmpeg_progress_percent as ffmpeg_job_progress_percent
+from voicebridge.ffmpeg_jobs import should_keep_ffmpeg_log_line
 from voicebridge.file_checks import ensure_free_space, validate_output_path
 from voicebridge.media_tools import (
     SUPPORTED_AUDIO_SUFFIXES,
@@ -852,14 +854,14 @@ class AudioCleanupWorkflowMixin:
             line = raw_line.strip()
             if not line:
                 continue
-            progress_percent = self.audio_cleanup_progress_percent(line, duration_seconds)
+            progress_percent = ffmpeg_job_progress_percent(line, duration_seconds)
             if progress_percent is not None:
                 mapped_percent = progress_start + ((progress_end - progress_start) * (progress_percent / 100))
                 if mapped_percent > last_progress_percent:
                     last_progress_percent = mapped_percent
                     self.post(self.update_audio_cleanup_progress_percent, round(mapped_percent))
                 continue
-            if self.is_audio_cleanup_ffmpeg_progress_line(line):
+            if not should_keep_ffmpeg_log_line(line):
                 continue
             recent_output.append(line)
             recent_output = recent_output[-12:]

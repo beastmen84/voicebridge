@@ -1,6 +1,7 @@
 import math
 import struct
 import wave
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,13 +42,15 @@ def trim_pcm16_to_frames(pcm_data: bytes, channel_count: int) -> bytes:
 
 
 def pcm16_peak_abs(pcm_data: bytes, channel_count: int = 1) -> int:
-    samples = list(_iter_pcm16_samples(trim_pcm16_to_frames(pcm_data, channel_count)))
-    return max((min(abs(sample), PCM16_MAX_ABS) for sample in samples), default=0)
+    peak = 0
+    for sample in _iter_pcm16_samples(trim_pcm16_to_frames(pcm_data, channel_count)):
+        peak = max(peak, min(abs(sample), PCM16_MAX_ABS))
+    return peak
 
 
 def analyze_pcm16_audio(pcm_data: bytes, sample_rate: int, channel_count: int) -> Pcm16Analysis:
     pcm_data = trim_pcm16_to_frames(pcm_data, channel_count)
-    samples = list(_iter_pcm16_samples(pcm_data))
+    samples: list[int] = list(_iter_pcm16_samples(pcm_data))
     duration = pcm16_duration_seconds(len(pcm_data), sample_rate, channel_count)
     if not samples:
         return Pcm16Analysis(
@@ -188,6 +191,6 @@ def write_pcm16_wav(path: str | Path, pcm_data: bytes, sample_rate: int, channel
         wav_file.writeframes(pcm_data)
 
 
-def _iter_pcm16_samples(pcm_data: bytes):
+def _iter_pcm16_samples(pcm_data: bytes) -> Iterator[int]:
     usable_size = len(pcm_data) - (len(pcm_data) % 2)
     yield from (sample[0] for sample in struct.iter_unpack("<h", pcm_data[:usable_size]))

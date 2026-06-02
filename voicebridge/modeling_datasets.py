@@ -4,7 +4,7 @@ import shutil
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 from uuid import uuid4
 
 from voicebridge.app_paths import external_base_dir
@@ -42,6 +42,9 @@ MODELING_VERIFICATION_MATCH_OK = "match_ok"
 MODELING_VERIFICATION_NEEDS_REVIEW = "needs_review"
 MODELING_VERIFICATION_ERROR = "error"
 MODELING_VERIFICATION_SKIPPED = "skipped"
+MODELING_INTERRUPTED_VERIFICATION_DETAILS = (
+    "Previous text verification was interrupted before completion. Use Verify text to run it again."
+)
 MODELING_VERIFICATION_EXPORT_BLOCKING = {
     MODELING_VERIFICATION_UNVERIFIED,
     MODELING_VERIFICATION_PENDING,
@@ -885,6 +888,29 @@ def update_modeling_clip_verification(
     updated["verification_checked_at"] = utc_timestamp()
     updated["updated_at"] = updated["verification_checked_at"]
     return updated  # type: ignore[return-value]
+
+
+def recover_interrupted_modeling_verifications(datasets: list[ModelingDataset]) -> bool:
+    timestamp = utc_timestamp()
+    changed = False
+    for dataset in datasets:
+        dataset_changed = False
+        for index, clip in enumerate(dataset["clips"]):
+            if modeling_clip_verification_status(clip) != MODELING_VERIFICATION_PENDING:
+                continue
+            updated_clip = cast(ModelingClip, dict(clip))
+            updated_clip["verification_status"] = MODELING_VERIFICATION_UNVERIFIED
+            updated_clip["verification_score"] = 0.0
+            updated_clip["verification_text"] = ""
+            updated_clip["verification_details"] = MODELING_INTERRUPTED_VERIFICATION_DETAILS
+            updated_clip["verification_checked_at"] = ""
+            updated_clip["updated_at"] = timestamp
+            dataset["clips"][index] = updated_clip
+            changed = True
+            dataset_changed = True
+        if dataset_changed:
+            dataset["updated_at"] = timestamp
+    return changed
 
 
 def toggle_modeling_clip_export_exclusion(clip: ModelingClip) -> ModelingClip:

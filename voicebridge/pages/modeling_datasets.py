@@ -59,6 +59,7 @@ from voicebridge.modeling_datasets import (
     modeling_dataset_guided_prompt_usage,
     modeling_dataset_summary,
     modeling_dataset_summary_text,
+    recover_interrupted_modeling_verifications,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     toggle_modeling_clip_export_exclusion,
@@ -88,12 +89,15 @@ MODELING_RECORD_MAX_SECONDS = 60
 class ModelingDatasetsWorkflowMixin:
     def load_modeling_dataset_store(self) -> None:
         self.modeling_datasets = load_modeling_datasets()
+        recovered_interrupted_verifications = recover_interrupted_modeling_verifications(self.modeling_datasets)
         self.selected_modeling_dataset_id = ""
         self.selected_modeling_clip_id = ""
         self.modeling_verification_queue = []
         self.modeling_verification_running = False
         self.modeling_verification_queued_clip_ids = set()
         self.sync_modeling_datasets_with_profiles(save=False)
+        if recovered_interrupted_verifications:
+            save_modeling_datasets(self.modeling_datasets)
 
     def sync_modeling_datasets_with_profiles(self, *, save: bool = True) -> None:
         datasets, changed = ensure_modeling_datasets_for_profiles(self.modeling_datasets, self.voice_profiles)

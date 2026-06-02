@@ -19,6 +19,7 @@ from voicebridge.modeling_datasets import (
     MODELING_DATASET_TIER_HIGH_QUALITY,
     MODELING_DATASET_TIER_TEST,
     MODELING_DATASET_USABLE,
+    MODELING_INTERRUPTED_VERIFICATION_DETAILS,
     MODELING_VERIFICATION_MATCH_OK,
     MODELING_VERIFICATION_NEEDS_REVIEW,
     MODELING_VERIFICATION_NOT_REQUIRED,
@@ -43,6 +44,7 @@ from voicebridge.modeling_datasets import (
     modeling_dataset_summary,
     modeling_dataset_summary_text,
     modeling_datasets_root,
+    recover_interrupted_modeling_verifications,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     toggle_modeling_clip_export_exclusion,
@@ -188,6 +190,141 @@ def test_guided_clip_verification_status_transitions(tmp_path: Path) -> None:
     assert retried["verification_text"] == ""
     assert modeling_clip_verification_status(no_transcript) == MODELING_VERIFICATION_NOT_REQUIRED
     assert modeling_clip_verification_status(free_clip) == MODELING_VERIFICATION_NOT_REQUIRED
+
+
+def test_recover_interrupted_modeling_verifications_requeues_pending_guided_clip(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    guided_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        transcript_text="Read this exact sentence.",
+        transcript_source="generated_prompt:1.1",
+        duration_seconds=12.0,
+        clip_id="guided",
+    )
+    dataset["clips"].append(
+        update_modeling_clip_verification(
+            guided_clip,
+            status=MODELING_VERIFICATION_PENDING,
+            detected_text="partial transcript",
+            details="Waiting for Whisper transcript verification.",
+        )
+    )
+    changed = recover_interrupted_modeling_verifications([dataset])
+    recovered_clip = dataset["clips"][0]
+
+    assert changed is True
+    assert modeling_clip_verification_status(recovered_clip) == MODELING_VERIFICATION_UNVERIFIED
+    assert recovered_clip["verification_score"] == 0.0
+    assert recovered_clip["verification_text"] == ""
+    assert recovered_clip["verification_details"] == MODELING_INTERRUPTED_VERIFICATION_DETAILS
+    assert recovered_clip["verification_checked_at"] == ""
+    assert dataset["updated_at"] == recovered_clip["updated_at"]
+    assert modeling_clip_export_block_reason(recovered_clip) == (
+        "Guided clip needs text verification. Use Verify text."
+    )
+    assert modeling_dataset_summary(dataset)["verification_pending_clips"] == 1
+
+
+def test_recover_interrupted_modeling_verifications_preserves_completed_clips(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    guided_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        transcript_text="Read this exact sentence.",
+        transcript_source="generated_prompt:1.1",
+        duration_seconds=12.0,
+        clip_id="guided",
+    )
+    matched_clip = update_modeling_clip_verification(
+        guided_clip,
+        status=MODELING_VERIFICATION_MATCH_OK,
+        score=99.0,
+        detected_text="Read this exact sentence.",
+        details="Similarity: 100.0%",
+    )
+    dataset["clips"].append(matched_clip)
+
+    changed = recover_interrupted_modeling_verifications([dataset])
+
+    assert changed is False
+    assert dataset["clips"][0] == matched_clip
+
+
+def test_startup_recovers_orphaned_modeling_verification_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    guided_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        transcript_text="Read this exact sentence.",
+        transcript_source="generated_prompt:1.1",
+        duration_seconds=12.0,
+        clip_id="guided",
+    )
+    dataset["clips"].append(
+        update_modeling_clip_verification(
+            guided_clip,
+            status=MODELING_VERIFICATION_PENDING,
+            details="Waiting for Whisper transcript verification.",
+        )
+    )
+    saved_datasets: list[object] = []
+
+    class DummyModelingWindow(ModelingDatasetsWorkflowMixin):
+        def sync_modeling_datasets_with_profiles(self, *, save: bool = True) -> None:
+            assert save is False
+
+    def save_datasets(datasets: object) -> None:
+        saved_datasets.append(datasets)
+
+    monkeypatch.setattr("voicebridge.pages.modeling_datasets.load_modeling_datasets", lambda: [dataset])
+    monkeypatch.setattr("voicebridge.pages.modeling_datasets.save_modeling_datasets", save_datasets)
+
+    window = DummyModelingWindow()
+    window.load_modeling_dataset_store()
+    recovered_clip = window.modeling_datasets[0]["clips"][0]
+
+    assert window.modeling_verification_queue == []
+    assert window.modeling_verification_running is False
+    assert window.modeling_verification_queued_clip_ids == set()
+    assert modeling_clip_verification_status(recovered_clip) == MODELING_VERIFICATION_UNVERIFIED
+    assert recovered_clip["verification_details"] == MODELING_INTERRUPTED_VERIFICATION_DETAILS
+    assert saved_datasets == [window.modeling_datasets]
 
 
 def test_modeling_clip_export_block_reason_explains_guided_verification_state(tmp_path: Path) -> None:

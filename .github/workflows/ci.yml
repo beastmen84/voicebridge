@@ -43,7 +43,7 @@ jobs:
             libegl1 \
             libgl1 \
             libportaudio2 \
-            libpulse-mainloop-glib \
+            libpulse-mainloop-glib0 \
             libxkbcommon-x11-0
 
       - name: Install Python dependencies
@@ -54,19 +54,35 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
 
-      - name: Import smoke test
+      - name: Lightweight import smoke test
         run: |
           python - <<'PY'
           import importlib
+          import sys
 
+          # Keep this list limited to backend/service modules and worker scripts
+          # that must remain importable without optional ML runtimes or models.
           modules = (
-              "voicebridge_qt",
-              "voicebridge.main_window",
+              "voicebridge.app_paths",
+              "voicebridge.app_settings",
+              "voicebridge.ffmpeg_jobs",
+              "voicebridge.file_checks",
+              "voicebridge.media_tools",
+              "voicebridge.modeling_datasets",
+              "voicebridge.modeling_prompt_generator",
+              "voicebridge.process_jobs",
+              "voicebridge.voice_modeling",
               "stt_worker",
               "local_tts_worker",
+              "voice_modeling_worker",
           )
           for module_name in modules:
               importlib.import_module(module_name)
+
+          optional_ml_modules = ("TTS", "faster_whisper", "imageio_ffmpeg", "torch", "whisperx")
+          imported_optional_modules = [module_name for module_name in optional_ml_modules if module_name in sys.modules]
+          if imported_optional_modules:
+              raise RuntimeError(f"Smoke imports loaded optional ML modules: {imported_optional_modules}")
           PY
 
       - name: Pytest without ML models

@@ -1,4 +1,6 @@
+import voicebridge.pages.tts as tts_page
 from voicebridge.pages.tts import TtsWorkflowMixin
+from voicebridge.process_jobs import WorkerProcessOutput, WorkerProcessResult
 from voicebridge.tts_engine import ensure_mp3_suffix, suggested_output_path
 from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
@@ -95,3 +97,63 @@ def test_local_tts_segment_fields_keep_profile_language() -> None:
     assert fields["language_code"] == "it"
     assert "Marco (Italian)" in summary
     assert "+0%" not in summary
+
+
+class FakeTtsStatus:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def setText(self, message: str) -> None:
+        self.messages.append(message)
+
+
+class FakeTtsWorkflow(TtsWorkflowMixin):
+    def __init__(self) -> None:
+        self.tts_cancel_requested = False
+        self.tts_process = None
+        self.tts_status = FakeTtsStatus()
+        self.progress_values: list[float] = []
+
+    def post(self, callback, *args):
+        callback(*args)
+
+    def update_tts_progress_percent(self, percent: float) -> None:
+        self.progress_values.append(percent)
+
+
+def test_run_local_tts_worker_command_uses_process_runner_for_worker_output(monkeypatch, tmp_path) -> None:
+    calls = {}
+
+    def fake_run_worker_process_job(command, **kwargs):
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        kwargs["on_process_start"]("process")
+        kwargs["on_output"](
+            WorkerProcessOutput(
+                line="PROGRESS: 50",
+                is_progress=True,
+                progress_percent=50.0,
+            )
+        )
+        kwargs["on_output"](
+            WorkerProcessOutput(
+                line="STATUS: Synthesizing",
+                is_status=True,
+                status="Synthesizing",
+            )
+        )
+        return WorkerProcessResult(return_code=0, cancelled=False, recent_output=())
+
+    monkeypatch.setattr(tts_page, "external_base_dir", lambda: tmp_path)
+    monkeypatch.setattr(tts_page, "run_worker_process_job", fake_run_worker_process_job)
+
+    workflow = FakeTtsWorkflow()
+    workflow.run_local_tts_worker_command(["python", "local_tts_worker.py"], progress_start=20, progress_end=60)
+
+    assert calls["command"] == ["python", "local_tts_worker.py"]
+    assert calls["kwargs"]["cwd"] == str(tmp_path)
+    assert calls["kwargs"]["recent_output_limit"] == 12
+    assert calls["kwargs"]["should_cancel"]() is False
+    assert workflow.progress_values == [40.0]
+    assert workflow.tts_status.messages == ["Synthesizing"]
+    assert workflow.tts_process is None

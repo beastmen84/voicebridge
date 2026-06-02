@@ -1,4 +1,3 @@
-import subprocess
 import threading
 from pathlib import Path
 
@@ -6,6 +5,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
 
 from voicebridge.app_paths import external_base_dir, ml_python_path, voice_modeling_worker_path
+from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
 from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
@@ -138,50 +138,35 @@ class VoiceTrainingWorkflowMixin:
         ).start()
 
     def voice_training_worker(self, command: list[str], dry_run: bool) -> None:
-        recent_output = []
         try:
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            process = subprocess.Popen(
+            result = run_worker_process_job(
                 command,
                 cwd=str(external_base_dir()),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=creationflags,
+                on_process_start=lambda process: setattr(self, "voice_training_process", process),
+                on_output=self.handle_voice_training_worker_output,
+                should_cancel=lambda: self.voice_training_cancel_requested,
             )
-            self.voice_training_process = process
-            assert process.stdout is not None
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith("PROGRESS: "):
-                    try:
-                        progress_percent = float(line.removeprefix("PROGRESS: ").strip())
-                    except ValueError:
-                        continue
-                    self.post(self.update_voice_training_progress_percent, progress_percent)
-                    continue
-                recent_output.append(line)
-                recent_output = recent_output[-16:]
-                self.post(self.append_voice_training_log, line)
-                if self.voice_training_cancel_requested and process.poll() is None:
-                    process.terminate()
-            return_code = process.wait()
-            if self.voice_training_cancel_requested:
+            if result.cancelled:
                 self.post(self.voice_training_cancelled)
                 return
-            if return_code != 0:
-                raise RuntimeError("\n".join(recent_output[-10:]) or f"Voice training exited with code {return_code}.")
+            if result.return_code != 0:
+                raise RuntimeError(
+                    "\n".join(result.recent_output[-10:])
+                    or f"Voice training exited with code {result.return_code}."
+                )
             self.post(self.voice_training_succeeded, dry_run)
         except (OSError, RuntimeError, AssertionError) as exc:
             self.post(self.voice_training_failed, str(exc))
         finally:
             self.voice_training_process = None
             self.post(self.finish_voice_training_worker)
+
+    def handle_voice_training_worker_output(self, output: WorkerProcessOutput) -> None:
+        if output.is_progress:
+            if output.progress_percent is not None:
+                self.post(self.update_voice_training_progress_percent, output.progress_percent)
+            return
+        self.post(self.append_voice_training_log, output.line)
 
     def update_voice_training_progress_percent(self, percent: float) -> None:
         self.show_percent_progress(self.voice_training_progress, percent)

@@ -574,11 +574,10 @@ def normalized_modeling_clip(value: Any) -> ModelingClip | None:
         return None
     timestamp = utc_timestamp()
     raw_mode = value.get("mode")
-    normalized_mode: str = (
-        raw_mode
-        if isinstance(raw_mode, str) and raw_mode in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}
-        else MODELING_CLIP_FREE_RECORDING
-    )
+    if isinstance(raw_mode, str) and raw_mode in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}:
+        normalized_mode = raw_mode
+    else:
+        normalized_mode = MODELING_CLIP_FREE_RECORDING
     transcript_path = _string_or_default(value.get("transcript_path"))
     transcript_text = _string_or_default(value.get("transcript_text"))
     transcript_source = _string_or_default(value.get("transcript_source"))

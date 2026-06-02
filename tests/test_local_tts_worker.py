@@ -104,8 +104,8 @@ def test_load_xtts_model_uses_trained_model_paths(tmp_path: Path, monkeypatch: p
     calls = []
 
     class FakeTts:
-        def __init__(self, *args, **kwargs) -> None:
-            calls.append((args, kwargs))
+        def __init__(self, *init_args, **kwargs) -> None:
+            calls.append((init_args, kwargs))
             self.device = ""
 
         def to(self, device: str):

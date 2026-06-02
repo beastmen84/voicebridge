@@ -3,6 +3,7 @@ import importlib
 import os
 import sys
 import wave
+from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -136,7 +137,7 @@ def wav_duration_seconds(path):
         return wav_file.getnframes() / max(1, wav_file.getframerate())
 
 
-def merge_wav_files(input_paths, output_path):
+def merge_wav_files(input_paths: Sequence[str | Path], output_path: str | Path) -> None:
     input_paths = [Path(path) for path in input_paths]
     if not input_paths:
         raise ValueError("No local TTS audio chunks were generated.")
@@ -160,7 +161,8 @@ def silent_wav_frames(params, seconds):
     return b"\x00" * frame_count * params.nchannels * params.sampwidth
 
 
-def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path, inference_settings=None):
+def synthesize_text_chunks(tts, chunks, speaker_wav, language, output_path: str | Path, inference_settings=None):
+    output_path = Path(output_path)
     if not chunks:
         raise ValueError("The selected input file contains no readable text after cleanup.")
 

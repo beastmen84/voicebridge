@@ -279,12 +279,14 @@ def read_doc_legacy(path):
     doc: Any | None = None
 
     try:
-        word = win32com.client.Dispatch("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
+        word_app: Any = win32com.client.Dispatch("Word.Application")
+        word = word_app
+        word_app.Visible = False
+        word_app.DisplayAlerts = 0
 
-        doc = word.Documents.Open(os.path.abspath(path), ReadOnly=True)
-        text = doc.Content.Text
+        document: Any = word_app.Documents.Open(os.path.abspath(path), ReadOnly=True)
+        doc = document
+        text = document.Content.Text
         return text.strip()
 
     except (WordComError, OSError, RuntimeError, ValueError) as exc:

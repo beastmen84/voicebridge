@@ -278,7 +278,7 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
     readiness = summary.get("readiness")
     if not isinstance(readiness, str) or readiness not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
         raise ValueError("Voice Modeling requires an exported dataset with Usable or Good readiness.")
-    readiness_text = readiness
+    readiness_text = str(readiness)
 
     metadata_rows = parse_voice_modeling_metadata(metadata_path, export_dir)
     if not metadata_rows:

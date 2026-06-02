@@ -89,7 +89,7 @@ def test_local_tts_segment_fields_keep_profile_language() -> None:
     }
 
     fields = TtsWorkflowMixin.local_tts_segment_voice_fields(profile)
-    summary = TtsWorkflowMixin.tts_segment_summary(0, {"text": "Ciao", **fields})
+    summary = TtsWorkflowMixin.tts_segment_summary(0, {"text": "Ciao", "voice_label": "Marco", **fields})
 
     assert fields["voice_profile_id"] == "profile-1"
     assert fields["language_code"] == "it"

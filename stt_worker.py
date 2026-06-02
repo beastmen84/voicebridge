@@ -143,9 +143,9 @@ def write_markdown(result, media_path, output_path, model_name):
 
 def write_srt_from_segments(segments, language, output_path):
     subtitles_module = load_optional_module("whisperx.SubtitlesProcessor")
-    SubtitlesProcessor = subtitles_module.SubtitlesProcessor
+    subtitles_processor_class = subtitles_module.SubtitlesProcessor
 
-    processor = SubtitlesProcessor(segments, language or "en")
+    processor = subtitles_processor_class(segments, language or "en")
     processor.save(str(output_path), advanced_splitting=True)
 
 

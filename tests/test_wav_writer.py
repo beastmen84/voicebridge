@@ -3,9 +3,11 @@ import wave
 from pathlib import Path
 
 from voicebridge.wav_writer import (
+    estimate_snr_db,
     normalize_pcm16_peak,
     pcm16_duration_seconds,
     pcm16_peak_abs,
+    pcm16_silence_regions,
     prepare_voice_reference_pcm,
     trim_pcm16_silence,
     trim_pcm16_to_frames,
@@ -57,6 +59,22 @@ def test_prepare_voice_reference_pcm_trims_and_normalizes() -> None:
     assert result.trimmed_seconds > 0
     assert result.analysis.peak == 20_000
     assert "Level normalized." in result.messages
+
+
+def test_prepare_voice_reference_pcm_estimates_snr_from_trimmed_noise() -> None:
+    pcm_data = pcm16_bytes([100] * 20 + [5000] * 30 + [100] * 20)
+
+    result = prepare_voice_reference_pcm(pcm_data, sample_rate=10, channel_count=1)
+
+    assert pcm16_silence_regions(pcm_data, channel_count=1) == pcm16_bytes([100] * 40)
+    assert result.noise_rms == 100
+    assert result.snr_db is not None
+    assert result.snr_db > 30
+
+
+def test_estimate_snr_db_handles_unmeasurable_and_noisy_floors() -> None:
+    assert estimate_snr_db(signal_rms=5000, noise_rms=0) is None
+    assert estimate_snr_db(signal_rms=5000, noise_rms=5000) == 0
 
 
 def test_write_pcm16_wav(tmp_path: Path) -> None:

@@ -33,6 +33,12 @@ MODELING_CLIP_MISSING_AUDIO = "missing_audio"
 MODELING_DATASET_NOT_READY = "not_ready"
 MODELING_DATASET_USABLE = "usable"
 MODELING_DATASET_GOOD = "good"
+MODELING_DATASET_TIER_NOT_READY = "not_ready"
+MODELING_DATASET_TIER_TEST = "technical_test"
+MODELING_DATASET_TIER_BASE = "base"
+MODELING_DATASET_TIER_RECOMMENDED = "recommended"
+MODELING_DATASET_TIER_HIGH_QUALITY = "high_quality"
+MODELING_DATASET_TIER_PREMIUM = "premium"
 MODELING_MIN_READY_CLIPS = 5
 MODELING_MIN_READY_SECONDS = 60.0
 MODELING_GOOD_READY_CLIPS = 20
@@ -41,10 +47,15 @@ MODELING_TARGET_READY_CLIPS = 60
 MODELING_TARGET_READY_SECONDS = 1800.0
 MODELING_STRETCH_READY_CLIPS = 120
 MODELING_STRETCH_READY_SECONDS = 3600.0
+MODELING_BASE_TIER_SECONDS = 300.0
+MODELING_RECOMMENDED_TIER_SECONDS = 900.0
+MODELING_HIGH_QUALITY_TIER_SECONDS = 1800.0
+MODELING_PREMIUM_TIER_SECONDS = 3600.0
 MODELING_MIN_READY_CLIP_SECONDS = 5.0
 MODELING_MAX_READY_CLIP_SECONDS = 60.0
 MODELING_LOW_RMS_PERCENT = 3.0
 MODELING_CLIPPING_PERCENT = 0.10
+MODELING_LOW_SNR_DB = 18.0
 
 
 class ModelingClip(TypedDict):
@@ -83,7 +94,9 @@ class ModelingDatasetSummary(TypedDict):
     long_ready_clips: int
     low_level_clips: int
     clipping_clips: int
+    noisy_clips: int
     readiness: str
+    dataset_tier: str
     target_reached: bool
     target_clips_percent: int
     target_duration_percent: int
@@ -175,6 +188,31 @@ def modeling_dataset_readiness_label(readiness: str) -> str:
     }.get(readiness, readiness.replace("_", " ").title())
 
 
+def modeling_dataset_tier_label(tier: str) -> str:
+    return {
+        MODELING_DATASET_TIER_NOT_READY: "Not ready",
+        MODELING_DATASET_TIER_TEST: "Technical test",
+        MODELING_DATASET_TIER_BASE: "Base",
+        MODELING_DATASET_TIER_RECOMMENDED: "Recommended",
+        MODELING_DATASET_TIER_HIGH_QUALITY: "High quality",
+        MODELING_DATASET_TIER_PREMIUM: "Premium",
+    }.get(tier, tier.replace("_", " ").title())
+
+
+def modeling_dataset_duration_tier(ready_duration_seconds: float) -> str:
+    if ready_duration_seconds <= 0:
+        return MODELING_DATASET_TIER_NOT_READY
+    if ready_duration_seconds < MODELING_BASE_TIER_SECONDS:
+        return MODELING_DATASET_TIER_TEST
+    if ready_duration_seconds < MODELING_RECOMMENDED_TIER_SECONDS:
+        return MODELING_DATASET_TIER_BASE
+    if ready_duration_seconds < MODELING_HIGH_QUALITY_TIER_SECONDS:
+        return MODELING_DATASET_TIER_RECOMMENDED
+    if ready_duration_seconds < MODELING_PREMIUM_TIER_SECONDS:
+        return MODELING_DATASET_TIER_HIGH_QUALITY
+    return MODELING_DATASET_TIER_PREMIUM
+
+
 def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary:
     ready_duration_seconds = 0.0
     ready_clips = 0
@@ -184,6 +222,7 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
     long_ready_clips = 0
     low_level_clips = 0
     clipping_clips = 0
+    noisy_clips = 0
 
     for clip in dataset["clips"]:
         status = modeling_clip_display_status(clip)
@@ -204,13 +243,16 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         quality_details = clip.get("quality_details", "")
         rms_percent = _quality_percent(quality_details, "RMS level")
         clipping_percent = _quality_percent(quality_details, "Input clipping")
+        snr_db = _quality_db(quality_details, "Estimated SNR")
         if rms_percent is not None and rms_percent < MODELING_LOW_RMS_PERCENT:
             low_level_clips += 1
         if clipping_percent is not None and clipping_percent > MODELING_CLIPPING_PERCENT:
             clipping_clips += 1
+        if snr_db is not None and snr_db < MODELING_LOW_SNR_DB:
+            noisy_clips += 1
 
     average_ready_duration_seconds = ready_duration_seconds / ready_clips if ready_clips else 0.0
-    quality_warning_count = short_ready_clips + long_ready_clips + low_level_clips + clipping_clips
+    quality_warning_count = short_ready_clips + long_ready_clips + low_level_clips + clipping_clips + noisy_clips
     issue_count = quality_warning_count + pending_transcript_clips + missing_audio_clips
     if ready_clips >= MODELING_GOOD_READY_CLIPS and ready_duration_seconds >= MODELING_GOOD_READY_SECONDS:
         readiness = MODELING_DATASET_GOOD if issue_count == 0 else MODELING_DATASET_USABLE
@@ -228,11 +270,13 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         long_ready_clips=long_ready_clips,
         low_level_clips=low_level_clips,
         clipping_clips=clipping_clips,
+        noisy_clips=noisy_clips,
     )
+    dataset_tier = modeling_dataset_duration_tier(ready_duration_seconds)
     recommendations = modeling_dataset_summary_recommendations(
         ready_clips=ready_clips,
-        ready_duration_seconds=ready_duration_seconds,
         readiness=readiness,
+        dataset_tier=dataset_tier,
     )
     target_reached = (
         ready_clips >= MODELING_TARGET_READY_CLIPS
@@ -249,7 +293,9 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         "long_ready_clips": long_ready_clips,
         "low_level_clips": low_level_clips,
         "clipping_clips": clipping_clips,
+        "noisy_clips": noisy_clips,
         "readiness": readiness,
+        "dataset_tier": dataset_tier,
         "target_reached": target_reached,
         "target_clips_percent": _progress_percent(ready_clips, MODELING_TARGET_READY_CLIPS),
         "target_duration_percent": _progress_percent(ready_duration_seconds, MODELING_TARGET_READY_SECONDS),
@@ -261,7 +307,8 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
 def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
     summary = modeling_dataset_summary(dataset)
     lines = [
-        f"Readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
+        f"Export readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
+        f"Dataset tier: {modeling_dataset_tier_label(summary['dataset_tier'])}",
         f"Language: {dataset['language_code']}",
         f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
         f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
@@ -276,6 +323,7 @@ def modeling_dataset_summary_text(dataset: ModelingDataset) -> str:
             f"{format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS)}-"
             f"{format_modeling_dataset_duration(MODELING_STRETCH_READY_SECONDS)} clean audio"
         ),
+        "Tier scale: test <5m, base 5-15m, recommended 15-30m, high quality 30-60m, premium 60m+",
     ]
     if summary["issues"]:
         lines.append("")
@@ -404,6 +452,7 @@ def modeling_dataset_summary_issues(
     long_ready_clips: int,
     low_level_clips: int,
     clipping_clips: int,
+    noisy_clips: int,
 ) -> list[str]:
     issues = []
     if ready_clips == 0:
@@ -426,30 +475,36 @@ def modeling_dataset_summary_issues(
         issues.append(f"{low_level_clips} ready clip(s) have low RMS level.")
     if clipping_clips:
         issues.append(f"{clipping_clips} ready clip(s) show input clipping.")
+    if noisy_clips:
+        issues.append(f"{noisy_clips} ready clip(s) have low estimated SNR.")
     return issues
 
 
 def modeling_dataset_summary_recommendations(
     *,
     ready_clips: int,
-    ready_duration_seconds: float,
     readiness: str,
+    dataset_tier: str,
 ) -> list[str]:
     if ready_clips <= 0:
         return []
-    if ready_clips >= MODELING_STRETCH_READY_CLIPS and ready_duration_seconds >= MODELING_STRETCH_READY_SECONDS:
+    if dataset_tier == MODELING_DATASET_TIER_PREMIUM:
         return ["Extended target reached; prioritize transcript accuracy and recording consistency."]
-    if ready_clips >= MODELING_TARGET_READY_CLIPS and ready_duration_seconds >= MODELING_TARGET_READY_SECONDS:
+    if dataset_tier == MODELING_DATASET_TIER_HIGH_QUALITY:
         return [
-            "Recommended target reached; more clean variety up to 120 clips and 60 minutes can still help."
+            "High-quality duration reached; extra variety beyond 60 minutes can still help, but gains are gradual."
         ]
-    if readiness == MODELING_DATASET_GOOD:
+    if dataset_tier == MODELING_DATASET_TIER_RECOMMENDED:
         return [
-            "Good for a first serious fine-tuning run; production target is 60-120 ready clips and 30-60 minutes."
+            "Recommended duration reached; continue toward 30-60 minutes for a stronger daily-use voice."
         ]
-    if readiness == MODELING_DATASET_USABLE:
+    if dataset_tier == MODELING_DATASET_TIER_BASE:
         return [
-            "Usable for pipeline tests; next aim for 20 ready clips and 10 minutes, then the 30-60 minute target."
+            "Base dataset; useful for early voice checks, then aim for 15-30 minutes."
+        ]
+    if readiness in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
+        return [
+            "Exportable for pipeline tests only; collect 5-15 minutes before judging voice quality."
         ]
     return []
 
@@ -697,6 +752,15 @@ def _quality_percent(details: str, label: str) -> float | None:
     if not isinstance(details, str):
         return None
     match = re.search(rf"^{re.escape(label)}:\s*([0-9]+(?:\.[0-9]+)?)%", details, flags=re.MULTILINE)
+    if not match:
+        return None
+    return _float(match.group(1))
+
+
+def _quality_db(details: str, label: str) -> float | None:
+    if not isinstance(details, str):
+        return None
+    match = re.search(rf"^{re.escape(label)}:\s*([0-9]+(?:\.[0-9]+)?)\s*dB", details, flags=re.MULTILINE)
     if not match:
         return None
     return _float(match.group(1))

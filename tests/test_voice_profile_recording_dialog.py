@@ -54,6 +54,7 @@ def test_recording_quality_details_include_cleanup_metrics() -> None:
     assert "Sample rate: 10 Hz" in details
     assert "Cleaned duration:" in details
     assert "Trimmed silence:" in details
+    assert "Estimated SNR:" in details
     assert "input overflow" in details
     assert "Maximum reference length reached" in status
 

@@ -475,6 +475,7 @@ def build_recording_quality_details(
         f"Trimmed silence: {recording.trimmed_seconds:.1f}s",
         f"Peak level: {cleaned.peak_percent * 100:.0f}%",
         f"RMS level: {cleaned.rms_percent * 100:.0f}%",
+        f"Estimated SNR: {_format_snr(recording.snr_db)}",
         f"Input clipping: {source.clipped_percent:.2f}%",
     ]
     messages = (*recording.messages, *recorder_messages)
@@ -486,3 +487,9 @@ def build_recording_quality_details(
 def format_duration(seconds: float) -> str:
     seconds = max(0, int(seconds))
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def _format_snr(snr_db: float | None) -> str:
+    if snr_db is None:
+        return "not measurable"
+    return f"{snr_db:.1f} dB"

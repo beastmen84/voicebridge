@@ -7,6 +7,8 @@ from pathlib import Path
 
 PCM16_MAX_ABS = 32767
 PCM16_CLIP_THRESHOLD = 32700
+PCM16_SILENCE_THRESHOLD = 350
+PCM16_LOW_SNR_DB = 18.0
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,9 @@ class Pcm16ProcessingResult:
     trimmed_seconds: float
     source_analysis: Pcm16Analysis
     analysis: Pcm16Analysis
+    noise_rms: float
+    noise_rms_percent: float
+    snr_db: float | None
     messages: tuple[str, ...]
 
 
@@ -81,7 +86,7 @@ def trim_pcm16_silence(
     sample_rate: int,
     channel_count: int,
     *,
-    threshold: int = 350,
+    threshold: int = PCM16_SILENCE_THRESHOLD,
     padding_ms: int = 150,
 ) -> bytes:
     pcm_data = trim_pcm16_to_frames(pcm_data, channel_count)
@@ -91,17 +96,10 @@ def trim_pcm16_silence(
 
     channel_count = max(1, channel_count)
     frame_count = len(samples) // channel_count
-    first_sound_frame = None
-    last_sound_frame = None
-    for frame_index in range(frame_count):
-        start = frame_index * channel_count
-        frame = samples[start : start + channel_count]
-        if any(abs(sample) >= threshold for sample in frame):
-            first_sound_frame = frame_index if first_sound_frame is None else first_sound_frame
-            last_sound_frame = frame_index
-
-    if first_sound_frame is None or last_sound_frame is None:
+    bounds = _sound_frame_bounds(samples, channel_count, threshold)
+    if bounds is None:
         return b""
+    first_sound_frame, last_sound_frame = bounds
 
     padding_frames = int(sample_rate * max(0, padding_ms) / 1000)
     start_frame = max(0, first_sound_frame - padding_frames)
@@ -139,6 +137,8 @@ def normalize_pcm16_peak(
 def prepare_voice_reference_pcm(pcm_data: bytes, sample_rate: int, channel_count: int) -> Pcm16ProcessingResult:
     pcm_data = trim_pcm16_to_frames(pcm_data, channel_count)
     source_analysis = analyze_pcm16_audio(pcm_data, sample_rate, channel_count)
+    noise_pcm = pcm16_silence_regions(pcm_data, channel_count)
+    noise_analysis = analyze_pcm16_audio(noise_pcm, sample_rate, channel_count)
     trimmed_pcm = trim_pcm16_silence(pcm_data, sample_rate, channel_count)
     if not trimmed_pcm:
         empty_analysis = analyze_pcm16_audio(b"", sample_rate, channel_count)
@@ -149,12 +149,17 @@ def prepare_voice_reference_pcm(pcm_data: bytes, sample_rate: int, channel_count
             trimmed_seconds=source_analysis.duration_seconds,
             source_analysis=source_analysis,
             analysis=empty_analysis,
+            noise_rms=noise_analysis.rms,
+            noise_rms_percent=noise_analysis.rms_percent,
+            snr_db=None,
             messages=("No usable speech detected.",),
         )
 
     before_peak = pcm16_peak_abs(trimmed_pcm, channel_count)
+    source_speech_analysis = analyze_pcm16_audio(trimmed_pcm, sample_rate, channel_count)
     normalized_pcm = normalize_pcm16_peak(trimmed_pcm, channel_count)
     analysis = analyze_pcm16_audio(normalized_pcm, sample_rate, channel_count)
+    snr_db = estimate_snr_db(source_speech_analysis.rms, noise_analysis.rms)
     trimmed_seconds = max(0.0, source_analysis.duration_seconds - analysis.duration_seconds)
     messages: list[str] = []
     if trimmed_seconds >= 0.2:
@@ -163,6 +168,8 @@ def prepare_voice_reference_pcm(pcm_data: bytes, sample_rate: int, channel_count
         messages.append("Level normalized.")
     if source_analysis.clipped_percent >= 0.1:
         messages.append("Input may be clipped; lower microphone gain.")
+    if snr_db is not None and snr_db < PCM16_LOW_SNR_DB:
+        messages.append("Background noise is high; record in a quieter room.")
     elif analysis.peak_percent < 0.25:
         messages.append("Input level is low; move closer to the microphone.")
 
@@ -173,6 +180,9 @@ def prepare_voice_reference_pcm(pcm_data: bytes, sample_rate: int, channel_count
         trimmed_seconds=trimmed_seconds,
         source_analysis=source_analysis,
         analysis=analysis,
+        noise_rms=noise_analysis.rms,
+        noise_rms_percent=noise_analysis.rms_percent,
+        snr_db=snr_db,
         messages=tuple(messages),
     )
 
@@ -194,3 +204,50 @@ def write_pcm16_wav(path: str | Path, pcm_data: bytes, sample_rate: int, channel
 def _iter_pcm16_samples(pcm_data: bytes) -> Iterator[int]:
     usable_size = len(pcm_data) - (len(pcm_data) % 2)
     yield from (sample[0] for sample in struct.iter_unpack("<h", pcm_data[:usable_size]))
+
+
+def pcm16_silence_regions(
+    pcm_data: bytes,
+    channel_count: int,
+    *,
+    threshold: int = PCM16_SILENCE_THRESHOLD,
+) -> bytes:
+    pcm_data = trim_pcm16_to_frames(pcm_data, channel_count)
+    samples = list(_iter_pcm16_samples(pcm_data))
+    if not samples:
+        return b""
+
+    channel_count = max(1, channel_count)
+    bounds = _sound_frame_bounds(samples, channel_count, threshold)
+    if bounds is None:
+        return pcm_data
+
+    first_sound_frame, last_sound_frame = bounds
+    first_sound_byte = first_sound_frame * channel_count * 2
+    after_sound_byte = (last_sound_frame + 1) * channel_count * 2
+    return pcm_data[:first_sound_byte] + pcm_data[after_sound_byte:]
+
+
+def estimate_snr_db(signal_rms: float, noise_rms: float) -> float | None:
+    if signal_rms <= 0 or noise_rms <= 0:
+        return None
+    return max(0.0, 20 * math.log10(signal_rms / noise_rms))
+
+
+def _sound_frame_bounds(
+    samples: list[int],
+    channel_count: int,
+    threshold: int,
+) -> tuple[int, int] | None:
+    frame_count = len(samples) // channel_count
+    first_sound_frame = None
+    last_sound_frame = None
+    for frame_index in range(frame_count):
+        start = frame_index * channel_count
+        frame = samples[start : start + channel_count]
+        if any(abs(sample) >= threshold for sample in frame):
+            first_sound_frame = frame_index if first_sound_frame is None else first_sound_frame
+            last_sound_frame = frame_index
+    if first_sound_frame is None or last_sound_frame is None:
+        return None
+    return first_sound_frame, last_sound_frame

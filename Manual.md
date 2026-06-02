@@ -152,9 +152,11 @@ file utente nella cartella `voice_profiles` e non vengono tracciate da git: i sa
 I dataset vengono salvati in `voice_profiles\modeling_dataset\<nome profilo>`; ogni clip mantiene WAV pulito in `clips`,
 testo sidecar `.txt` in `transcripts` quando disponibile e metadata di qualita'. Solo le clip con testo confermato sono marcate `Ready`.
 La scheda mostra anche un riepilogo qualita' del dataset: clip pronte, durata utile, clip senza transcript, audio mancanti
-e segnali come clip troppo corte/lunghe, volume basso o clipping. `Usable` richiede almeno 5 clip pronte e 60 secondi
-di audio; `Good` richiede almeno 20 clip pronte e 10 minuti senza warning qualita'. Il target consigliato per una voce
-da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
+e segnali come clip troppo corte/lunghe, volume basso, clipping o SNR stimato basso. L'app separa `Export readiness`
+dal livello reale del dataset: `Usable` richiede almeno 5 clip pronte e 60 secondi di audio ed e' pensato soprattutto
+per testare la pipeline. Il livello qualitativo viene invece letto dai minuti effettivi validati: test tecnico sotto
+5 minuti, base 5-15 minuti, recommended 15-30 minuti, high quality 30-60 minuti e premium oltre 60 minuti.
+Il target consigliato per una voce da usare davvero e' 60-120 clip pronte e 30-60 minuti di audio pulito.
 `Export dataset` e' disponibile solo da stato `Usable` in poi e crea una copia pronta per training in
 `modeling_exports\<nome profilo>-<timestamp>` con `wavs`, `metadata.csv` in formato `wavs/clip.wav|testo` e
 `dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente e non modifica i

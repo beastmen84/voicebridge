@@ -21,6 +21,9 @@ from voicebridge.modeling_datasets import (
     MODELING_DATASET_USABLE,
     MODELING_VERIFICATION_MATCH_OK,
     MODELING_VERIFICATION_NEEDS_REVIEW,
+    MODELING_VERIFICATION_NOT_REQUIRED,
+    MODELING_VERIFICATION_PENDING,
+    MODELING_VERIFICATION_UNVERIFIED,
     add_modeling_dataset_guided_prompt_history,
     build_modeling_clip,
     build_modeling_dataset_for_profile,
@@ -30,6 +33,7 @@ from voicebridge.modeling_datasets import (
     modeling_clip_audio_path,
     modeling_clip_status_label,
     modeling_clip_transcript_path,
+    modeling_clip_verification_status,
     modeling_dataset_dir,
     modeling_dataset_exportable,
     modeling_dataset_guided_prompt_texts,
@@ -40,6 +44,7 @@ from voicebridge.modeling_datasets import (
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
     toggle_modeling_clip_export_exclusion,
+    update_modeling_clip_recording,
     update_modeling_clip_transcript,
     update_modeling_clip_verification,
     write_modeling_clip_transcript,
@@ -120,6 +125,94 @@ def test_modeling_clip_transcript_sidecar(tmp_path: Path) -> None:
     assert updated["status"] == MODELING_CLIP_READY
     assert Path(updated["transcript_path"]).read_text(encoding="utf-8") == "Hello world\n"
     assert modeling_clip_status_label(updated["status"]) == "Ready"
+
+
+def test_guided_clip_verification_status_transitions(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    retry_path = tmp_path / "retry.wav"
+    retry_path.write_bytes(b"RIFF retry")
+    guided_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_TEXT_GUIDED,
+        audio_path=audio_path,
+        transcript_text="Read this exact sentence.",
+        transcript_source="generated_prompt:1.1",
+        duration_seconds=12.0,
+        clip_id="guided",
+    )
+    free_clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_FREE_RECORDING,
+        audio_path=audio_path,
+        transcript_text="Free transcript.",
+        duration_seconds=12.0,
+        clip_id="free",
+    )
+
+    pending = update_modeling_clip_verification(guided_clip, status=MODELING_VERIFICATION_PENDING)
+    matched = update_modeling_clip_verification(
+        pending,
+        status=MODELING_VERIFICATION_MATCH_OK,
+        score=99.0,
+        detected_text="Read this exact sentence.",
+        details="Similarity: 100.0%",
+    )
+    edited = update_modeling_clip_transcript(matched, "Read this exact sentence again.")
+    retried = update_modeling_clip_recording(
+        matched,
+        audio_path=retry_path,
+        duration_seconds=11.0,
+        quality_details="RMS level: 8%",
+    )
+    no_transcript = update_modeling_clip_transcript(matched, "")
+
+    assert modeling_clip_verification_status(guided_clip) == MODELING_VERIFICATION_UNVERIFIED
+    assert modeling_clip_verification_status(pending) == MODELING_VERIFICATION_PENDING
+    assert modeling_clip_verification_status(matched) == MODELING_VERIFICATION_MATCH_OK
+    assert matched["verification_score"] == 99.0
+    assert matched["verification_text"] == "Read this exact sentence."
+    assert modeling_clip_verification_status(edited) == MODELING_VERIFICATION_UNVERIFIED
+    assert modeling_clip_verification_status(retried) == MODELING_VERIFICATION_UNVERIFIED
+    assert retried["audio_path"] == str(retry_path)
+    assert retried["verification_text"] == ""
+    assert modeling_clip_verification_status(no_transcript) == MODELING_VERIFICATION_NOT_REQUIRED
+    assert modeling_clip_verification_status(free_clip) == MODELING_VERIFICATION_NOT_REQUIRED
+
+
+def test_modeling_clip_export_exclusion_toggle_round_trip(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"RIFF")
+    clip = build_modeling_clip(
+        dataset,
+        mode=MODELING_CLIP_FREE_RECORDING,
+        audio_path=audio_path,
+        transcript_text="Ready clip.",
+        duration_seconds=12.0,
+        clip_id="clip",
+    )
+
+    excluded = toggle_modeling_clip_export_exclusion(clip)
+    included = toggle_modeling_clip_export_exclusion(excluded)
+
+    assert excluded["excluded_from_export"] is True
+    assert included["excluded_from_export"] is False
 
 
 def test_modeling_dataset_guided_prompt_history_counts_unique_used_prompts(tmp_path: Path) -> None:
@@ -330,6 +423,40 @@ def test_modeling_dataset_exportable_requires_at_least_one_unblocked_clip(tmp_pa
         )
 
     assert modeling_dataset_summary(dataset)["readiness"] == MODELING_DATASET_USABLE
+    assert modeling_dataset_exportable(dataset) is False
+    with pytest.raises(ValueError, match="No exportable ready clips"):
+        export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+
+
+def test_modeling_dataset_exportable_blocks_unverified_guided_clips(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"unverified-{index}.wav"
+        audio_path.write_bytes(f"RIFF unverified {index}".encode())
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_TEXT_GUIDED,
+                audio_path=audio_path,
+                transcript_text=f"Unverified clip {index}",
+                transcript_source="generated_prompt:1.1",
+                duration_seconds=12.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"unverified-{index}",
+            )
+        )
+
+    summary = modeling_dataset_summary(dataset)
+
+    assert summary["readiness"] == MODELING_DATASET_USABLE
+    assert summary["verification_pending_clips"] == 5
     assert modeling_dataset_exportable(dataset) is False
     with pytest.raises(ValueError, match="No exportable ready clips"):
         export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
@@ -614,3 +741,122 @@ def test_load_modeling_datasets_accepts_version_1_0_without_guided_history(tmp_p
     loaded = load_modeling_datasets(config_path)
 
     assert loaded[0]["guided_prompt_history"] == []
+
+
+def test_load_modeling_datasets_migrates_1_0_guided_clip_to_1_2_fields(tmp_path: Path) -> None:
+    audio_path = tmp_path / "guided.wav"
+    audio_path.write_bytes(b"RIFF")
+    config_path = tmp_path / "modeling_datasets.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "kind": MODELING_DATASETS_JSON_KIND,
+                "datasets": [
+                    {
+                        "id": "dataset-1",
+                        "profile_id": "profile-1",
+                        "name": "Dataset",
+                        "language_code": "it",
+                        "clips": [
+                            {
+                                "id": "clip-1",
+                                "mode": MODELING_CLIP_TEXT_GUIDED,
+                                "audio_path": str(audio_path),
+                                "transcript_path": str(tmp_path / "clip-1.txt"),
+                                "transcript_text": "Leggi questa frase.",
+                                "transcript_source": "generated_prompt:1.0",
+                                "language_code": "it",
+                                "duration_seconds": 12.0,
+                                "quality_details": "RMS level: 8%",
+                                "status": MODELING_CLIP_READY,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "updated_at": "2026-01-01T00:00:00Z",
+                            }
+                        ],
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_modeling_datasets(config_path)
+    save_modeling_datasets(loaded, config_path)
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    migrated_clip = loaded[0]["clips"][0]
+
+    assert saved["schema_version"] == "1.2"
+    assert loaded[0]["guided_prompt_history"] == []
+    assert migrated_clip["status"] == MODELING_CLIP_READY
+    assert migrated_clip["verification_status"] == MODELING_VERIFICATION_UNVERIFIED
+    assert migrated_clip["verification_score"] == 0.0
+    assert migrated_clip["verification_text"] == ""
+    assert migrated_clip["verification_details"] == ""
+    assert migrated_clip["verification_checked_at"] == ""
+    assert migrated_clip["excluded_from_export"] is False
+    assert modeling_dataset_exportable(loaded[0]) is False
+
+
+def test_load_modeling_datasets_preserves_1_1_verification_fields_when_saving_1_2(tmp_path: Path) -> None:
+    audio_path = tmp_path / "guided.wav"
+    audio_path.write_bytes(b"RIFF")
+    config_path = tmp_path / "modeling_datasets.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.1",
+                "kind": MODELING_DATASETS_JSON_KIND,
+                "datasets": [
+                    {
+                        "id": "dataset-1",
+                        "profile_id": "profile-1",
+                        "name": "Dataset",
+                        "language_code": "en",
+                        "guided_prompt_history": ["prompt one"],
+                        "clips": [
+                            {
+                                "id": "clip-1",
+                                "mode": MODELING_CLIP_TEXT_GUIDED,
+                                "audio_path": str(audio_path),
+                                "transcript_path": str(tmp_path / "clip-1.txt"),
+                                "transcript_text": "Read this sentence.",
+                                "transcript_source": "generated_prompt:1.1",
+                                "language_code": "en",
+                                "duration_seconds": 12.0,
+                                "quality_details": "RMS level: 8%",
+                                "status": MODELING_CLIP_READY,
+                                "verification_status": MODELING_VERIFICATION_MATCH_OK,
+                                "verification_score": 98.5,
+                                "verification_text": "Read this sentence.",
+                                "verification_details": "Similarity: 100.0%",
+                                "verification_checked_at": "2026-01-01T00:01:00Z",
+                                "excluded_from_export": True,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "updated_at": "2026-01-01T00:01:00Z",
+                            }
+                        ],
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:01:00Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_modeling_datasets(config_path)
+    save_modeling_datasets(loaded, config_path)
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    migrated_clip = loaded[0]["clips"][0]
+
+    assert saved["schema_version"] == "1.2"
+    assert loaded[0]["guided_prompt_history"] == ["prompt one"]
+    assert migrated_clip["verification_status"] == MODELING_VERIFICATION_MATCH_OK
+    assert migrated_clip["verification_score"] == 98.5
+    assert migrated_clip["verification_text"] == "Read this sentence."
+    assert migrated_clip["verification_details"] == "Similarity: 100.0%"
+    assert migrated_clip["verification_checked_at"] == "2026-01-01T00:01:00Z"
+    assert migrated_clip["excluded_from_export"] is True

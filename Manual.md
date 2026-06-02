@@ -174,7 +174,8 @@ Il target consigliato per una voce da usare davvero e' 60-120 clip pronte e 30-6
 `Export dataset` e' disponibile solo da stato `Usable` in poi e crea una copia pronta per training in
 `modeling_exports\<nome profilo>-<timestamp>` con `wavs`, `metadata.csv` in formato `wavs/clip.wav|testo` e
 `dataset.json` con riepilogo e audit dell'export. L'export include solo clip `Ready` con WAV esistente; per le clip
-guidate esclude anche verifiche `Checking text`, `Needs review`, `Check error` e clip marcate manualmente come escluse.
+guidate richiede `Match OK` ed esclude `Text check pending`, `Checking text`, `Needs review`, `Check error` e clip
+marcate manualmente come escluse.
 L'export non modifica i file di lavoro.
 
 ### Local Voices > Setup

@@ -82,7 +82,6 @@ def inspect_stt_runtime(
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip()
 
-    cuda_device_count = 0
     try:
         cuda_device_count = int(values.get("cuda_device_count", "0"))
     except ValueError:
@@ -140,15 +139,15 @@ def check_stt_preflight():
     checks = []
     optional_checks = []
 
-    def add_check(label, path, ok=None):
-        path = Path(path)
-        exists = path.exists() if ok is None else ok
-        checks.append((label, exists, path))
+    def add_check(label, check_path, ok=None):
+        resolved_path = Path(check_path)
+        exists = resolved_path.exists() if ok is None else ok
+        checks.append((label, exists, resolved_path))
 
-    def add_optional_check(label, path, ok=None):
-        path = Path(path)
-        exists = path.exists() if ok is None else ok
-        optional_checks.append((label, exists, path))
+    def add_optional_check(label, check_path, ok=None):
+        resolved_path = Path(check_path)
+        exists = resolved_path.exists() if ok is None else ok
+        optional_checks.append((label, exists, resolved_path))
 
     python_path = stt_python_path()
     worker_path = stt_worker_path()

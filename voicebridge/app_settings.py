@@ -148,7 +148,6 @@ def cleanup_app_config_on_startup() -> list[str]:
     actions: list[str] = []
     settings_path = settings_config_path()
     settings_data: Settings = {}
-    settings_value = None
     if settings_path.exists():
         settings_value, error = _read_json(settings_path)
         if error or not isinstance(settings_value, dict):

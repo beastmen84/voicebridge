@@ -66,6 +66,7 @@ VIDEO_CLEANUP_FILMSTRIP_ICON_SIZES = (
 )
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class VideoCleanupWorkflowMixin:
     def cleanup_media_changed(self):
         self.update_cleanup_output(force=False)

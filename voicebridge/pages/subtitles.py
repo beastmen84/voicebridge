@@ -68,6 +68,7 @@ from voicebridge.ui.widgets import Card, FilePicker
 VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class SubtitlesWorkflowMixin:
     def video_subtitle_mode_label(self):
         if getattr(self, "video_burn_mode_button", None) and self.video_burn_mode_button.isChecked():

@@ -45,6 +45,7 @@ MODELING_GUIDED_TEXT_MAX_CHARS = 450
 MODELING_RECORD_MAX_SECONDS = 60
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyShadowingNames
 class ModelingDatasetsWorkflowMixin:
     def load_modeling_dataset_store(self) -> None:
         self.modeling_datasets = load_modeling_datasets()
@@ -98,7 +99,7 @@ class ModelingDatasetsWorkflowMixin:
                 return
             if not any(dataset["id"] == self.selected_modeling_dataset_id for dataset in visible_datasets):
                 self.selected_modeling_dataset_id = visible_datasets[0]["id"]
-            for dataset in sorted(visible_datasets, key=lambda item: item["name"].casefold()):
+            for dataset in sorted(visible_datasets, key=lambda dataset_item: dataset_item["name"].casefold()):
                 ready_count = sum(1 for clip in dataset["clips"] if clip["status"] == "ready")
                 item = QListWidgetItem(f"{dataset['name']} | {len(dataset['clips'])} clip(s), {ready_count} ready")
                 item.setData(Qt.ItemDataRole.UserRole, dataset["id"])

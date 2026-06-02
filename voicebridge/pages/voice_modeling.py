@@ -41,6 +41,7 @@ from voicebridge.voice_modeling import (
 )
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class VoiceModelingWorkflowMixin:
     def voice_modeling_device_key(self) -> str:
         device = self.voice_modeling_device_combo.currentData(Qt.ItemDataRole.UserRole)

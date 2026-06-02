@@ -9,6 +9,7 @@ LOCAL_VOICES_TAB_SETUP = 2
 LOCAL_VOICES_TAB_TRAINING = 3
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyMethodMayBeStatic
 class LocalVoicesWorkflowMixin:
     def show_local_voices_tab(self, tab_index: int = LOCAL_VOICES_TAB_PROFILES) -> None:
         self.show_page(2)

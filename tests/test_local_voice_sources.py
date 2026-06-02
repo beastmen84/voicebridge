@@ -5,6 +5,7 @@ from tests.test_voice_modeling import exported_dataset
 from voicebridge.local_voice_sources import (
     LOCAL_VOICE_REFERENCE,
     LOCAL_VOICE_TRAINED,
+    LocalVoiceSource,
     grouped_local_voice_sources,
     list_trained_local_voices,
     local_voice_display_label,
@@ -87,7 +88,7 @@ def test_list_trained_local_voices_skips_incomplete_results(tmp_path: Path) -> N
 
 def test_grouped_local_voice_sources_keeps_reference_before_trained(tmp_path: Path) -> None:
     trained_voice = local_voice_from_training_result(write_training_result(tmp_path))
-    reference_voice = {
+    reference_voice: LocalVoiceSource = {
         "id": "profile-1",
         "kind": LOCAL_VOICE_REFERENCE,
         "name": "Reference Voice",

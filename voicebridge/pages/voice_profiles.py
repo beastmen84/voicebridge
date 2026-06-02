@@ -42,6 +42,8 @@ from voicebridge.voice_profiles import (
 )
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
+# noinspection PyMethodMayBeStatic,PyStringConversionWithoutDunderMethod
 class VoiceProfilesWorkflowMixin:
     def load_voice_profile_store(self) -> None:
         self.voice_profiles = load_voice_profiles()
@@ -81,7 +83,7 @@ class VoiceProfilesWorkflowMixin:
             self.voice_profiles_list.addItem("No voice profiles yet.")
             self.update_voice_profile_buttons()
             return
-        for profile in sorted(self.voice_profiles, key=lambda item: item["name"].casefold()):
+        for profile in sorted(self.voice_profiles, key=lambda profile_item: profile_item["name"].casefold()):
             status = voice_profile_status(profile)
             label = f"{profile['name']} | {language_name(profile['language_code'])} | {status}"
             item = QListWidgetItem(label)

@@ -176,7 +176,7 @@ def recommended_voices(voices: list[Voice]) -> list[Voice]:
 
     locale_codes = sorted(
         voices_by_locale,
-        key=lambda locale_code: (-len(voices_by_locale[locale_code]), locale_code),
+        key=lambda candidate_locale: (-len(voices_by_locale[candidate_locale]), candidate_locale),
     )[:RECOMMENDED_VOICE_LOCALES]
 
     recommended = []

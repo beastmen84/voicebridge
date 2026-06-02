@@ -60,6 +60,7 @@ AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS = (
 AUDIO_CLEANUP_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
 class AudioCleanupWorkflowMixin:
     def audio_cleanup_input_changed(self):
         self.stop_audio_cleanup_playback()

@@ -1,10 +1,12 @@
 import argparse
 import difflib
+import importlib
 import os
 import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from voicebridge.file_checks import RequiredFileSpec, required_file_issues, validate_output_path
 
@@ -51,6 +53,10 @@ def project_root():
     return Path(__file__).resolve().parent
 
 
+def load_optional_module(module_name: str) -> Any:
+    return importlib.import_module(module_name)
+
+
 def configure_model_cache(model_root):
     model_root = Path(model_root)
     torch_home = model_root / "torch"
@@ -67,7 +73,7 @@ def configure_model_cache(model_root):
 
 
 def ensure_ffmpeg_on_path():
-    import imageio_ffmpeg
+    imageio_ffmpeg = load_optional_module("imageio_ffmpeg")
 
     source = Path(imageio_ffmpeg.get_ffmpeg_exe())
     bin_dir = project_root() / ".stt-bin"
@@ -136,7 +142,8 @@ def write_markdown(result, media_path, output_path, model_name):
 
 
 def write_srt_from_segments(segments, language, output_path):
-    from whisperx.SubtitlesProcessor import SubtitlesProcessor
+    subtitles_module = load_optional_module("whisperx.SubtitlesProcessor")
+    SubtitlesProcessor = subtitles_module.SubtitlesProcessor
 
     processor = SubtitlesProcessor(segments, language or "en")
     processor.save(str(output_path), advanced_splitting=True)
@@ -296,7 +303,7 @@ def normalize_stt_language(language):
 
 
 def resolve_runtime_options(device, compute_type):
-    import torch
+    torch = load_optional_module("torch")
 
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -311,7 +318,7 @@ def resolve_runtime_options(device, compute_type):
 
 
 def transcribe_only(media_path, model_name, model_dir, device, compute_type, batch_size, language, offline):
-    import whisperx
+    whisperx = load_optional_module("whisperx")
 
     device, compute_type = resolve_runtime_options(device, compute_type)
     language = normalize_stt_language(language)
@@ -355,7 +362,7 @@ def transcribe_only(media_path, model_name, model_dir, device, compute_type, bat
 
 
 def load_alignment_model(language, model_dir, device, offline):
-    import whisperx
+    whisperx = load_optional_module("whisperx")
 
     language = normalize_stt_language(language)
     status(f"Detected language: {language}. Loading alignment model...")
@@ -374,7 +381,7 @@ def load_alignment_model(language, model_dir, device, offline):
 
 
 def align_segments(result, audio, model_dir, device, offline):
-    import whisperx
+    whisperx = load_optional_module("whisperx")
 
     detected_language = normalize_stt_language(result.get("language", "en"))
     align_model, align_metadata = load_alignment_model(detected_language, model_dir, device, offline)
@@ -410,9 +417,10 @@ def download_alignment_model(language, model_dir, device):
 
 
 def download_whisper_model(model_name, model_dir):
-    import nltk
-    import torch
-    from faster_whisper.utils import download_model
+    nltk = load_optional_module("nltk")
+    torch = load_optional_module("torch")
+    faster_whisper_utils = load_optional_module("faster_whisper.utils")
+    download_model = faster_whisper_utils.download_model
 
     progress(2)
     status(f"Downloading Faster Whisper {model_name}...")
@@ -463,7 +471,7 @@ def align_provided_text(
     provided_segments = allocate_text_to_segments(provided_text, detected_result["segments"])
 
     status("Force-aligning provided transcript text...")
-    import whisperx
+    whisperx = load_optional_module("whisperx")
 
     aligned = whisperx.align(
         provided_segments,

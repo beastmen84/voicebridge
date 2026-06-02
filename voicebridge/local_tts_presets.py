@@ -49,7 +49,7 @@ LOCAL_TTS_PRESETS: Final[dict[str, LocalTtsPreset]] = {
 
 
 def normalize_local_tts_preset_key(value: str | None) -> str:
-    if value in LOCAL_TTS_PRESETS:
+    if isinstance(value, str) and value in LOCAL_TTS_PRESETS:
         return value
     return DEFAULT_LOCAL_TTS_PRESET_KEY
 

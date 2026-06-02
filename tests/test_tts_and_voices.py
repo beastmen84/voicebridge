@@ -1,5 +1,6 @@
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.tts_engine import ensure_mp3_suffix, suggested_output_path
+from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
     VOICE_SECTION_OTHER,
     VOICE_SECTION_PREFERRED,
@@ -75,7 +76,7 @@ def test_expand_multi_voice_segments_keeps_voice_and_rate_on_internal_chunks() -
 
 
 def test_local_tts_segment_fields_keep_profile_language() -> None:
-    profile = {
+    profile: VoiceProfile = {
         "id": "profile-1",
         "name": "Marco",
         "language_code": "it",

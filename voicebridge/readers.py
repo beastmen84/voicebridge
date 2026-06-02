@@ -1,7 +1,9 @@
+import importlib
 import io
 import os
 import re
 from contextlib import suppress
+from typing import Any
 
 from docx import Document
 from pypdf import PdfReader
@@ -12,6 +14,8 @@ try:
 
     WordComError = pywintypes.com_error
 except ImportError:
+    pywintypes = None
+
     class WordComError(Exception):
         pass
 
@@ -21,6 +25,7 @@ try:
 
     DetectorFactory.seed = 0
 except ImportError:
+    DetectorFactory = None
     detect_langs = None
     LangDetectException = Exception
 
@@ -135,21 +140,21 @@ def load_ocr_dependencies():
     missing_packages = []
 
     try:
-        import fitz
+        fitz_module = importlib.import_module("fitz")
     except ImportError:
-        fitz = None
+        fitz_module = None
         missing_packages.append("pymupdf")
 
     try:
-        import pytesseract
+        pytesseract_module = importlib.import_module("pytesseract")
     except ImportError:
-        pytesseract = None
+        pytesseract_module = None
         missing_packages.append("pytesseract")
 
     try:
-        from PIL import Image
+        pil_image_module = importlib.import_module("PIL.Image")
     except ImportError:
-        Image = None
+        pil_image_module = None
         missing_packages.append("pillow")
 
     if missing_packages:
@@ -159,20 +164,24 @@ def load_ocr_dependencies():
             "Install them with requirements-ocr.txt."
         )
 
+    assert fitz_module is not None
+    assert pytesseract_module is not None
+    assert pil_image_module is not None
+
     for tesseract_path in TESSERACT_WINDOWS_CANDIDATES:
         if os.path.isfile(tesseract_path):
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            pytesseract_module.pytesseract.tesseract_cmd = tesseract_path
             break
 
     try:
-        pytesseract.get_tesseract_version()
+        pytesseract_module.get_tesseract_version()
     except (OSError, RuntimeError, ValueError) as exc:
         raise RuntimeError(
             f"{TESSERACT_NOT_INSTALLED_TEXT} "
             f"Download the Windows installer from {TESSERACT_WINDOWS_INSTALL_URL}."
         ) from exc
 
-    return fitz, pytesseract, Image
+    return fitz_module, pytesseract_module, pil_image_module
 
 
 def tesseract_language_config(pytesseract):
@@ -196,7 +205,7 @@ def tesseract_language_config(pytesseract):
 
 
 def ocr_pdf_pages(path, page_numbers):
-    fitz, pytesseract, Image = load_ocr_dependencies()
+    fitz, pytesseract, image_module = load_ocr_dependencies()
     language_config = tesseract_language_config(pytesseract)
     extracted_pages = {}
 
@@ -208,7 +217,7 @@ def ocr_pdf_pages(path, page_numbers):
             page = pdf_document.load_page(page_number - 1)
             pixmap = page.get_pixmap(matrix=matrix, alpha=False)
             image_bytes = pixmap.tobytes("png")
-            image = Image.open(io.BytesIO(image_bytes))
+            image = image_module.open(io.BytesIO(image_bytes))
             text = clean_text(
                 pytesseract.image_to_string(image, lang=language_config)
             )
@@ -266,8 +275,8 @@ def read_doc_legacy(path):
     except ImportError as exc:
         raise ValueError("Reading .doc files requires pywin32. Install with: pip install pywin32") from exc
 
-    word = None
-    doc = None
+    word: Any | None = None
+    doc: Any | None = None
 
     try:
         word = win32com.client.Dispatch("Word.Application")
@@ -285,12 +294,14 @@ def read_doc_legacy(path):
         ) from exc
 
     finally:
-        if doc:
+        if doc is not None:
+            document: Any = doc
             with suppress(WordComError, OSError, RuntimeError, ValueError):
-                doc.Close(False)
-        if word:
+                document.Close(False)
+        if word is not None:
+            word_app: Any = word
             with suppress(WordComError, OSError, RuntimeError, ValueError):
-                word.Quit()
+                word_app.Quit()
 
 
 def clean_text(text):

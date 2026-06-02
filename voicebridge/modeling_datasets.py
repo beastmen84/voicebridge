@@ -228,7 +228,6 @@ def modeling_dataset_summary(dataset: ModelingDataset) -> ModelingDatasetSummary
         long_ready_clips=long_ready_clips,
         low_level_clips=low_level_clips,
         clipping_clips=clipping_clips,
-        readiness=readiness,
     )
     recommendations = modeling_dataset_summary_recommendations(
         ready_clips=ready_clips,
@@ -405,7 +404,6 @@ def modeling_dataset_summary_issues(
     long_ready_clips: int,
     low_level_clips: int,
     clipping_clips: int,
-    readiness: str,
 ) -> list[str]:
     issues = []
     if ready_clips == 0:
@@ -501,11 +499,11 @@ def build_modeling_clip(
     clip_id = clip_id or uuid4().hex
     transcript_text = transcript_text.strip()
     transcript_path = modeling_clip_transcript_path(dataset, clip_id)
-    normalized_mode = (
-        mode if mode in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}
-        else MODELING_CLIP_FREE_RECORDING
-    )
-    clip = {
+    if mode in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}:
+        normalized_mode = mode
+    else:
+        normalized_mode = MODELING_CLIP_FREE_RECORDING
+    clip: ModelingClip = {
         "id": clip_id,
         "mode": normalized_mode,
         "audio_path": str(Path(audio_path)),
@@ -575,19 +573,17 @@ def normalized_modeling_clip(value: Any) -> ModelingClip | None:
     if not isinstance(clip_id, str) or not clip_id or not isinstance(audio_path, str):
         return None
     timestamp = utc_timestamp()
-    normalized_mode = (
-        value.get("mode")
-        if value.get("mode") in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}
+    raw_mode = value.get("mode")
+    normalized_mode: str = (
+        raw_mode
+        if isinstance(raw_mode, str) and raw_mode in {MODELING_CLIP_TEXT_GUIDED, MODELING_CLIP_FREE_RECORDING}
         else MODELING_CLIP_FREE_RECORDING
     )
-    transcript_path = value.get("transcript_path") if isinstance(value.get("transcript_path"), str) else ""
-    transcript_text = value.get("transcript_text", "") if isinstance(value.get("transcript_text"), str) else ""
-    transcript_source = value.get("transcript_source", "") if isinstance(value.get("transcript_source"), str) else ""
-    status = (
-        value.get("status", MODELING_CLIP_NEEDS_TRANSCRIPT)
-        if isinstance(value.get("status"), str)
-        else MODELING_CLIP_NEEDS_TRANSCRIPT
-    )
+    transcript_path = _string_or_default(value.get("transcript_path"))
+    transcript_text = _string_or_default(value.get("transcript_text"))
+    transcript_source = _string_or_default(value.get("transcript_source"))
+    status = _string_or_default(value.get("status"), MODELING_CLIP_NEEDS_TRANSCRIPT)
+    language_code = _string_or_default(value.get("language_code"), "it")
     clip: ModelingClip = {
         "id": clip_id,
         "mode": normalized_mode,
@@ -595,12 +591,12 @@ def normalized_modeling_clip(value: Any) -> ModelingClip | None:
         "transcript_path": transcript_path,
         "transcript_text": transcript_text,
         "transcript_source": transcript_source,
-        "language_code": value.get("language_code", "it") if isinstance(value.get("language_code"), str) else "it",
+        "language_code": language_code,
         "duration_seconds": _float(value.get("duration_seconds")),
-        "quality_details": value.get("quality_details", "") if isinstance(value.get("quality_details"), str) else "",
+        "quality_details": _string_or_default(value.get("quality_details")),
         "status": status,
-        "created_at": value.get("created_at") if isinstance(value.get("created_at"), str) else timestamp,
-        "updated_at": value.get("updated_at") if isinstance(value.get("updated_at"), str) else timestamp,
+        "created_at": _string_or_default(value.get("created_at"), timestamp),
+        "updated_at": _string_or_default(value.get("updated_at"), timestamp),
     }
     clip["status"] = modeling_clip_display_status(clip)
     return clip
@@ -615,19 +611,23 @@ def normalized_modeling_dataset(value: Any) -> ModelingDataset | None:
     if not isinstance(dataset_id, str) or not isinstance(profile_id, str) or not isinstance(name, str):
         return None
     timestamp = utc_timestamp()
-    clips = [
-        clip for raw_clip in value.get("clips", [])
-        if (clip := normalized_modeling_clip(raw_clip)) is not None
-    ] if isinstance(value.get("clips"), list) else []
-    return {
+    raw_clips = value.get("clips")
+    clips: list[ModelingClip] = []
+    if isinstance(raw_clips, list):
+        for raw_clip in raw_clips:
+            clip = normalized_modeling_clip(raw_clip)
+            if clip is not None:
+                clips.append(clip)
+    dataset: ModelingDataset = {
         "id": dataset_id,
         "profile_id": profile_id,
         "name": name,
-        "language_code": value.get("language_code", "it") if isinstance(value.get("language_code"), str) else "it",
+        "language_code": _string_or_default(value.get("language_code"), "it"),
         "clips": clips,
-        "created_at": value.get("created_at") if isinstance(value.get("created_at"), str) else timestamp,
-        "updated_at": value.get("updated_at") if isinstance(value.get("updated_at"), str) else timestamp,
+        "created_at": _string_or_default(value.get("created_at"), timestamp),
+        "updated_at": _string_or_default(value.get("updated_at"), timestamp),
     }
+    return dataset
 
 
 def load_modeling_datasets(path: Path | None = None) -> list[ModelingDataset]:
@@ -688,6 +688,10 @@ def _float(value: Any) -> float:
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _string_or_default(value: Any, default: str = "") -> str:
+    return value if isinstance(value, str) else default
 
 
 def _quality_percent(details: str, label: str) -> float | None:

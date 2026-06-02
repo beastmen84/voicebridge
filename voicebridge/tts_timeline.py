@@ -58,7 +58,7 @@ def _clean_block(block: dict[str, Any], fallback_index: int) -> dict[str, Any] |
     if end <= start:
         return None
 
-    cleaned = {
+    cleaned: dict[str, Any] = {
         "id": _text(block.get("id")) or f"block-{fallback_index:04d}",
         "index": _int(block.get("index"), fallback_index),
         "source_block_index": _int(block.get("source_block_index"), fallback_index),
@@ -72,10 +72,10 @@ def _clean_block(block: dict[str, Any], fallback_index: int) -> dict[str, Any] |
         value = _text(block.get(key))
         if value:
             cleaned[key] = value
-    if block.get("edited") is True:
+    if _is_true(block.get("edited")):
         cleaned["edited"] = True
     for key in ("contains_cut", "contains_silence", "contains_fade"):
-        if block.get(key) is True:
+        if _is_true(block.get(key)):
             cleaned[key] = True
     cleanup_actions = block.get("cleanup_actions")
     if isinstance(cleanup_actions, list):
@@ -83,6 +83,10 @@ def _clean_block(block: dict[str, Any], fallback_index: int) -> dict[str, Any] |
         if actions:
             cleaned["cleanup_actions"] = actions
     return cleaned
+
+
+def _is_true(value: Any) -> bool:
+    return value is True
 
 
 def block_overlaps_range(block: dict[str, Any], start_seconds: float, end_seconds: float) -> bool:
@@ -147,14 +151,16 @@ def transform_tts_timeline_blocks_for_cleanup(
     start_seconds: float,
     end_seconds: float,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    cleaned_blocks = [
-        cleaned
-        for index, block in enumerate(blocks, start=1)
-        if isinstance(block, dict) and (cleaned := _clean_block(block, index)) is not None
-    ]
+    cleaned_blocks: list[dict[str, Any]] = []
+    for index, block in enumerate(blocks, start=1):
+        if not isinstance(block, dict):
+            continue
+        cleaned = _clean_block(block, index)
+        if cleaned is not None:
+            cleaned_blocks.append(cleaned)
     if action == "remove":
-        updated_blocks = []
-        removed_blocks = []
+        updated_blocks: list[dict[str, Any]] = []
+        removed_blocks: list[dict[str, Any]] = []
         for block in cleaned_blocks:
             updated = transformed_block_after_cut(block, start_seconds, end_seconds)
             if updated is None:
@@ -166,9 +172,9 @@ def transform_tts_timeline_blocks_for_cleanup(
             mark_block_edited(block, action) if block_overlaps_range(block, start_seconds, end_seconds) else block
             for block in cleaned_blocks
         ]
-        removed_blocks = []
+        removed_blocks: list[dict[str, Any]] = []
 
-    reindexed_blocks = []
+    reindexed_blocks: list[dict[str, Any]] = []
     for index, block in enumerate(updated_blocks, start=1):
         reindexed = dict(block)
         reindexed["index"] = index
@@ -185,11 +191,11 @@ def write_tts_timeline(
     source_path: str | Path | None = None,
     total_duration_seconds: float | None = None,
 ) -> Path:
-    cleaned_blocks = [
-        cleaned
-        for index, block in enumerate(blocks, start=1)
-        if (cleaned := _clean_block(block, index)) is not None
-    ]
+    cleaned_blocks: list[dict[str, Any]] = []
+    for index, block in enumerate(blocks, start=1):
+        cleaned = _clean_block(block, index)
+        if cleaned is not None:
+            cleaned_blocks.append(cleaned)
     if not cleaned_blocks:
         raise ValueError("Cannot write a TTS timeline without valid blocks.")
 
@@ -328,11 +334,13 @@ def load_tts_timeline_for_audio(audio_path: str | Path) -> dict[str, Any] | None
     blocks = data.get("blocks")
     if not isinstance(blocks, list):
         return None
-    cleaned_blocks = [
-        cleaned
-        for index, block in enumerate(blocks, start=1)
-        if isinstance(block, dict) and (cleaned := _clean_block(block, index)) is not None
-    ]
+    cleaned_blocks: list[dict[str, Any]] = []
+    for index, block in enumerate(blocks, start=1):
+        if not isinstance(block, dict):
+            continue
+        cleaned = _clean_block(block, index)
+        if cleaned is not None:
+            cleaned_blocks.append(cleaned)
     if not cleaned_blocks:
         return None
     data["blocks"] = cleaned_blocks
@@ -347,17 +355,18 @@ def write_local_tts_chunk_timeline(
     chunks: list[dict[str, Any]],
     total_duration_seconds: float,
 ) -> None:
+    cleaned_chunks: list[dict[str, Any]] = []
+    for index, chunk in enumerate(chunks, start=1):
+        cleaned = _clean_block(chunk, index)
+        if cleaned is not None:
+            cleaned_chunks.append(cleaned)
     data = {
         "schema_version": LOCAL_TTS_CHUNKS_SCHEMA_VERSION,
         "kind": LOCAL_TTS_CHUNKS_KIND,
         "created_at": _timestamp(),
         "audio_path": str(Path(audio_path).resolve()),
         "total_duration_seconds": _seconds(total_duration_seconds),
-        "chunks": [
-            cleaned
-            for index, chunk in enumerate(chunks, start=1)
-            if (cleaned := _clean_block(chunk, index)) is not None
-        ],
+        "chunks": cleaned_chunks,
     }
     Path(metadata_path).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -372,8 +381,11 @@ def load_local_tts_chunk_timeline(metadata_path: str | Path) -> list[dict[str, A
     chunks = data.get("chunks")
     if not isinstance(chunks, list):
         return []
-    return [
-        cleaned
-        for index, chunk in enumerate(chunks, start=1)
-        if isinstance(chunk, dict) and (cleaned := _clean_block(chunk, index)) is not None
-    ]
+    cleaned_chunks: list[dict[str, Any]] = []
+    for index, chunk in enumerate(chunks, start=1):
+        if not isinstance(chunk, dict):
+            continue
+        cleaned = _clean_block(chunk, index)
+        if cleaned is not None:
+            cleaned_chunks.append(cleaned)
+    return cleaned_chunks

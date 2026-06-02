@@ -1,6 +1,8 @@
+import importlib
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 STT_MODEL = "large-v3"
 ALIGN_LANGUAGES = ("en", "it")
@@ -24,6 +26,10 @@ def configure_cache(root):
     return whisperx_dir, nltk_data
 
 
+def load_optional_module(module_name: str) -> Any:
+    return importlib.import_module(module_name)
+
+
 def run_with_retries(label, callback, attempts=4):
     last_error = None
     for attempt in range(1, attempts + 1):
@@ -44,7 +50,8 @@ def main():
     whisperx_dir, nltk_data = configure_cache(root)
 
     print(f"Downloading Faster Whisper {STT_MODEL} into {whisperx_dir}...", flush=True)
-    from faster_whisper.utils import download_model
+    faster_whisper_utils = load_optional_module("faster_whisper.utils")
+    download_model = faster_whisper_utils.download_model
 
     run_with_retries(
         f"Downloading Faster Whisper {STT_MODEL}",
@@ -52,7 +59,7 @@ def main():
     )
 
     print("Downloading Silero VAD...", flush=True)
-    import torch
+    torch = load_optional_module("torch")
 
     run_with_retries(
         "Downloading Silero VAD",
@@ -66,7 +73,7 @@ def main():
     )
 
     print("Downloading NLTK punctuation data...", flush=True)
-    import nltk
+    nltk = load_optional_module("nltk")
 
     run_with_retries(
         "Downloading NLTK punctuation data",
@@ -74,12 +81,16 @@ def main():
     )
 
     print("Downloading WhisperX alignment models...", flush=True)
-    import whisperx
+    whisperx = load_optional_module("whisperx")
 
-    for language in ALIGN_LANGUAGES:
+    for language_code in ALIGN_LANGUAGES:
         run_with_retries(
-            f"Downloading alignment model for {language}",
-            lambda language=language: whisperx.load_align_model(language, "cpu", model_dir=str(whisperx_dir)),
+            f"Downloading alignment model for {language_code}",
+            lambda selected_language=language_code: whisperx.load_align_model(
+                selected_language,
+                "cpu",
+                model_dir=str(whisperx_dir),
+            ),
         )
 
     print("STT models are ready.", flush=True)

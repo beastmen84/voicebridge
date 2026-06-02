@@ -8,6 +8,8 @@ from voicebridge.media_tools import (
     AUDIO_CLEANUP_SILENCE,
     BURN_QUALITY_HIGH,
     BURN_QUALITY_STANDARD,
+    BlackFrame,
+    SubtitleStyle,
     audio_cleanup_command,
     audio_cleanup_filter_complex,
     audio_waveform_command,
@@ -111,7 +113,7 @@ def test_pcm_s16le_peak_bins_normalizes_samples() -> None:
 
 
 def test_isolated_black_frame_numbers_splits_runs() -> None:
-    frames = [
+    frames: list[BlackFrame] = [
         {"frame": 0, "pblack": 99, "pts": 0, "time": 0.0},
         {"frame": 5, "pblack": 99, "pts": 5, "time": 0.2},
         {"frame": 8, "pblack": 99, "pts": 8, "time": 0.32},
@@ -160,7 +162,7 @@ def test_auto_burn_quality_prefers_high_for_large_or_high_bitrate_sources() -> N
 
 
 def test_subtitle_force_style_includes_portable_burn_in_options() -> None:
-    style = subtitle_force_style({
+    subtitle_style: SubtitleStyle = {
         "font_size": 30,
         "outline": 3,
         "margin_v": 42,
@@ -170,7 +172,8 @@ def test_subtitle_force_style_includes_portable_burn_in_options() -> None:
         "shadow": 2,
         "background_box": True,
         "box_color": "&H4D000000",
-    })
+    }
+    style = subtitle_force_style(subtitle_style)
 
     assert "Fontsize=30" in style
     assert "PrimaryColour=&H0066E0FF" in style

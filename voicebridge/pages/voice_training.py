@@ -20,6 +20,7 @@ from voicebridge.voice_modeling import (
 )
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences
 class VoiceTrainingWorkflowMixin:
     def selected_voice_training_job_path(self) -> str:
         config_path = self.voice_training_job_combo.currentData(Qt.ItemDataRole.UserRole)

@@ -1,11 +1,13 @@
 import argparse
 import gc
+import importlib
 import json
 import os
 import shutil
 import sys
 from contextlib import nullcontext, suppress
 from pathlib import Path
+from typing import Any
 
 from voicebridge.app_paths import (
     local_tts_dvae_path,
@@ -39,7 +41,8 @@ class TeeStream:
         self.stream.flush()
         self.log_file.flush()
 
-    def isatty(self):
+    @staticmethod
+    def isatty():
         return False
 
 
@@ -91,6 +94,10 @@ def project_root():
     return Path(__file__).resolve().parent
 
 
+def load_optional_module(module_name: str) -> Any:
+    return importlib.import_module(module_name)
+
+
 def configure_model_cache(model_root):
     model_root = Path(model_root)
     tts_home = model_root
@@ -103,7 +110,7 @@ def configure_model_cache(model_root):
 
 
 def resolve_runtime_device(device):
-    import torch
+    torch = load_optional_module("torch")
 
     if device == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
@@ -137,23 +144,23 @@ def require_training_assets():
 
 
 def import_training_dependencies():
-    import torch
-    from trainer import Trainer, TrainerArgs
-    from TTS.config.shared_configs import BaseDatasetConfig
-    from TTS.tts.datasets import load_tts_samples
-    from TTS.tts.layers.xtts.trainer.gpt_trainer import GPTArgs, GPTTrainer, GPTTrainerConfig
-    from TTS.tts.models.xtts import XttsAudioConfig
+    torch = load_optional_module("torch")
+    trainer_module = load_optional_module("trainer")
+    shared_configs_module = load_optional_module("TTS.config.shared_configs")
+    datasets_module = load_optional_module("TTS.tts.datasets")
+    gpt_trainer_module = load_optional_module("TTS.tts.layers.xtts.trainer.gpt_trainer")
+    xtts_module = load_optional_module("TTS.tts.models.xtts")
 
     return {
         "torch": torch,
-        "Trainer": Trainer,
-        "TrainerArgs": TrainerArgs,
-        "BaseDatasetConfig": BaseDatasetConfig,
-        "load_tts_samples": load_tts_samples,
-        "GPTArgs": GPTArgs,
-        "GPTTrainer": GPTTrainer,
-        "GPTTrainerConfig": GPTTrainerConfig,
-        "XttsAudioConfig": XttsAudioConfig,
+        "Trainer": trainer_module.Trainer,
+        "TrainerArgs": trainer_module.TrainerArgs,
+        "BaseDatasetConfig": shared_configs_module.BaseDatasetConfig,
+        "load_tts_samples": datasets_module.load_tts_samples,
+        "GPTArgs": gpt_trainer_module.GPTArgs,
+        "GPTTrainer": gpt_trainer_module.GPTTrainer,
+        "GPTTrainerConfig": gpt_trainer_module.GPTTrainerConfig,
+        "XttsAudioConfig": xtts_module.XttsAudioConfig,
     }
 
 

@@ -4,7 +4,7 @@ import urllib.request
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from uuid import uuid4
 
 from voicebridge.app_paths import (
@@ -88,6 +88,8 @@ class VoiceModelingJobConfig(TypedDict):
     device: str
     max_epochs: int
     batch_size: int
+    max_audio_seconds: NotRequired[int]
+    grad_accum_steps: NotRequired[int]
     dataset: VoiceModelingExportInfo
     created_at: str
     updated_at: str
@@ -274,8 +276,9 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
     if not isinstance(summary, dict):
         raise ValueError("dataset.json is missing the summary object.")
     readiness = summary.get("readiness")
-    if readiness not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
+    if not isinstance(readiness, str) or readiness not in {MODELING_DATASET_USABLE, MODELING_DATASET_GOOD}:
         raise ValueError("Voice Modeling requires an exported dataset with Usable or Good readiness.")
+    readiness_text = readiness
 
     metadata_rows = parse_voice_modeling_metadata(metadata_path, export_dir)
     if not metadata_rows:
@@ -287,7 +290,7 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
         "dataset_dir": str(export_dir.resolve()),
         "name": name if isinstance(name, str) and name else export_dir.name,
         "language_code": language_code if isinstance(language_code, str) and language_code else "unknown",
-        "readiness": readiness,
+        "readiness": readiness_text,
         "ready_clips": _int(summary.get("ready_clips")),
         "ready_duration_seconds": _float(summary.get("ready_duration_seconds")),
         "metadata_path": str(metadata_path.resolve()),
@@ -566,7 +569,11 @@ def save_voice_modeling_job_config(config: VoiceModelingJobConfig) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     config_path = output_dir / VOICE_MODELING_JOB_CONFIG
     config_path.write_text(
-        json.dumps(with_schema_metadata(config, VOICE_MODELING_JOB_CONFIG_JSON_KIND), indent=2, ensure_ascii=False)
+        json.dumps(
+            with_schema_metadata(dict(config), VOICE_MODELING_JOB_CONFIG_JSON_KIND),
+            indent=2,
+            ensure_ascii=False,
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -589,15 +596,41 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
     output_dir = data.get("output_dir")
     if not isinstance(output_dir, str) or not output_dir:
         raise ValueError(f"Training config is missing output_dir: {path}")
-    return data
+    dataset_info: VoiceModelingExportInfo = {
+        "dataset_dir": _string_or_default(dataset.get("dataset_dir")),
+        "name": _string_or_default(dataset.get("name"), "Unknown dataset"),
+        "language_code": _string_or_default(dataset.get("language_code"), "unknown"),
+        "readiness": _string_or_default(dataset.get("readiness")),
+        "ready_clips": _int(dataset.get("ready_clips")),
+        "ready_duration_seconds": _float(dataset.get("ready_duration_seconds")),
+        "metadata_path": _string_or_default(dataset.get("metadata_path")),
+        "dataset_json_path": _string_or_default(dataset.get("dataset_json_path")),
+        "wavs_dir": _string_or_default(dataset.get("wavs_dir")),
+        "metadata_rows": _int(dataset.get("metadata_rows")),
+    }
+    job_config: VoiceModelingJobConfig = {
+        "id": _string_or_default(data.get("id")),
+        "status": _string_or_default(data.get("status"), "configured"),
+        "training_backend": _string_or_default(data.get("training_backend"), "xtts_v2"),
+        "dataset_dir": _string_or_default(data.get("dataset_dir"), dataset_info["dataset_dir"]),
+        "output_dir": output_dir,
+        "resume_checkpoint": _string_or_default(data.get("resume_checkpoint")),
+        "device": normalize_voice_modeling_device(data.get("device")),
+        "max_epochs": _int(data.get("max_epochs")),
+        "batch_size": _int(data.get("batch_size")),
+        "dataset": dataset_info,
+        "created_at": _string_or_default(data.get("created_at")),
+        "updated_at": _string_or_default(data.get("updated_at")),
+    }
+    return job_config
 
 
 def update_voice_modeling_job_status(config_path: str | Path, status: str) -> VoiceModelingJobConfig:
-    config = dict(load_voice_modeling_job_config(config_path))
+    config = load_voice_modeling_job_config(config_path)
     config["status"] = status
     config["updated_at"] = utc_timestamp()
-    save_voice_modeling_job_config(config)  # type: ignore[arg-type]
-    return config  # type: ignore[return-value]
+    save_voice_modeling_job_config(config)
+    return config
 
 
 def voice_modeling_training_state_path(config_path: str | Path) -> Path:
@@ -833,3 +866,7 @@ def _int(value: Any) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _string_or_default(value: Any, default: str = "") -> str:
+    return value if isinstance(value, str) else default

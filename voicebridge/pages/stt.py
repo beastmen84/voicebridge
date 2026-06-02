@@ -50,6 +50,7 @@ STT_ALIGNMENT_DOWNLOAD_MIN_FREE_BYTES = 512 * 1024 * 1024
 STT_OUTPUT_MIN_FREE_BYTES = 64 * 1024 * 1024
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class SttWorkflowMixin:
     def stt_mode_key(self):
         return STT_MODE_LABELS.get(self.stt_mode_combo.currentText(), "transcript")

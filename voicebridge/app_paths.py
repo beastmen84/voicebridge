@@ -53,7 +53,7 @@ def unique_paths(paths):
 
 
 def model_root_candidates():
-    return unique_paths((bundled_models_root(), source_tree_models_root()))
+    return unique_paths([bundled_models_root(), source_tree_models_root()])
 
 
 def models_download_root():
@@ -114,7 +114,7 @@ def stt_model_dir():
 
 
 def stt_whisper_model_required_files():
-    return ("config.json", "model.bin", "preprocessor_config.json", "tokenizer.json", "vocabulary.json")
+    return "config.json", "model.bin", "preprocessor_config.json", "tokenizer.json", "vocabulary.json"
 
 
 def stt_whisper_model_required_file_specs():
@@ -157,7 +157,7 @@ def local_tts_model_cache_dir():
 
 
 def local_tts_model_required_files():
-    return ("config.json", "model.pth", "speakers_xtts.pth", "vocab.json")
+    return "config.json", "model.pth", "speakers_xtts.pth", "vocab.json"
 
 
 def local_tts_model_required_file_specs():
@@ -178,7 +178,7 @@ def local_tts_dvae_path():
 
 
 def local_tts_dvae_ready():
-    return required_files_ready(local_tts_model_cache_dir(), (RequiredFileSpec("dvae.pth", 1024 * 1024),))
+    return required_files_ready(local_tts_model_cache_dir(), [RequiredFileSpec("dvae.pth", 1024 * 1024)])
 
 
 def local_tts_mel_stats_path():
@@ -186,7 +186,7 @@ def local_tts_mel_stats_path():
 
 
 def local_tts_mel_stats_ready():
-    return required_files_ready(local_tts_model_cache_dir(), (RequiredFileSpec("mel_stats.pth", 32),))
+    return required_files_ready(local_tts_model_cache_dir(), [RequiredFileSpec("mel_stats.pth", 32)])
 
 
 def voice_modeling_worker_path():

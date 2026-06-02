@@ -1,9 +1,11 @@
 import argparse
+import importlib
 import os
 import sys
 import wave
 from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 from voicebridge.file_checks import RequiredFileSpec, required_files_ready, validate_output_path
 from voicebridge.local_tts_presets import (
@@ -50,6 +52,10 @@ def project_root():
     return Path(__file__).resolve().parent
 
 
+def load_optional_module(module_name: str) -> Any:
+    return importlib.import_module(module_name)
+
+
 def configure_model_cache(model_root):
     model_root = Path(model_root)
     tts_home = model_root
@@ -94,7 +100,7 @@ def normalize_tts_language(language):
 
 
 def resolve_runtime_device(device):
-    import torch
+    torch = load_optional_module("torch")
 
     if device == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
@@ -239,17 +245,17 @@ def reference_audio_paths(paths):
 
 def load_tts_api():
     try:
-        from TTS.api import TTS
+        tts_api_module = load_optional_module("TTS.api")
     except ImportError as exc:
         raise RuntimeError(
             "The local TTS runtime is missing coqui-tts. Install it in the ML environment with "
             "`.venv-ml\\Scripts\\python.exe -m pip install coqui-tts`."
         ) from exc
-    return TTS
+    return tts_api_module.TTS
 
 
 def load_xtts_model(args, device):
-    TTS = load_tts_api()
+    tts_api = load_tts_api()
     if args.model_path:
         if not args.config_path:
             raise ValueError("A config path is required when using a trained local model.")
@@ -259,12 +265,12 @@ def load_xtts_model(args, device):
             raise ValueError(f"Trained local model file not found: {model_path}")
         if not config_path.is_file():
             raise ValueError(f"Trained local model config not found: {config_path}")
-        return TTS(model_path=str(model_path), config_path=str(config_path), progress_bar=False).to(device)
+        return tts_api(model_path=str(model_path), config_path=str(config_path), progress_bar=False).to(device)
 
     model_dir = Path(args.model_dir or (project_root() / "models" / "coqui")).resolve()
     if not xtts_model_ready(model_dir):
         raise ValueError("XTTS-v2 model is not downloaded yet. Use Download XTTS-v2 before Local TTS generation.")
-    return TTS(args.model).to(device)
+    return tts_api(args.model).to(device)
 
 
 def download_xtts_model(args):
@@ -278,7 +284,7 @@ def download_xtts_model(args):
         )
 
     try:
-        from TTS.utils.manage import ModelManager
+        model_manager_module = load_optional_module("TTS.utils.manage")
     except ImportError as exc:
         raise RuntimeError(
             "The local TTS runtime is missing coqui-tts. Install it in the ML environment with "
@@ -292,7 +298,7 @@ def download_xtts_model(args):
         return
 
     status("Downloading XTTS-v2 model. This can take several minutes...")
-    manager = ModelManager(output_prefix=model_dir, progress_bar=False)
+    manager = model_manager_module.ModelManager(output_prefix=model_dir, progress_bar=False)
     manager.download_model(args.model)
     if args.accept_license:
         write_xtts_terms_agreement(model_dir)

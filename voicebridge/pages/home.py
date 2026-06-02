@@ -35,6 +35,7 @@ from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences
 class HomePageMixin:
     def build_home_page(self):
         page, layout = self.page_container()

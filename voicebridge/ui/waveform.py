@@ -140,7 +140,7 @@ class AudioWaveformWidget(QWidget):
 
         center_y = plot_rect.center().y()
         painter.setPen(QPen(QColor("#d8dee8"), 1))
-        painter.drawLine(plot_rect.left(), center_y, plot_rect.right(), center_y)
+        painter.drawLine(QPointF(plot_rect.left(), center_y), QPointF(plot_rect.right(), center_y))
 
         if not self._peaks:
             return

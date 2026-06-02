@@ -123,30 +123,32 @@ class SoundDevicePcmRecorder:
             return
         sd = _load_sounddevice()
         try:
-            self._stream = sd.RawInputStream(
+            stream = sd.RawInputStream(
                 samplerate=self.settings.sample_rate,
                 device=self.device_index,
                 channels=self.settings.channel_count,
                 dtype="int16",
                 callback=self._record_callback,
             )
-            self._stream.start()
+            stream.start()
+            self._stream = stream
         except Exception as exc:
             self._stream = None
             raise AudioRecorderError(f"Could not start microphone recording: {exc}") from exc
 
     def stop(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
+        active_stream: Any = stream
+        self._stream = None
         stop_error: Exception | None = None
         try:
-            stream.stop()
+            active_stream.stop()
         except Exception as exc:
             stop_error = exc
         try:
-            stream.close()
+            active_stream.close()
         except Exception as exc:
             stop_error = exc
         if stop_error is not None:
@@ -185,15 +187,18 @@ def _deduplicate_input_devices(devices: list[AudioInputDevice]) -> list[AudioInp
         physical_devices.setdefault(key, []).append(device)
 
     deduplicated = [_preferred_input_device(group) for group in physical_devices.values()]
-    return sorted(deduplicated, key=lambda device: (not device.is_default, device.name.casefold(), device.index))
+    return sorted(
+        deduplicated,
+        key=lambda candidate: (not candidate.is_default, candidate.name.casefold(), candidate.index),
+    )
 
 
 def _preferred_input_device(devices: list[AudioInputDevice]) -> AudioInputDevice:
     preferred = min(
         devices,
-        key=lambda device: (_host_api_priority(device.host_api), not device.is_default, device.index),
+        key=lambda candidate: (_host_api_priority(candidate.host_api), not candidate.is_default, candidate.index),
     )
-    if preferred.is_default == any(device.is_default for device in devices):
+    if preferred.is_default == any(candidate.is_default for candidate in devices):
         return preferred
     return AudioInputDevice(
         index=preferred.index,
@@ -239,7 +244,7 @@ def _default_input_device_index(sd) -> int | None:
     try:
         default_devices = sd.default.device
         default_input = default_devices[0]
-    except Exception:
+    except (AttributeError, IndexError, TypeError):
         return None
     try:
         default_index = int(default_input)

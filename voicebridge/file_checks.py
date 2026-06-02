@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,7 +34,7 @@ def required_file_issue(path: str | Path, *, min_bytes: int = 1) -> str:
     return ""
 
 
-def required_file_issues(root: str | Path, specs: tuple[RequiredFileSpec, ...]) -> list[str]:
+def required_file_issues(root: str | Path, specs: Sequence[RequiredFileSpec]) -> list[str]:
     base = Path(root)
     issues = []
     for spec in specs:
@@ -44,7 +45,7 @@ def required_file_issues(root: str | Path, specs: tuple[RequiredFileSpec, ...]) 
     return issues
 
 
-def required_files_ready(root: str | Path, specs: tuple[RequiredFileSpec, ...]) -> bool:
+def required_files_ready(root: str | Path, specs: Sequence[RequiredFileSpec]) -> bool:
     return not required_file_issues(root, specs)
 
 

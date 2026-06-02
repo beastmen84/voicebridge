@@ -104,6 +104,7 @@ LOCAL_TTS_MODEL_MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
 TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
 class TtsWorkflowMixin:
     def tts_engine_key(self):
         engine = self.tts_engine_combo.currentData()

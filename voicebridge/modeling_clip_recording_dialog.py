@@ -249,8 +249,9 @@ class ModelingClipRecordingDialog(QDialog):
                 preferred_sample_rate=MODELING_CLIP_RECORD_SAMPLE_RATE,
                 channel_count=MODELING_CLIP_RECORD_CHANNELS,
             )
-            self._recorder = SoundDevicePcmRecorder(self.device_index, settings)
-            self._recorder.start()
+            recorder = SoundDevicePcmRecorder(self.device_index, settings)
+            recorder.start()
+            self._recorder = recorder
         except AudioRecorderError as exc:
             self.show_recording_error(str(exc))
             return
@@ -293,8 +294,9 @@ class ModelingClipRecordingDialog(QDialog):
             if recording.duration_seconds < 1:
                 reason = " ".join(recording.messages) or "Recording is too short."
                 raise ValueError(reason)
-            self._preview_path = self.output_path
-            write_pcm16_wav(self._preview_path, recording.pcm_data, settings.sample_rate, settings.channel_count)
+            preview_path = self.output_path
+            write_pcm16_wav(preview_path, recording.pcm_data, settings.sample_rate, settings.channel_count)
+            self._preview_path = preview_path
         except (OSError, ValueError) as exc:
             self.show_recording_error(str(exc))
             return

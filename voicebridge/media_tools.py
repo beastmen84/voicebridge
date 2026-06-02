@@ -82,6 +82,7 @@ def ffmpeg_candidates():
         if search_dir.is_dir():
             candidates.extend(sorted(search_dir.glob("ffmpeg*.exe")))
 
+    # noinspection PyCompatibility,PyDeprecation
     path_ffmpeg = shutil.which("ffmpeg")
     if path_ffmpeg:
         candidates.append(Path(path_ffmpeg))
@@ -404,6 +405,7 @@ def audio_duration_seconds(media_path, ffmpeg=None):
 
 def probe_video_info(ffmpeg, media_path) -> VideoInfo:
     output = _ffmpeg_input_info(ffmpeg, media_path)
+    # noinspection PyDictCreation
     info: VideoInfo = {
         "width": None,
         "height": None,
@@ -532,12 +534,13 @@ def parse_blackframe_line(line) -> BlackFrame | None:
     match = BLACKFRAME_RE.search(line)
     if not match:
         return None
-    return {
+    frame: BlackFrame = {
         "frame": int(match.group("frame")),
         "pblack": int(match.group("pblack")),
         "pts": int(match.group("pts")),
         "time": float(match.group("time")),
     }
+    return frame
 
 
 def black_frame_detect_command(

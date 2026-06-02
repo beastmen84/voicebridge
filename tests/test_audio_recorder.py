@@ -46,6 +46,7 @@ class FakeSoundDevice:
         if samplerate != 48_000:
             raise ValueError("unsupported sample rate")
 
+    # noinspection PyPep8Naming
     def RawInputStream(self, **kwargs):
         stream = FakeRawInputStream(**kwargs)
         self.last_stream = stream

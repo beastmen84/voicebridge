@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from voicebridge.pages.home import HomePageMixin
 
 
+# noinspection PyUnresolvedReferences
 class PageBuilderMixin(HomePageMixin):
     @staticmethod
     def nav_button(text: str, callback: Callable[[], None]) -> QPushButton:

@@ -15,8 +15,8 @@ from voicebridge.voice_profiles import (
     voice_profile_status,
 )
 
-LOCAL_VOICE_REFERENCE = "reference"
-LOCAL_VOICE_TRAINED = "trained"
+LOCAL_VOICE_REFERENCE: Literal["reference"] = "reference"
+LOCAL_VOICE_TRAINED: Literal["trained"] = "trained"
 TRAINING_RESULT_JSON = "training_result.json"
 
 

@@ -222,8 +222,9 @@ class VoiceProfileRecordingDialog(QDialog):
                 preferred_sample_rate=VOICE_PROFILE_RECORD_SAMPLE_RATE,
                 channel_count=VOICE_PROFILE_RECORD_CHANNELS,
             )
-            self._recorder = SoundDevicePcmRecorder(self.device_index, settings)
-            self._recorder.start()
+            recorder = SoundDevicePcmRecorder(self.device_index, settings)
+            recorder.start()
+            self._recorder = recorder
         except AudioRecorderError as exc:
             self.show_recording_error(str(exc))
             return
@@ -260,8 +261,9 @@ class VoiceProfileRecordingDialog(QDialog):
             if recording.duration_seconds < 1:
                 reason = " ".join(recording.messages) or "Recording is too short."
                 raise ValueError(reason)
-            self._preview_path = voice_profile_recording_path(self.profile_name)
-            write_pcm16_wav(self._preview_path, recording.pcm_data, settings.sample_rate, settings.channel_count)
+            preview_path = voice_profile_recording_path(self.profile_name)
+            write_pcm16_wav(preview_path, recording.pcm_data, settings.sample_rate, settings.channel_count)
+            self._preview_path = preview_path
         except (OSError, ValueError) as exc:
             self.show_recording_error(str(exc))
             return

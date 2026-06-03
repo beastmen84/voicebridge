@@ -952,6 +952,17 @@ def delete_modeling_clip_files(clip: ModelingClip) -> tuple[list[Path], list[Pat
     return deleted, failed
 
 
+def modeling_datasets_for_profile_id(
+    datasets: list[ModelingDataset],
+    profile_id: str,
+) -> list[ModelingDataset]:
+    return [dataset for dataset in datasets if dataset["profile_id"] == profile_id]
+
+
+def modeling_dataset_has_user_content(dataset: ModelingDataset) -> bool:
+    return bool(dataset["clips"] or dataset.get("guided_prompt_history", []))
+
+
 def normalized_modeling_clip(value: Any) -> ModelingClip | None:
     if not isinstance(value, dict):
         return None

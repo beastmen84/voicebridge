@@ -41,8 +41,10 @@ from voicebridge.modeling_datasets import (
     modeling_dataset_exportable,
     modeling_dataset_guided_prompt_texts,
     modeling_dataset_guided_prompt_usage,
+    modeling_dataset_has_user_content,
     modeling_dataset_summary,
     modeling_dataset_summary_text,
+    modeling_datasets_for_profile_id,
     modeling_datasets_root,
     recover_interrupted_modeling_verifications,
     reset_modeling_dataset_guided_prompt_history,
@@ -78,6 +80,44 @@ def test_ensure_modeling_dataset_for_modeling_profile_only(tmp_path: Path) -> No
     assert len(datasets) == 1
     assert datasets[0]["profile_id"] == modeling["id"]
     assert datasets[0]["name"] == "Model Voice"
+
+
+def test_modeling_dataset_profile_helpers_detect_linked_content(tmp_path: Path) -> None:
+    modeling = build_voice_profile(
+        name="Model Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    other = build_voice_profile(
+        name="Other Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(modeling)
+    other_dataset = build_modeling_dataset_for_profile(other)
+
+    assert modeling_datasets_for_profile_id([dataset, other_dataset], modeling["id"]) == [dataset]
+    assert modeling_dataset_has_user_content(dataset) is False
+
+    dataset["guided_prompt_history"].append("Read this line.")
+
+    assert modeling_dataset_has_user_content(dataset) is True
+
+    dataset["guided_prompt_history"].clear()
+    dataset["clips"].append(
+        build_modeling_clip(
+            dataset,
+            mode=MODELING_CLIP_FREE_RECORDING,
+            audio_path=tmp_path / "clip.wav",
+            clip_id="clip-1",
+        )
+    )
+
+    assert modeling_dataset_has_user_content(dataset) is True
 
 
 def test_modeling_dataset_paths_live_under_voice_profiles(

@@ -4,9 +4,12 @@ from pathlib import Path
 import pytest
 
 from voicebridge.json_schemas import VOICE_PROFILES_JSON_KIND, current_schema_version
+from voicebridge.modeling_datasets import ModelingDataset, build_modeling_dataset_for_profile
+from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VOICE_PROFILE_REFERENCE,
+    VoiceProfile,
     build_voice_profile,
     clean_profile_name,
     delete_voice_profile_audio_files,
@@ -20,6 +23,50 @@ from voicebridge.voice_profiles import (
     voice_profile_recording_path,
     voice_profile_status,
 )
+
+
+class FakeStatusLabel:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+
+class DummyVoiceProfilesWindow(VoiceProfilesWorkflowMixin):
+    def __init__(self, profiles: list[VoiceProfile], datasets: list[ModelingDataset]) -> None:
+        self.voice_profiles = profiles
+        self.modeling_datasets = datasets
+        self.selected_voice_profile_id = profiles[0]["id"] if profiles else ""
+        self.profile_status_label = FakeStatusLabel()
+        self.errors: list[tuple[str, str]] = []
+        self.synced_modeling_datasets = False
+        self.new_profile_started = False
+        self.voice_profiles_list_refreshed = False
+        self.local_voice_profile_combo_refreshed = False
+        self.local_voice_tabs_updated = False
+
+    def voice_profile_is_recording(self) -> bool:
+        return False
+
+    def show_error(self, title: str, message: str) -> None:
+        self.errors.append((title, message))
+
+    def sync_modeling_datasets_with_profiles(self, *, save: bool = True) -> None:
+        self.synced_modeling_datasets = True
+
+    def new_voice_profile(self) -> None:
+        self.new_profile_started = True
+        self.selected_voice_profile_id = ""
+
+    def refresh_voice_profiles_list(self) -> None:
+        self.voice_profiles_list_refreshed = True
+
+    def refresh_local_voice_profile_combo(self, selected_profile_id: str = "") -> None:
+        self.local_voice_profile_combo_refreshed = True
+
+    def update_local_voice_tabs(self) -> None:
+        self.local_voice_tabs_updated = True
 
 
 def write_audio_marker(path: Path) -> None:
@@ -169,3 +216,96 @@ def test_delete_voice_profile_audio_files_removes_only_owned_wavs(tmp_path: Path
     assert failed_paths == []
     assert not recorded_wav.exists()
     assert external_wav.exists()
+
+
+def test_delete_modeling_profile_removes_empty_linked_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+    profile = build_voice_profile(
+        name="Anayah - IT",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    saved_profiles: list[list[VoiceProfile]] = []
+    saved_datasets: list[list[ModelingDataset]] = []
+
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.save_voice_profiles",
+        saved_profiles.append,
+    )
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.save_modeling_datasets",
+        saved_datasets.append,
+    )
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.delete_voice_profile_audio_files",
+        lambda _profile: ([], []),
+    )
+
+    window = DummyVoiceProfilesWindow([profile], [dataset])
+
+    window.delete_selected_voice_profile()
+
+    assert window.voice_profiles == []
+    assert window.modeling_datasets == []
+    assert saved_profiles == [[]]
+    assert saved_datasets == [[]]
+    assert window.errors == []
+    assert window.synced_modeling_datasets is True
+    assert window.new_profile_started is True
+    assert window.voice_profiles_list_refreshed is True
+    assert window.local_voice_profile_combo_refreshed is True
+    assert window.local_voice_tabs_updated is True
+    assert window.profile_status_label.text == "Deleted profile and linked empty modeling dataset."
+
+
+def test_delete_modeling_profile_blocks_linked_dataset_with_user_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = build_voice_profile(
+        name="Anayah - IT",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    dataset["guided_prompt_history"].append("Read this line.")
+    saved_profiles: list[list[VoiceProfile]] = []
+    saved_datasets: list[list[ModelingDataset]] = []
+
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.save_voice_profiles",
+        saved_profiles.append,
+    )
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.save_modeling_datasets",
+        saved_datasets.append,
+    )
+    monkeypatch.setattr(
+        "voicebridge.pages.voice_profiles.delete_voice_profile_audio_files",
+        lambda _profile: ([], []),
+    )
+
+    window = DummyVoiceProfilesWindow([profile], [dataset])
+
+    window.delete_selected_voice_profile()
+
+    assert window.voice_profiles == [profile]
+    assert window.modeling_datasets == [dataset]
+    assert saved_profiles == []
+    assert saved_datasets == []
+    assert window.synced_modeling_datasets is False
+    assert window.new_profile_started is False
+    assert window.profile_status_label.text == "Delete blocked: linked modeling dataset has recorded data."
+    assert window.errors == [
+        (
+            "Voice Profiles",
+            (
+                "Cannot delete 'Anayah - IT' while its modeling dataset contains clips "
+                "or guided prompt history.\n\n"
+                "Export or manually clear the dataset data first."
+            ),
+        )
+    ]

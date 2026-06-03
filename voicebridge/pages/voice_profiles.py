@@ -23,6 +23,13 @@ from voicebridge.audio_recorder import (
     list_input_devices,
 )
 from voicebridge.languages import language_name
+from voicebridge.modeling_datasets import (
+    ModelingDataset,
+    load_modeling_datasets,
+    modeling_dataset_has_user_content,
+    modeling_datasets_for_profile_id,
+    save_modeling_datasets,
+)
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_profile_recording_dialog import VoiceProfileRecordingDialog
@@ -254,12 +261,45 @@ class VoiceProfilesWorkflowMixin:
         self.profile_status_label.setText(f"Saved: {profile['name']} | {voice_profile_status(profile)}")
         self.update_local_voice_tabs()
 
+    def linked_modeling_datasets_for_voice_profile(self, profile: VoiceProfile) -> list[ModelingDataset]:
+        if profile.get("profile_type") != VOICE_PROFILE_MODELING:
+            return []
+        datasets = getattr(self, "modeling_datasets", None)
+        if not isinstance(datasets, list):
+            datasets = load_modeling_datasets()
+            self.modeling_datasets = datasets
+        return modeling_datasets_for_profile_id(datasets, profile["id"])
+
     def delete_selected_voice_profile(self) -> None:
         if self.voice_profile_is_recording():
             return
         profile = self.selected_voice_profile()
         if not profile:
             return
+        linked_modeling_datasets = self.linked_modeling_datasets_for_voice_profile(profile)
+        blocking_datasets = [
+            dataset for dataset in linked_modeling_datasets
+            if modeling_dataset_has_user_content(dataset)
+        ]
+        if blocking_datasets:
+            self.profile_status_label.setText("Delete blocked: linked modeling dataset has recorded data.")
+            self.show_error(
+                "Voice Profiles",
+                (
+                    f"Cannot delete '{profile['name']}' while its modeling dataset contains clips "
+                    "or guided prompt history.\n\n"
+                    "Export or manually clear the dataset data first."
+                ),
+            )
+            return
+        removed_modeling_dataset_count = len(linked_modeling_datasets)
+        if linked_modeling_datasets:
+            linked_dataset_ids = {dataset["id"] for dataset in linked_modeling_datasets}
+            self.modeling_datasets = [
+                dataset for dataset in self.modeling_datasets
+                if dataset["id"] not in linked_dataset_ids
+            ]
+            save_modeling_datasets(self.modeling_datasets)
         self.voice_profiles = [entry for entry in self.voice_profiles if entry["id"] != profile["id"]]
         save_voice_profiles(self.voice_profiles)
         self.sync_modeling_datasets_with_profiles()
@@ -272,6 +312,8 @@ class VoiceProfilesWorkflowMixin:
             self.profile_status_label.setText(
                 f"Deleted profile. Could not delete {len(failed_paths)} linked audio file(s)."
             )
+        elif removed_modeling_dataset_count:
+            self.profile_status_label.setText("Deleted profile and linked empty modeling dataset.")
         elif deleted_paths:
             self.profile_status_label.setText(f"Deleted profile and {len(deleted_paths)} linked audio file(s).")
         else:

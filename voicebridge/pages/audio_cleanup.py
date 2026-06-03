@@ -60,6 +60,32 @@ AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS = (
     ("16x", 16.0),
 )
 AUDIO_CLEANUP_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
+AUDIO_CLEANUP_STAGE_SUFFIX = ".flac"
+
+
+def audio_cleanup_stage_output_path(temp_dir: Path, index: int) -> Path:
+    return temp_dir / f"stage-{index:04d}{AUDIO_CLEANUP_STAGE_SUFFIX}"
+
+
+def audio_cleanup_ranges_overlap(start: float, end: float, existing_start: float, existing_end: float) -> bool:
+    return float(start) < float(existing_end) and float(end) > float(existing_start)
+
+
+def conflicting_audio_cleanup_change_indexes(changes: list[dict]) -> tuple[int, int] | None:
+    ranges: list[tuple[int, float, float]] = []
+    for index, change in enumerate(changes):
+        try:
+            start = float(change["source_start_seconds"])
+            end = float(change["source_end_seconds"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+        for existing_index, existing_start, existing_end in ranges:
+            if audio_cleanup_ranges_overlap(start, end, existing_start, existing_end):
+                return existing_index, index
+        ranges.append((index, start, end))
+    return None
 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
@@ -512,6 +538,17 @@ class AudioCleanupWorkflowMixin:
     def adjusted_audio_cleanup_range(self, start, end):
         return self.adjusted_audio_cleanup_range_for_changes(start, end, self.audio_cleanup_changes)
 
+    def audio_cleanup_change_overlapping_range(self, start, end):
+        for index, change in enumerate(self.audio_cleanup_changes, start=1):
+            if audio_cleanup_ranges_overlap(
+                start,
+                end,
+                change["source_start_seconds"],
+                change["source_end_seconds"],
+            ):
+                return index, change
+        return None
+
     def recompute_audio_cleanup_changes(self):
         recomputed = []
         for change in self.audio_cleanup_changes:
@@ -618,6 +655,16 @@ class AudioCleanupWorkflowMixin:
             return
         start = self.audio_cleanup_start_spin.value()
         end = self.audio_cleanup_end_spin.value()
+        overlap = self.audio_cleanup_change_overlapping_range(start, end)
+        if overlap is not None:
+            index, change = overlap
+            self.show_error(
+                "Audio Cleanup",
+                "The selected range overlaps a cleanup change already queued: "
+                f"C. {index} ({self.format_audio_cleanup_time(change['source_start_seconds'])} - "
+                f"{self.format_audio_cleanup_time(change['source_end_seconds'])}).",
+            )
+            return
         try:
             adjusted_start, adjusted_end = self.adjusted_audio_cleanup_range(start, end)
         except ValueError as exc:
@@ -667,6 +714,13 @@ class AudioCleanupWorkflowMixin:
             raise ValueError("Could not detect the selected audio duration.")
         if not self.audio_cleanup_changes:
             raise ValueError("Apply at least one cleanup range before cleaning audio.")
+        conflict = conflicting_audio_cleanup_change_indexes(self.audio_cleanup_changes)
+        if conflict is not None:
+            first, second = conflict
+            raise ValueError(
+                f"Cleanup range C. {second + 1} overlaps C. {first + 1}. "
+                "Remove or adjust overlapping queued ranges before cleaning audio."
+            )
 
         output_path = self.audio_cleanup_output_picker.text()
         if not output_path:
@@ -746,7 +800,10 @@ class AudioCleanupWorkflowMixin:
                     output_duration = (
                         max(0.001, current_duration - (end - start)) if action == "remove" else current_duration
                     )
-                    stage_output = final_temp_output if index == change_count else temp_dir / f"stage-{index:04d}.wav"
+                    stage_output = final_temp_output if index == change_count else audio_cleanup_stage_output_path(
+                        temp_dir,
+                        index,
+                    )
                     command = audio_cleanup_command(
                         ffmpeg,
                         current_input,
@@ -854,6 +911,8 @@ class AudioCleanupWorkflowMixin:
             line = raw_line.strip()
             if not line:
                 continue
+            if self.audio_cleanup_cancel_requested and process.poll() is None:
+                process.terminate()
             progress_percent = ffmpeg_job_progress_percent(line, duration_seconds)
             if progress_percent is not None:
                 mapped_percent = progress_start + ((progress_end - progress_start) * (progress_percent / 100))
@@ -866,8 +925,6 @@ class AudioCleanupWorkflowMixin:
             recent_output.append(line)
             recent_output = recent_output[-12:]
             self.post(self.append_audio_cleanup_log, line)
-            if self.audio_cleanup_cancel_requested and process.poll() is None:
-                process.terminate()
         return process.wait(), recent_output
 
     def cancel_audio_cleanup_job(self):

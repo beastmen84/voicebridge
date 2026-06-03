@@ -3,7 +3,9 @@
 #
 # WhisperX provides faster-whisper transcription plus word-level forced alignment.
 # imageio-ffmpeg provides a bundled ffmpeg executable for audio/video decoding.
+# opencv-python-headless is used by Video Cleanup suspicious-frame detection.
 whisperx
 imageio-ffmpeg
+opencv-python-headless
 hf_transfer
 hf_xet

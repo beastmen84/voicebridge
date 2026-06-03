@@ -193,6 +193,10 @@ def voice_modeling_worker_path():
     return external_base_dir() / "voice_modeling_worker.py"
 
 
+def video_anomaly_worker_path():
+    return external_base_dir() / "video_anomaly_worker.py"
+
+
 def stt_runtime_site_packages():
     base_dir = external_base_dir()
     if (base_dir / "python-ml").is_dir():

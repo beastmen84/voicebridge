@@ -504,6 +504,8 @@ class VoiceBridgeQt(
         self.cleanup_detected_media_path = ""
         self.cleanup_repairable_frame_map: dict[int, BlackFrame] = {}
         self.cleanup_detected_frame_map: dict[int, BlackFrame] = {}
+        self.cleanup_suspicious_frames: list[dict[str, Any]] = []
+        self.cleanup_suspicious_frame_map: dict[int, dict[str, Any]] = {}
         self.cleanup_marked_frame_numbers: set[int] = set()
         self.cleanup_changes = []
         self.cleanup_video_fps = 0.0

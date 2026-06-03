@@ -41,6 +41,7 @@ class VideoInfo(TypedDict):
     bitrate_kbps: int | None
     duration_seconds: float | None
     fps: float | None
+    frame_count: int | None
     has_audio: bool
 
 
@@ -374,6 +375,115 @@ def _ffmpeg_input_info(ffmpeg, media_path):
     return f"{result.stdout or ''}\n{result.stderr or ''}"
 
 
+def _ffprobe_candidates(ffmpeg):
+    candidates = []
+    ffmpeg_path = Path(str(ffmpeg))
+    suffix = ffmpeg_path.suffix
+    ffprobe_name = "ffprobe.exe" if suffix.lower() == ".exe" else "ffprobe"
+    if ffmpeg_path.parent:
+        candidates.append(ffmpeg_path.with_name(ffprobe_name))
+
+    path_ffprobe = shutil.which("ffprobe")
+    if path_ffprobe:
+        candidates.append(Path(path_ffprobe))
+
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.is_file():
+            yield candidate
+
+
+def _parse_ffprobe_positive_int(output):
+    for line in (output or "").splitlines():
+        value = line.strip()
+        if not value or value.upper() == "N/A":
+            continue
+        with suppress(ValueError):
+            parsed = int(value)
+            if parsed > 0:
+                return parsed
+    return None
+
+
+def _ffprobe_video_frame_count(ffmpeg, media_path):
+    for ffprobe in _ffprobe_candidates(ffmpeg):
+        base_command = [
+            str(ffprobe),
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+        ]
+        commands = [
+            [*base_command, "-show_entries", "stream=nb_frames", str(media_path)],
+            [*base_command, "-count_packets", "-show_entries", "stream=nb_read_packets", str(media_path)],
+        ]
+        for command in commands:
+            with suppress(OSError, subprocess.TimeoutExpired):
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    timeout=20,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    continue
+                frame_count = _parse_ffprobe_positive_int(result.stdout)
+                if frame_count:
+                    return frame_count
+    return None
+
+
+def _parse_ffmpeg_frame_count(output):
+    frame_counts = [
+        int(match.group(1))
+        for match in re.finditer(r"frame=\s*(\d+)", output or "", re.IGNORECASE)
+    ]
+    return max(frame_counts) if frame_counts else None
+
+
+def _ffmpeg_video_frame_count(ffmpeg, media_path):
+    command = [
+        str(ffmpeg),
+        "-hide_banner",
+        "-nostdin",
+        "-i",
+        str(media_path),
+        "-map",
+        "0:v:0",
+        "-c:v",
+        "copy",
+        "-an",
+        "-sn",
+        "-dn",
+        "-f",
+        "null",
+        "-",
+    ]
+    with suppress(OSError, subprocess.TimeoutExpired):
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=60,
+            check=False,
+        )
+        output = f"{result.stdout or ''}\n{result.stderr or ''}"
+        frame_count = _parse_ffmpeg_frame_count(output)
+        if frame_count and frame_count > 0:
+            return frame_count
+    return None
+
+
 def parse_ffmpeg_duration(output):
     duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
     if not duration_match:
@@ -412,10 +522,15 @@ def probe_video_info(ffmpeg, media_path) -> VideoInfo:
         "bitrate_kbps": None,
         "duration_seconds": None,
         "fps": None,
+        "frame_count": None,
         "has_audio": False,
     }
 
     info["duration_seconds"] = parse_ffmpeg_duration(output)
+    info["frame_count"] = _ffprobe_video_frame_count(ffmpeg, media_path) or _ffmpeg_video_frame_count(
+        ffmpeg,
+        media_path,
+    )
 
     for line in output.splitlines():
         if "Video:" not in line:
@@ -584,6 +699,29 @@ def video_frame_preview_command(ffmpeg, media_path, frame_number, output_path, w
         "-frames:v",
         "1",
         output_path,
+    ]
+
+
+def video_filmstrip_preview_command(ffmpeg, media_path, frame_numbers, output_pattern, width=360):
+    frames = sorted({max(0, int(frame_number)) for frame_number in frame_numbers})
+    if not frames:
+        raise ValueError("No frame numbers were provided for filmstrip preview.")
+    frame_expression = "+".join(f"eq(n\\,{frame_number})" for frame_number in frames)
+    return [
+        str(ffmpeg),
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        media_path,
+        "-vf",
+        f"select={frame_expression},scale={int(width)}:-1",
+        "-frames:v",
+        str(len(frames)),
+        "-vsync",
+        "0",
+        output_pattern,
     ]
 
 

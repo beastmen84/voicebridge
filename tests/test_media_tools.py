@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,12 +21,14 @@ from voicebridge.media_tools import (
     parse_ffmpeg_duration,
     parse_srt_timestamp,
     pcm_s16le_peak_bins,
+    probe_video_info,
     removeframes_filter_complex,
     subtitle_force_style,
     suggest_audio_cleanup_output_path,
     suggest_video_cleanup_output_path,
     suggest_video_subtitle_output_path,
     video_filmstrip_frame_numbers,
+    video_filmstrip_preview_command,
 )
 
 
@@ -66,6 +69,60 @@ def test_parse_ffmpeg_duration() -> None:
     output = "Duration: 01:02:03.45, start: 0.000000, bitrate: 128 kb/s"
 
     assert parse_ffmpeg_duration(output) == pytest.approx(3723.45)
+
+
+def test_probe_video_info_prefers_ffprobe_frame_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_is_file(path: Path) -> bool:
+        return path.name == "ffprobe.exe"
+
+    def fake_run(command, **_kwargs):
+        if "-hide_banner" in command:
+            output = (
+                "Duration: 00:04:00.00, start: 0.000000, bitrate: 1200 kb/s\n"
+                "Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps\n"
+                "Stream #0:1: Audio: aac"
+            )
+            return subprocess.CompletedProcess(command, 1, "", output)
+        if "stream=nb_frames" in command:
+            return subprocess.CompletedProcess(command, 0, "N/A\n", "")
+        if "stream=nb_read_packets" in command:
+            return subprocess.CompletedProcess(command, 0, "7174\n", "")
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
+    monkeypatch.setattr("voicebridge.media_tools.shutil.which", lambda _name: None)
+    monkeypatch.setattr("voicebridge.media_tools.subprocess.run", fake_run)
+
+    info = probe_video_info("C:/tools/ffmpeg.exe", "source.mp4")
+
+    assert info["width"] == 1920
+    assert info["height"] == 1080
+    assert info["fps"] == 30
+    assert info["frame_count"] == 7174
+    assert round(info["duration_seconds"] * info["fps"]) == 7200
+
+
+def test_probe_video_info_falls_back_to_ffmpeg_frame_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(command, **_kwargs):
+        if "-hide_banner" in command and "-f" not in command:
+            output = (
+                "Duration: 00:04:00.00, start: 0.000000, bitrate: 1200 kb/s\n"
+                "Stream #0:0: Video: h264, yuv420p, 1920x1080, 30 fps\n"
+                "Stream #0:1: Audio: aac"
+            )
+            return subprocess.CompletedProcess(command, 1, "", output)
+        if "-f" in command and "null" in command:
+            return subprocess.CompletedProcess(command, 0, "", "frame= 7174 fps=0.0 q=-1.0 Lsize=N/A\n")
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(Path, "is_file", lambda _path: False)
+    monkeypatch.setattr("voicebridge.media_tools.shutil.which", lambda _name: None)
+    monkeypatch.setattr("voicebridge.media_tools.subprocess.run", fake_run)
+
+    info = probe_video_info("C:/tools/ffmpeg.exe", "source.mp4")
+
+    assert info["frame_count"] == 7174
+    assert round(info["duration_seconds"] * info["fps"]) == 7200
 
 
 def test_audio_cleanup_remove_filter_removes_middle_range() -> None:
@@ -149,6 +206,15 @@ def test_video_filmstrip_frame_numbers_samples_fit_and_zoom_windows() -> None:
 
     zoomed = video_filmstrip_frame_numbers(1000, start_frame=100, window_frames=10, max_items=20)
     assert zoomed == list(range(100, 110))
+
+
+def test_video_filmstrip_preview_command_extracts_batch_in_one_ffmpeg_process() -> None:
+    command = video_filmstrip_preview_command("ffmpeg", "source.mp4", [30, 0, 30, 60], "frame_%05d.jpg", width=160)
+
+    assert command.count("ffmpeg") == 1
+    assert command[command.index("-vf") + 1] == "select=eq(n\\,0)+eq(n\\,30)+eq(n\\,60),scale=160:-1"
+    assert command[command.index("-frames:v") + 1] == "3"
+    assert command[-1] == "frame_%05d.jpg"
 
 
 def test_auto_burn_quality_prefers_high_for_large_or_high_bitrate_sources() -> None:

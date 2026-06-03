@@ -509,8 +509,12 @@ class VoiceBridgeQt(
         self.cleanup_video_fps = 0.0
         self.cleanup_video_duration_seconds = 0.0
         self.cleanup_video_total_frames = 0
-        self.cleanup_filmstrip_zoom_level = 0
         self.cleanup_filmstrip_generation = 0
+        self.cleanup_filmstrip_thumbnail_cache: dict[tuple[int, int], bytes] = {}
+        self.cleanup_filmstrip_loading_keys: set[tuple[int, int]] = set()
+        self.cleanup_filmstrip_load_sequence_frames: list[int] = []
+        self.cleanup_filmstrip_loaded_frame_count = 0
+        self.cleanup_filmstrip_process = None
         self.cleanup_log_lines = []
         self._stt_preflight_refreshing = False
         self._voice_modeling_preflight_refreshing = False

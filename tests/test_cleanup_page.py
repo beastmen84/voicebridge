@@ -2,7 +2,11 @@ import subprocess
 from typing import Any
 
 import voicebridge.pages.cleanup as cleanup_page
-from voicebridge.pages.cleanup import VideoCleanupWorkflowMixin
+from voicebridge.pages.cleanup import (
+    VideoCleanupWorkflowMixin,
+    conflicting_video_cleanup_change_frames,
+    normalize_video_cleanup_change_plan,
+)
 
 
 class FakeFfmpegProcess:
@@ -103,3 +107,85 @@ def test_run_cleanup_ffmpeg_process_preserves_cancel_termination(monkeypatch) ->
     assert return_code == -15
     assert recent_output == ["encoder warning"]
     assert process.terminated is True
+
+
+def test_cleanup_filmstrip_batches_do_not_mix_wrapped_frame_ranges() -> None:
+    batches = VideoCleanupWorkflowMixin.cleanup_filmstrip_batches([8018, 8019, 8020, 8021, 0, 1, 2])
+
+    assert batches == [[8018, 8019, 8020, 8021], [0, 1, 2]]
+
+
+def test_pending_cleanup_action_requires_explicit_target() -> None:
+    workflow = FakeVideoCleanupWorkflow()
+    workflow.cleanup_marked_frame_numbers = {10, 20}
+    workflow.cleanup_filmstrip_selected_frames = lambda: []
+
+    assert workflow.cleanup_pending_action_frames() == []
+
+
+def test_pending_cleanup_action_uses_selected_marked_frame() -> None:
+    workflow = FakeVideoCleanupWorkflow()
+    workflow.cleanup_marked_frame_numbers = {10, 20}
+    workflow.cleanup_filmstrip_selected_frames = lambda: [20, 30]
+
+    assert workflow.cleanup_pending_action_frames() == [20]
+
+
+def test_normalize_video_cleanup_change_plan_sorts_by_original_frame() -> None:
+    changes = [
+        {"action": "freeze", "frames": [30, 10]},
+        {"action": "remove", "frames": [20]},
+    ]
+
+    assert normalize_video_cleanup_change_plan(changes) == [
+        {"action": "freeze", "frames": [10]},
+        {"action": "remove", "frames": [20]},
+        {"action": "freeze", "frames": [30]},
+    ]
+
+
+def test_normalize_video_cleanup_change_plan_deduplicates_same_action_only() -> None:
+    changes = [
+        {"action": "freeze", "frames": [12, 14]},
+        {"action": "freeze", "frames": [12]},
+        {"action": "freeze", "frames": ["bad", 0, -1]},
+    ]
+
+    assert normalize_video_cleanup_change_plan(changes) == [
+        {"action": "freeze", "frames": [12]},
+        {"action": "freeze", "frames": [14]},
+    ]
+
+
+def test_conflicting_video_cleanup_change_frames_detects_mixed_actions() -> None:
+    changes = [
+        {"action": "freeze", "frames": [12, 14]},
+        {"action": "remove", "frames": [12]},
+        {"action": "remove", "frames": [14]},
+        {"action": "remove", "frames": [14]},
+    ]
+
+    assert conflicting_video_cleanup_change_frames(changes) == {
+        12: {"freeze", "remove"},
+        14: {"freeze", "remove"},
+    }
+
+
+def test_selected_cleanup_frame_numbers_excludes_queued_frames() -> None:
+    workflow = FakeVideoCleanupWorkflow()
+    workflow.cleanup_marked_frame_numbers = {10, 20}
+    workflow.cleanup_changes = [{"action": "freeze", "frames": ["10"]}]
+
+    assert workflow.selected_cleanup_frame_numbers() == [20]
+
+
+def test_cleanup_queued_actions_for_frame_handles_string_and_int_frames() -> None:
+    workflow = FakeVideoCleanupWorkflow()
+    workflow.cleanup_changes = [
+        {"action": "freeze", "frames": ["10"]},
+        {"action": "remove", "frames": [20]},
+    ]
+
+    assert workflow.cleanup_queued_actions_for_frame(10) == ["freeze"]
+    assert workflow.cleanup_queued_actions_for_frame(20) == ["remove"]
+    assert workflow.cleanup_queued_actions_for_frame(30) == []

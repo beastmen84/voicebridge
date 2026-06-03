@@ -23,10 +23,15 @@ from voicebridge.audio_recorder import (
     list_input_devices,
 )
 from voicebridge.languages import language_name
+from voicebridge.local_voice_deletion import (
+    build_voice_profile_deletion_plan,
+    delete_voice_profile_and_linked_modeling_assets,
+    voice_profile_deletion_confirmation_text,
+    voice_profile_deletion_result_message,
+)
 from voicebridge.modeling_datasets import (
     ModelingDataset,
     load_modeling_datasets,
-    modeling_dataset_has_user_content,
     modeling_datasets_for_profile_id,
     save_modeling_datasets,
 )
@@ -41,7 +46,6 @@ from voicebridge.voice_profiles import (
     VOICE_PROFILE_TYPES,
     VoiceProfile,
     build_voice_profile,
-    delete_voice_profile_audio_files,
     load_voice_profiles,
     save_voice_profiles,
     validate_voice_profile,
@@ -276,48 +280,34 @@ class VoiceProfilesWorkflowMixin:
         profile = self.selected_voice_profile()
         if not profile:
             return
-        linked_modeling_datasets = self.linked_modeling_datasets_for_voice_profile(profile)
-        blocking_datasets = [
-            dataset for dataset in linked_modeling_datasets
-            if modeling_dataset_has_user_content(dataset)
-        ]
-        if blocking_datasets:
-            self.profile_status_label.setText("Delete blocked: linked modeling dataset has recorded data.")
-            self.show_error(
-                "Voice Profiles",
-                (
-                    f"Cannot delete '{profile['name']}' while its modeling dataset contains clips "
-                    "or guided prompt history.\n\n"
-                    "Export or manually clear the dataset data first."
-                ),
-            )
+        if not isinstance(getattr(self, "modeling_datasets", None), list):
+            self.modeling_datasets = load_modeling_datasets()
+        deletion_plan = build_voice_profile_deletion_plan(profile, self.modeling_datasets)
+        if deletion_plan.has_linked_modeling_work and not self.ask_question(
+            "Delete voice profile and modeling work?",
+            voice_profile_deletion_confirmation_text(deletion_plan),
+            default_yes=False,
+        ):
+            self.profile_status_label.setText("Delete cancelled.")
             return
-        removed_modeling_dataset_count = len(linked_modeling_datasets)
-        if linked_modeling_datasets:
-            linked_dataset_ids = {dataset["id"] for dataset in linked_modeling_datasets}
-            self.modeling_datasets = [
-                dataset for dataset in self.modeling_datasets
-                if dataset["id"] not in linked_dataset_ids
-            ]
+
+        deletion_result = delete_voice_profile_and_linked_modeling_assets(
+            profile,
+            self.voice_profiles,
+            self.modeling_datasets,
+            plan=deletion_plan,
+        )
+        self.voice_profiles = deletion_result.voice_profiles
+        self.modeling_datasets = deletion_result.modeling_datasets
+        if deletion_result.modeling_datasets_changed:
             save_modeling_datasets(self.modeling_datasets)
-        self.voice_profiles = [entry for entry in self.voice_profiles if entry["id"] != profile["id"]]
         save_voice_profiles(self.voice_profiles)
         self.sync_modeling_datasets_with_profiles()
-        deleted_paths, failed_paths = delete_voice_profile_audio_files(profile)
         self.new_voice_profile()
         self.refresh_voice_profiles_list()
         self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
-        if failed_paths:
-            self.profile_status_label.setText(
-                f"Deleted profile. Could not delete {len(failed_paths)} linked audio file(s)."
-            )
-        elif removed_modeling_dataset_count:
-            self.profile_status_label.setText("Deleted profile and linked empty modeling dataset.")
-        elif deleted_paths:
-            self.profile_status_label.setText(f"Deleted profile and {len(deleted_paths)} linked audio file(s).")
-        else:
-            self.profile_status_label.setText("Deleted profile.")
+        self.profile_status_label.setText(voice_profile_deletion_result_message(deletion_result))
 
     def open_voice_profile_reference(self) -> None:
         path = self.profile_reference_picker.text()

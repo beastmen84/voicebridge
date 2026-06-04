@@ -38,6 +38,7 @@ Offline ML runtime dependencies
 Package                 License / notice                         Source
 whisperx                BSD-2-Clause                             https://github.com/m-bain/whisperX
 imageio-ffmpeg          BSD-2-Clause                             https://github.com/imageio/imageio-ffmpeg
+opencv-python-headless  Apache-2.0                               https://github.com/opencv/opencv-python
 hf_transfer             Apache-2.0                               https://github.com/huggingface/hf_transfer
 hf_xet                  Apache-2.0                               https://github.com/huggingface/xet-core
 coqui-tts               MPL-2.0                                  https://github.com/idiap/coqui-ai-TTS

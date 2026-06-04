@@ -15,7 +15,7 @@ La guida operativa completa e' in [Manual.md](Manual.md).
 - Transcript Markdown, sottotitoli `.srt` automatici e sottotitoli da transcript fornito.
 - Embed o burn-in di sottotitoli su video.
 - Audio Cleanup manuale con taglio, silenziamento e fade su range selezionati.
-- Video Cleanup con filmstrip manuale, detect opzionale dei frame neri e coda di modifiche Freeze/Remove.
+- Video Cleanup con filmstrip manuale, detect opzionale dei frame neri, detect di frame sospetti via OpenCV e coda di modifiche Freeze/Remove.
 
 ## Pacchetto distribuito
 
@@ -48,6 +48,7 @@ Il bundle puo' includere:
 - allineamento WhisperX per sottotitoli
 - Coqui XTTS-v2 e asset training opzionali
 - ffmpeg tramite `imageio-ffmpeg`
+- OpenCV headless nel runtime ML per il detect dei frame video sospetti
 
 La cartella `models` puo' essere distribuita manualmente oppure lasciata assente. In quel caso l'app mostra i pulsanti di download per i prerequisiti mancanti, come Whisper `large-v3`, XTTS-v2 e asset training XTTS.
 
@@ -56,7 +57,7 @@ La cartella `models` puo' essere distribuita manualmente oppure lasciata assente
 Per l'uso normale del pacchetto onefolder non serve installare Python.
 
 - Edge TTS richiede connessione internet.
-- Local TTS, Transcription, Subtitles, Audio Cleanup e Video Cleanup funzionano offline dopo aver incluso runtime, modelli e ffmpeg.
+- Local TTS, Transcription, Subtitles, Audio Cleanup e Video Cleanup funzionano offline dopo aver incluso runtime, modelli, ffmpeg e runtime ML con OpenCV per il detect dei frame sospetti.
 - Microsoft Word serve solo per leggere vecchi file `.doc`.
 - Tesseract OCR serve solo per OCR su PDF scansionati.
 
@@ -101,11 +102,13 @@ Preparazione modelli STT:
 - `voicebridge/audio_recorder.py`: registrazione microfono via `sounddevice`.
 - `voicebridge/tts_engine.py`: generazione Edge TTS, suffissi MP3 e cancellazione TTS.
 - `voicebridge/media_tools.py`: ffmpeg, merge MP3, sottotitoli e cleanup audio/video.
+- `voicebridge/video_anomalies.py`: classificazione dei frame sospetti usata dal Video Cleanup.
 - `voicebridge/stt_preflight.py`: controlli bundle STT, modelli e ffmpeg.
 - `voicebridge/readers.py`: lettura documenti, PDF, OCR opzionale e rilevamento lingua.
 - `local_tts_worker.py`: worker Coqui XTTS eseguito dal runtime ML.
 - `stt_worker.py`: worker WhisperX eseguito dal runtime ML.
 - `voice_modeling_worker.py`: worker per preparazione e training XTTS-v2.
+- `video_anomaly_worker.py`: worker OpenCV per rilevare frame sospetti nei video.
 - `prepare_stt_models.py`: script di preparazione/download dei modelli STT.
 
 ## Build

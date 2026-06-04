@@ -17,7 +17,7 @@ Guida operativa per usare VoiceBridge dal pacchetto Windows distribuito.
 - Creazione `.srt` da transcript fornito, con allineamento al video/audio.
 - Aggiunta sottotitoli `.srt` al video come traccia selezionabile oppure impressi nel video.
 - Cleanup manuale di file audio con taglio, silenziamento o fade di un intervallo selezionato.
-- Rilevamento di frame neri nei video, review manuale su filmstrip e riparazione/rimozione dei frame marcati.
+- Rilevamento di frame neri nei video, rilevamento opzionale di frame sospetti, review manuale su filmstrip e riparazione/rimozione dei frame marcati.
 - Transcript fornito per allineamento da `.txt`, `.md`, `.docx` o `.doc`.
 
 ## Pacchetto distribuito
@@ -44,6 +44,7 @@ Il pacchetto ML offline puo' includere:
 - allineamento italiano
 - Silero VAD
 - ffmpeg tramite `imageio-ffmpeg`
+- OpenCV headless nel runtime ML per il rilevamento dei frame sospetti in `Video Cleanup`
 
 Il build standard non copia `models` dentro `dist\VoiceBridge`, cosi' sul PC di sviluppo non si duplicano molti GB.
 Quando viene eseguita dal dist creato dentro al progetto, l'app cerca prima eventuali modelli in
@@ -65,7 +66,7 @@ Per l'uso normale del pacchetto onefolder non serve installare Python.
 Connessione:
 
 - `Text to Speech` richiede internet solo usando Microsoft Edge TTS.
-- `Local TTS`, `Transcription`, `Subtitles` e `Video Cleanup` funzionano offline dopo aver incluso runtime, modelli e ffmpeg nella cartella distribuita.
+- `Local TTS`, `Transcription`, `Subtitles` e `Video Cleanup` funzionano offline dopo aver incluso runtime, modelli, ffmpeg e runtime ML con OpenCV nella cartella distribuita.
 
 Prerequisiti opzionali:
 
@@ -268,14 +269,17 @@ Questo workflow e' manuale e non dipende da Local TTS: puo' correggere anche aud
 2. Scegliere il video sorgente.
 3. Scegliere il percorso `Save cleaned video as` e la qualita' in `Output quality`.
 4. Usare `Frame review` per controllare la filmstrip. La selezione manuale e' sempre disponibile.
-5. Se serve, usare `Detect black frames`: analizza il video senza modificarlo e auto-marca solo i glitch isolati.
-6. Selezionare uno o piu' frame e usare `Mark selected`; usare `Unmark selected` o `Clear marks` per correggere la selezione.
-7. Applicare `Freeze previous frame` o `Remove selected frames`: la modifica entra in `Applied changes` e puo' essere rimossa con la `X`.
-8. Usare `Clean video` per applicare in ordine tutte le modifiche in coda.
+5. Se serve, usare `Detect black frames`: analizza il video senza modificarlo e auto-marca solo i frame neri isolati considerati riparabili.
+6. Se serve, usare `Detect frame glitches`: analizza il video con OpenCV e segnala in arancione frame sospetti non neri. Questi risultati non vengono auto-marcati: vanno rivisti manualmente.
+7. Selezionare uno o piu' frame e usare `Mark selected`; usare `Unmark selected` o `Clear marks` per correggere la selezione.
+8. Applicare `Freeze previous frame` o `Remove selected frames`: la modifica entra in `Applied changes` e puo' essere rimossa con la `X`.
+9. Usare `Clean video` per applicare in ordine tutte le modifiche in coda.
 
 Il metodo `Freeze previous frame` e' conservativo: corregge i frame marcati sostituendoli con il frame precedente. Il video mantiene la durata originale e l'audio viene copiato quando possibile.
 Il metodo `Remove selected frames` elimina i frame marcati e le micro-porzioni audio corrispondenti. Le modifiche successive vengono applicate tenendo conto dei frame gia' rimossi. E' utile se si pulisce il video prima di creare o allineare sottotitoli, ma accorcia la timeline.
 Le sequenze nere piu' lunghe, incluse parti nere all'inizio o alla fine del video, vengono segnalate e lasciate intatte, per evitare di alterare dissolvenze, fade o parti nere intenzionali.
+Durante i detect, il caricamento background dei thumbnail viene fermato per evitare processi concorrenti sullo stesso video; i thumbnail gia' in cache restano disponibili.
+Nel pannello risultati, il doppio click su una riga salta al frame corrispondente nella filmstrip. L'evidenziazione colorata importante resta sulla filmstrip: rosso per frame neri riparabili o frame marcati, arancione per frame sospetti da verificare.
 La qualita' di output puo' essere scelta nella sezione `Output quality`:
 
 - `Auto (recommended)`: usa la stessa logica del burn-in, cioe' CRF 20 per la maggior parte dei 1080p e CRF 18 per 4K o 1080p ad alto bitrate.

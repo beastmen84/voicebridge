@@ -1,13 +1,20 @@
 import ctypes
 import os
 import sys
+from ctypes import wintypes
 
 from voicebridge.app_paths import resource_path
 from voicebridge.constants import APP_ICON_PNG, APP_NAME
 
 
-def should_force_100_percent_dpi(display_size: tuple[int, int] | None, dpi: int | None) -> bool:
-    return display_size == (1920, 1080) and dpi is not None and dpi > 100
+def should_force_100_percent_dpi(
+    display_size: tuple[int, int] | None,
+    dpi: int | None,
+    scale_percent: int | None = None,
+) -> bool:
+    return display_size == (1920, 1080) and (
+        scale_percent is not None and scale_percent > 100 or dpi is not None and dpi > 100
+    )
 
 
 def primary_display_size_windows() -> tuple[int, int] | None:
@@ -67,12 +74,11 @@ def primary_display_dpi_windows() -> int | None:
     if sys.platform != "win32":
         return None
 
-    class Point(ctypes.Structure):
-        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
     user32 = ctypes.windll.user32
     try:
-        monitor = user32.MonitorFromPoint(Point(0, 0), 1)
+        user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+        user32.MonitorFromPoint.restype = wintypes.HMONITOR
+        monitor = user32.MonitorFromPoint(wintypes.POINT(0, 0), 1)
         dpi_x = ctypes.c_uint()
         dpi_y = ctypes.c_uint()
         if ctypes.windll.shcore.GetDpiForMonitor(monitor, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y)) == 0:
@@ -91,14 +97,32 @@ def primary_display_dpi_windows() -> int | None:
     return int(dpi) if dpi else None
 
 
-def apply_1080p_high_dpi_workaround() -> None:
+def primary_display_scale_percent_windows() -> int | None:
+    if sys.platform != "win32":
+        return None
+
+    user32 = ctypes.windll.user32
+    try:
+        user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+        user32.MonitorFromPoint.restype = wintypes.HMONITOR
+        monitor = user32.MonitorFromPoint(wintypes.POINT(0, 0), 1)
+        scale_factor = ctypes.c_int()
+        if ctypes.windll.shcore.GetScaleFactorForMonitor(monitor, ctypes.byref(scale_factor)) == 0:
+            return int(scale_factor.value)
+    except (AttributeError, OSError):
+        return None
+    return None
+
+
+def apply_1080p_high_dpi_workaround() -> bool:
     if sys.platform != "win32" or os.environ.get("VOICEBRIDGE_DISABLE_DPI_FIX") == "1":
-        return
+        return False
 
     display_size = primary_display_size_windows()
+    scale_percent = primary_display_scale_percent_windows()
     dpi = primary_display_dpi_windows()
-    if not should_force_100_percent_dpi(display_size, dpi):
-        return
+    if not should_force_100_percent_dpi(display_size, dpi, scale_percent):
+        return False
 
     # Temporary usability workaround for 1080p laptop panels at 125-150% Windows scaling.
     # This must run before QApplication imports/initialization so Qt lays out at 100%.
@@ -106,16 +130,22 @@ def apply_1080p_high_dpi_workaround() -> None:
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
     os.environ["QT_SCALE_FACTOR"] = "1"
     os.environ["QT_SCREEN_SCALE_FACTORS"] = "1"
+    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "Floor"
     os.environ["QT_FONT_DPI"] = "96"
+    return True
 
 
 def main():
-    apply_1080p_high_dpi_workaround()
+    force_100_percent_dpi = apply_1080p_high_dpi_workaround()
 
-    from PySide6.QtGui import QIcon
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QGuiApplication, QIcon
     from PySide6.QtWidgets import QApplication
 
     from voicebridge.main_window import VoiceBridgeQt
+
+    if force_100_percent_dpi:
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Floor)
 
     app = QApplication([])
     app.setApplicationName(APP_NAME)

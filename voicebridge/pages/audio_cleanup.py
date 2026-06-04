@@ -90,6 +90,36 @@ def conflicting_audio_cleanup_change_indexes(changes: list[dict]) -> tuple[int, 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
 class AudioCleanupWorkflowMixin:
+    def audio_cleanup_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def populate_audio_cleanup_waveform_zoom_combo(self) -> None:
+        selected_zoom = (
+            self.audio_cleanup_waveform_zoom_combo.currentData(Qt.ItemDataRole.UserRole)
+            if hasattr(self, "audio_cleanup_waveform_zoom_combo")
+            and self.audio_cleanup_waveform_zoom_combo.count()
+            else 1.0
+        )
+        self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
+        try:
+            self.audio_cleanup_waveform_zoom_combo.clear()
+            for label, zoom_factor in AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS:
+                self.audio_cleanup_waveform_zoom_combo.addItem(self.audio_cleanup_text(label), zoom_factor)
+            index = self.audio_cleanup_waveform_zoom_combo.findData(selected_zoom, Qt.ItemDataRole.UserRole)
+            self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(max(0, index))
+        finally:
+            self.audio_cleanup_waveform_zoom_combo.blockSignals(False)
+
+    def retranslate_audio_cleanup_page(self) -> None:
+        if not hasattr(self, "audio_cleanup_waveform_zoom_combo"):
+            return
+        self.populate_audio_cleanup_waveform_zoom_combo()
+        self.update_audio_cleanup_button_state()
+
     def audio_cleanup_input_changed(self):
         self.stop_audio_cleanup_playback()
         self.reset_audio_cleanup_changes()
@@ -106,7 +136,7 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_waveform.clear_waveform()
         self.audio_cleanup_waveform.set_markers([])
         self.audio_cleanup_waveform.set_playhead(None)
-        self.audio_cleanup_waveform_status.setText(status)
+        self.audio_cleanup_waveform_status.setText(self.audio_cleanup_text(status))
         if hasattr(self, "audio_cleanup_waveform_zoom_combo"):
             self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
             self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(0)
@@ -122,7 +152,7 @@ class AudioCleanupWorkflowMixin:
         generation = self.audio_cleanup_waveform_generation
         self.audio_cleanup_waveform.clear_waveform()
         self.audio_cleanup_waveform.set_playhead(None)
-        self.audio_cleanup_waveform_status.setText("Loading waveform...")
+        self.audio_cleanup_waveform_status.setText(self.audio_cleanup_text("Loading waveform..."))
         self.audio_cleanup_waveform_zoom_combo.blockSignals(True)
         self.audio_cleanup_waveform_zoom_combo.setCurrentIndex(0)
         self.audio_cleanup_waveform_zoom_combo.blockSignals(False)
@@ -147,7 +177,7 @@ class AudioCleanupWorkflowMixin:
             return
         if error_message or not peaks:
             self.audio_cleanup_waveform.clear_waveform()
-            self.audio_cleanup_waveform_status.setText("Waveform unavailable.")
+            self.audio_cleanup_waveform_status.setText(self.audio_cleanup_text("Waveform unavailable."))
             return
         self.audio_cleanup_waveform.set_waveform(peaks, duration)
         self.audio_cleanup_waveform.set_playhead(None)
@@ -196,8 +226,11 @@ class AudioCleanupWorkflowMixin:
         zoomed = self.audio_cleanup_waveform.zoom_factor() > 1.0
         self.audio_cleanup_waveform_scroll.setEnabled(zoomed and not self.is_audio_cleanup_running)
         self.audio_cleanup_waveform_status.setText(
-            f"Waveform ready. View: {self.format_audio_cleanup_time(start)} - "
-            f"{self.format_audio_cleanup_time(end)}"
+            self.audio_cleanup_text(
+                "Waveform ready. View: {start} - {end}",
+                start=self.format_audio_cleanup_time(start),
+                end=self.format_audio_cleanup_time(end),
+            )
         )
 
     def reset_audio_cleanup_tts_timeline(self, status="No TTS block JSON found."):
@@ -212,7 +245,7 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_tts_blocks_list.blockSignals(False)
         self.audio_cleanup_tts_block_preview.clear()
         self.audio_cleanup_tts_block_preview.setEnabled(False)
-        self.audio_cleanup_tts_block_status.setText(status)
+        self.audio_cleanup_tts_block_status.setText(self.audio_cleanup_text(status))
         self.audio_cleanup_tts_blocks_card.hide()
 
     def load_audio_cleanup_tts_timeline(self, audio_path, duration_seconds):
@@ -259,10 +292,19 @@ class AudioCleanupWorkflowMixin:
         engine = str(timeline.get("engine") or "TTS").title()
         if duration_mismatch:
             self.audio_cleanup_tts_block_status.setText(
-                f"{engine} block map loaded with duration mismatch; verify ranges before editing."
+                self.audio_cleanup_text(
+                    "{engine} block map loaded with duration mismatch; verify ranges before editing.",
+                    engine=engine,
+                )
             )
         else:
-            self.audio_cleanup_tts_block_status.setText(f"{engine} block map loaded: {len(blocks)} range(s).")
+            self.audio_cleanup_tts_block_status.setText(
+                self.audio_cleanup_text(
+                    "{engine} block map loaded: {count} range(s).",
+                    engine=engine,
+                    count=len(blocks),
+                )
+            )
 
     def audio_cleanup_tts_block_label(self, block):
         source_index = int(block.get("source_block_index") or block.get("index") or 1)
@@ -299,7 +341,11 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_tts_block_preview.setPlainText(str(block.get("text", "")).strip())
         voice = (block.get("voice_label") or block.get("voice_short_name") or "TTS").split(" - ", 1)[0].strip()
         self.audio_cleanup_tts_block_status.setText(
-            f"Selected {self.audio_cleanup_tts_block_label(block)} | {voice}"
+            self.audio_cleanup_text(
+                "Selected {block_label} | {voice}",
+                block_label=self.audio_cleanup_tts_block_label(block),
+                voice=voice,
+            )
         )
         self.update_audio_cleanup_button_state()
 
@@ -318,7 +364,7 @@ class AudioCleanupWorkflowMixin:
     def load_audio_cleanup_source(self, input_path):
         audio_path = Path(input_path)
         if not audio_path.is_file():
-            raise ValueError("The selected audio file does not exist.")
+            raise ValueError(self.audio_cleanup_text("The selected audio file does not exist."))
         self.stop_audio_cleanup_playback()
         self.reset_audio_cleanup_changes()
         self.audio_cleanup_input_picker.edit.blockSignals(True)
@@ -335,7 +381,7 @@ class AudioCleanupWorkflowMixin:
     def select_audio_cleanup_input_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select audio file",
+            self.audio_cleanup_text("Select audio file"),
             self.audio_cleanup_input_picker.text() or str(Path.home()),
             "Audio files (*.mp3 *.wav *.m4a *.aac *.flac *.ogg);;All files (*.*)",
         )
@@ -353,7 +399,12 @@ class AudioCleanupWorkflowMixin:
             "MP3 audio (*.mp3);;WAV audio (*.wav);;M4A audio (*.m4a);;"
             "AAC audio (*.aac);;FLAC audio (*.flac);;OGG audio (*.ogg);;All files (*.*)"
         )
-        path, selected_filter = QFileDialog.getSaveFileName(self, "Save cleaned audio as", suggested, filter_text)
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            self.audio_cleanup_text("Save cleaned audio as"),
+            suggested,
+            filter_text,
+        )
         if path:
             default_suffix = self.audio_cleanup_output_suffix_from_filter(selected_filter)
             self.audio_cleanup_output_picker.set_text(
@@ -390,21 +441,21 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_duration_seconds = 0.0
         input_path = self.audio_cleanup_input_picker.text()
         if not input_path:
-            self.audio_cleanup_duration_label.setText("No audio selected.")
+            self.audio_cleanup_duration_label.setText(self.audio_cleanup_text("No audio selected."))
             self.reset_audio_cleanup_waveform("No audio selected.")
             self.reset_audio_cleanup_tts_timeline("No audio selected.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         audio_path = Path(input_path)
         if not audio_path.is_file():
-            self.audio_cleanup_duration_label.setText("Selected audio file does not exist.")
+            self.audio_cleanup_duration_label.setText(self.audio_cleanup_text("Selected audio file does not exist."))
             self.reset_audio_cleanup_waveform("No waveform loaded.")
             self.reset_audio_cleanup_tts_timeline("No TTS block JSON found.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.audio_cleanup_duration_label.setText("ffmpeg missing.")
+            self.audio_cleanup_duration_label.setText(self.audio_cleanup_text("ffmpeg missing."))
             self.reset_audio_cleanup_waveform("ffmpeg missing.")
             self.reset_audio_cleanup_tts_timeline("ffmpeg missing.")
             self.update_audio_cleanup_time_limits(0.0)
@@ -412,20 +463,24 @@ class AudioCleanupWorkflowMixin:
         try:
             info = probe_audio_info(ffmpeg, audio_path)
         except (OSError, RuntimeError, ValueError) as exc:
-            self.audio_cleanup_duration_label.setText(f"Could not inspect audio: {exc}")
+            self.audio_cleanup_duration_label.setText(
+                self.audio_cleanup_text("Could not inspect audio: {message}", message=exc)
+            )
             self.reset_audio_cleanup_waveform("Waveform unavailable.")
             self.reset_audio_cleanup_tts_timeline("No TTS block JSON loaded.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         duration = float(info.get("duration_seconds") or 0.0)
         if not info.get("has_audio") or duration <= 0:
-            self.audio_cleanup_duration_label.setText("Could not detect an audio stream.")
+            self.audio_cleanup_duration_label.setText(self.audio_cleanup_text("Could not detect an audio stream."))
             self.reset_audio_cleanup_waveform("Waveform unavailable.")
             self.reset_audio_cleanup_tts_timeline("No TTS block JSON loaded.")
             self.update_audio_cleanup_time_limits(0.0)
             return
         self.audio_cleanup_duration_seconds = duration
-        self.audio_cleanup_duration_label.setText(f"Duration: {self.format_audio_cleanup_time(duration)}")
+        self.audio_cleanup_duration_label.setText(
+            self.audio_cleanup_text("Duration: {duration}", duration=self.format_audio_cleanup_time(duration))
+        )
         self.update_audio_cleanup_time_limits(duration)
         self.load_audio_cleanup_tts_timeline(audio_path, duration)
         self.start_audio_cleanup_waveform_load(ffmpeg, audio_path, duration)
@@ -479,21 +534,24 @@ class AudioCleanupWorkflowMixin:
         end = self.audio_cleanup_end_spin.value()
         duration = max(0.0, end - start)
         if duration <= 0:
-            self.audio_cleanup_selection_note.setText("Selection: none")
+            self.audio_cleanup_selection_note.setText(self.audio_cleanup_text("Selection: none"))
             return
         self.audio_cleanup_selection_note.setText(
-            f"Selection: {self.format_audio_cleanup_time(start)} - "
-            f"{self.format_audio_cleanup_time(end)} ({duration:.3f}s)"
+            self.audio_cleanup_text(
+                "Selection: {start} - {end} ({duration:.3f}s)",
+                start=self.format_audio_cleanup_time(start),
+                end=self.format_audio_cleanup_time(end),
+                duration=duration,
+            )
         )
 
     def has_audio_cleanup_selection(self):
         return self.audio_cleanup_end_spin.value() > self.audio_cleanup_start_spin.value()
 
-    @staticmethod
-    def audio_cleanup_action_label_for_key(action):
+    def audio_cleanup_action_label_for_key(self, action):
         for label, key in AUDIO_CLEANUP_ACTION_BY_LABEL.items():
             if key == action:
-                return label
+                return self.audio_cleanup_text(label)
         return str(action)
 
     def audio_cleanup_action_key(self):
@@ -532,7 +590,7 @@ class AudioCleanupWorkflowMixin:
                 adjusted_start -= cut_duration
                 adjusted_end -= cut_duration
                 continue
-            raise ValueError("The selected range overlaps a cut already queued.")
+            raise ValueError(self.audio_cleanup_text("The selected range overlaps a cut already queued."))
         return max(0.0, adjusted_start), max(0.0, adjusted_end)
 
     def adjusted_audio_cleanup_range(self, start, end):
@@ -604,7 +662,7 @@ class AudioCleanupWorkflowMixin:
         try:
             self.audio_cleanup_changes_list.clear()
             if not self.audio_cleanup_changes:
-                self.audio_cleanup_changes_list.addItem("No applied changes.")
+                self.audio_cleanup_changes_list.addItem(self.audio_cleanup_text("No applied changes."))
             else:
                 for index, change in enumerate(self.audio_cleanup_changes, start=1):
                     item = QListWidgetItem()
@@ -617,9 +675,12 @@ class AudioCleanupWorkflowMixin:
             self.audio_cleanup_changes_list.blockSignals(False)
         self.refresh_audio_cleanup_waveform_markers()
         self.audio_cleanup_changes_status.setText(
-            f"{len(self.audio_cleanup_changes)} change(s) queued."
+            self.audio_cleanup_text(
+                "{change_count} change(s) queued.",
+                change_count=len(self.audio_cleanup_changes),
+            )
             if self.audio_cleanup_changes else
-            "Apply one or more ranges before cleaning audio."
+            self.audio_cleanup_text("Apply one or more ranges before cleaning audio.")
         )
         self.update_audio_cleanup_button_state()
 
@@ -651,7 +712,10 @@ class AudioCleanupWorkflowMixin:
 
     def apply_audio_cleanup_change(self, action=None):
         if not self.has_audio_cleanup_selection():
-            self.show_error("Audio Cleanup", "Select a range before applying a cleanup change.")
+            self.show_error(
+                self.audio_cleanup_text("Audio Cleanup"),
+                self.audio_cleanup_text("Select a range before applying a cleanup change."),
+            )
             return
         start = self.audio_cleanup_start_spin.value()
         end = self.audio_cleanup_end_spin.value()
@@ -659,19 +723,25 @@ class AudioCleanupWorkflowMixin:
         if overlap is not None:
             index, change = overlap
             self.show_error(
-                "Audio Cleanup",
-                "The selected range overlaps a cleanup change already queued: "
-                f"C. {index} ({self.format_audio_cleanup_time(change['source_start_seconds'])} - "
-                f"{self.format_audio_cleanup_time(change['source_end_seconds'])}).",
+                self.audio_cleanup_text("Audio Cleanup"),
+                self.audio_cleanup_text(
+                    "The selected range overlaps a cleanup change already queued: C. {index} ({start} - {end}).",
+                    index=index,
+                    start=self.format_audio_cleanup_time(change["source_start_seconds"]),
+                    end=self.format_audio_cleanup_time(change["source_end_seconds"]),
+                ),
             )
             return
         try:
             adjusted_start, adjusted_end = self.adjusted_audio_cleanup_range(start, end)
         except ValueError as exc:
-            self.show_error("Audio Cleanup", str(exc))
+            self.show_error(self.audio_cleanup_text("Audio Cleanup"), str(exc))
             return
         if adjusted_end <= adjusted_start:
-            self.show_error("Audio Cleanup", "The selected range is no longer valid after queued cuts.")
+            self.show_error(
+                self.audio_cleanup_text("Audio Cleanup"),
+                self.audio_cleanup_text("The selected range is no longer valid after queued cuts."),
+            )
             return
         self.audio_cleanup_changes.append({
             "action": action or self.audio_cleanup_action_key(),
@@ -682,7 +752,9 @@ class AudioCleanupWorkflowMixin:
         })
         self.refresh_audio_cleanup_changes_list()
         self.audio_cleanup_changes_list.setCurrentRow(len(self.audio_cleanup_changes) - 1)
-        self.audio_cleanup_status.setText(f"Queued cleanup change {len(self.audio_cleanup_changes)}.")
+        self.audio_cleanup_status.setText(
+            self.audio_cleanup_text("Queued cleanup change {number}.", number=len(self.audio_cleanup_changes))
+        )
 
     def remove_selected_audio_cleanup_change(self):
         item = self.audio_cleanup_changes_list.currentItem()
@@ -699,27 +771,33 @@ class AudioCleanupWorkflowMixin:
         self.refresh_audio_cleanup_changes_list()
         if self.audio_cleanup_changes:
             self.audio_cleanup_changes_list.setCurrentRow(min(index, len(self.audio_cleanup_changes) - 1))
-        self.audio_cleanup_status.setText("Removed queued cleanup change.")
+        self.audio_cleanup_status.setText(self.audio_cleanup_text("Removed queued cleanup change."))
 
     def collect_audio_cleanup_options(self):
         input_path = self.audio_cleanup_input_picker.text()
         if not input_path:
-            raise ValueError("Please select an audio file.")
+            raise ValueError(self.audio_cleanup_text("Please select an audio file."))
         input_file = Path(input_path)
         if not input_file.is_file():
-            raise ValueError("The selected audio file does not exist.")
+            raise ValueError(self.audio_cleanup_text("The selected audio file does not exist."))
         if input_file.suffix.lower() not in SUPPORTED_AUDIO_SUFFIXES:
-            raise ValueError("The selected file must be .mp3, .wav, .m4a, .aac, .flac or .ogg.")
+            raise ValueError(
+                self.audio_cleanup_text("The selected file must be .mp3, .wav, .m4a, .aac, .flac or .ogg.")
+            )
         if self.audio_cleanup_duration_seconds <= 0:
-            raise ValueError("Could not detect the selected audio duration.")
+            raise ValueError(self.audio_cleanup_text("Could not detect the selected audio duration."))
         if not self.audio_cleanup_changes:
-            raise ValueError("Apply at least one cleanup range before cleaning audio.")
+            raise ValueError(self.audio_cleanup_text("Apply at least one cleanup range before cleaning audio."))
         conflict = conflicting_audio_cleanup_change_indexes(self.audio_cleanup_changes)
         if conflict is not None:
             first, second = conflict
             raise ValueError(
-                f"Cleanup range C. {second + 1} overlaps C. {first + 1}. "
-                "Remove or adjust overlapping queued ranges before cleaning audio."
+                self.audio_cleanup_text(
+                    "Cleanup range C. {second} overlaps C. {first}. "
+                    "Remove or adjust overlapping queued ranges before cleaning audio.",
+                    second=second + 1,
+                    first=first + 1,
+                )
             )
 
         output_path = self.audio_cleanup_output_picker.text()
@@ -728,7 +806,9 @@ class AudioCleanupWorkflowMixin:
         output_path = self.normalize_audio_cleanup_output_path(output_path, input_path)
         output_file = Path(output_path)
         if output_file.suffix.lower() not in SUPPORTED_AUDIO_SUFFIXES:
-            raise ValueError("Cleaned audio output must be .mp3, .wav, .m4a, .aac, .flac or .ogg.")
+            raise ValueError(
+                self.audio_cleanup_text("Cleaned audio output must be .mp3, .wav, .m4a, .aac, .flac or .ogg.")
+            )
         validate_output_path(output_file, source_path=input_file, expected_suffixes=SUPPORTED_AUDIO_SUFFIXES)
         ensure_free_space(
             output_file,
@@ -743,13 +823,16 @@ class AudioCleanupWorkflowMixin:
         try:
             input_path, output_path, changes, duration = self.collect_audio_cleanup_options()
         except ValueError as exc:
-            self.audio_cleanup_status.setText("Error.")
-            self.show_error("Audio Cleanup", str(exc))
+            self.audio_cleanup_status.setText(self.audio_cleanup_text("Error."))
+            self.show_error(self.audio_cleanup_text("Audio Cleanup"), str(exc))
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.audio_cleanup_status.setText("ffmpeg missing.")
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
+            self.audio_cleanup_status.setText(self.audio_cleanup_text("ffmpeg missing."))
+            self.show_error(
+                self.audio_cleanup_text("ffmpeg missing"),
+                self.audio_cleanup_text("Could not find ffmpeg. Use the full VoiceBridge bundle."),
+            )
             return
 
         self.stop_audio_cleanup_playback()
@@ -759,7 +842,9 @@ class AudioCleanupWorkflowMixin:
         self.reset_audio_cleanup_log()
         self.is_audio_cleanup_running = True
         self.update_audio_cleanup_progress_percent(0)
-        self.audio_cleanup_status.setText(f"Cleaning {len(changes)} queued range(s)...")
+        self.audio_cleanup_status.setText(
+            self.audio_cleanup_text("Cleaning {count} queued range(s)...", count=len(changes))
+        )
         self.append_audio_cleanup_log(f"Input: {input_path}")
         for index, change in enumerate(changes, start=1):
             self.append_audio_cleanup_log(
@@ -931,7 +1016,7 @@ class AudioCleanupWorkflowMixin:
         if not self.is_audio_cleanup_running:
             return
         self.audio_cleanup_cancel_requested = True
-        self.audio_cleanup_status.setText("Cancelling...")
+        self.audio_cleanup_status.setText(self.audio_cleanup_text("Cancelling..."))
         self.append_audio_cleanup_log("Cancellation requested.")
         self.update_audio_cleanup_button_state()
         process = self.audio_cleanup_process
@@ -943,7 +1028,7 @@ class AudioCleanupWorkflowMixin:
 
     def audio_cleanup_job_succeeded(self, output_path, change_count, timeline_path=""):
         self.audio_cleanup_last_output_path = output_path
-        self.audio_cleanup_status.setText("Cleaned audio saved.")
+        self.audio_cleanup_status.setText(self.audio_cleanup_text("Cleaned audio saved."))
         self.append_audio_cleanup_log(f"Output saved: {output_path}")
         if timeline_path:
             self.append_audio_cleanup_log(f"TTS timeline saved: {timeline_path}")
@@ -958,15 +1043,18 @@ class AudioCleanupWorkflowMixin:
         self.load_audio_cleanup_source(output_path)
         self.audio_cleanup_last_output_path = output_path
         self.update_audio_cleanup_button_state()
-        self.show_info("Audio Cleanup", f"Audio saved and loaded for the next cleanup pass:\n{output_path}")
+        self.show_info(
+            self.audio_cleanup_text("Audio Cleanup"),
+            self.audio_cleanup_text("Audio saved and loaded for the next cleanup pass:\n{path}", path=output_path),
+        )
 
     def audio_cleanup_job_failed(self, message):
-        self.audio_cleanup_status.setText("Error.")
+        self.audio_cleanup_status.setText(self.audio_cleanup_text("Error."))
         self.append_audio_cleanup_log(f"ERROR: {message}")
-        self.show_error("Audio Cleanup", message)
+        self.show_error(self.audio_cleanup_text("Audio Cleanup"), message)
 
     def audio_cleanup_job_cancelled(self):
-        self.audio_cleanup_status.setText("Cancelled.")
+        self.audio_cleanup_status.setText(self.audio_cleanup_text("Cancelled."))
         self.append_audio_cleanup_log("Job cancelled.")
 
     def finish_audio_cleanup_job(self):
@@ -1004,7 +1092,9 @@ class AudioCleanupWorkflowMixin:
         self.audio_cleanup_cancel_button.setEnabled(
             self.is_audio_cleanup_running and not self.audio_cleanup_cancel_requested
         )
-        self.audio_cleanup_play_selection_button.setText("Play selection" if has_range else "Play all")
+        self.audio_cleanup_play_selection_button.setText(
+            self.audio_cleanup_text("Play selection") if has_range else self.audio_cleanup_text("Play all")
+        )
         self.audio_cleanup_play_selection_button.setEnabled(has_input and not self.is_audio_cleanup_running)
         output_ready = bool(
             self.audio_cleanup_last_output_path and Path(self.audio_cleanup_last_output_path).is_file()
@@ -1178,10 +1268,10 @@ class AudioCleanupWorkflowMixin:
     def toggle_audio_cleanup_details(self):
         if self.audio_cleanup_log.isVisible():
             self.audio_cleanup_log.hide()
-            self.audio_cleanup_details_button.setText("Show details")
+            self.audio_cleanup_details_button.setText(self.audio_cleanup_text("Show details"))
             return
         self.audio_cleanup_log.show()
-        self.audio_cleanup_details_button.setText("Hide details")
+        self.audio_cleanup_details_button.setText(self.audio_cleanup_text("Hide details"))
 
     @staticmethod
     def format_audio_cleanup_time(seconds):
@@ -1262,8 +1352,7 @@ class AudioCleanupWorkflowMixin:
         waveform_controls = QHBoxLayout()
         waveform_controls.setContentsMargins(0, 0, 0, 0)
         self.audio_cleanup_waveform_zoom_combo = QComboBox()
-        for label, zoom_factor in AUDIO_CLEANUP_WAVEFORM_ZOOM_LEVELS:
-            self.audio_cleanup_waveform_zoom_combo.addItem(label, zoom_factor)
+        self.populate_audio_cleanup_waveform_zoom_combo()
         self.audio_cleanup_waveform_zoom_combo.setEnabled(False)
         self.audio_cleanup_waveform_zoom_combo.currentTextChanged.connect(
             lambda _text: self.audio_cleanup_waveform_zoom_changed()

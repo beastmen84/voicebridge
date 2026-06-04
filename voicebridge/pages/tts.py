@@ -106,6 +106,62 @@ TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
 class TtsWorkflowMixin:
+    def tts_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def populate_tts_engine_combo(self) -> None:
+        selected_engine = self.tts_engine_key() if self.tts_engine_combo.count() else "edge"
+        self.tts_engine_combo.blockSignals(True)
+        try:
+            self.tts_engine_combo.clear()
+            for label in TTS_ENGINE_LABELS:
+                self.tts_engine_combo.addItem(self.tts_text(label), TTS_ENGINE_BY_LABEL[label])
+            self.set_tts_engine_key(selected_engine)
+        finally:
+            self.tts_engine_combo.blockSignals(False)
+
+    def populate_tts_local_device_combo(self) -> None:
+        selected_device = self.tts_local_device_key() if self.tts_local_device_combo.count() else "auto"
+        self.tts_local_device_combo.blockSignals(True)
+        try:
+            self.tts_local_device_combo.clear()
+            for label in STT_DEVICE_LABELS:
+                self.tts_local_device_combo.addItem(self.tts_text(label), STT_DEVICE_BY_LABEL[label])
+            self.set_tts_local_device_key(selected_device)
+        finally:
+            self.tts_local_device_combo.blockSignals(False)
+
+    def populate_tts_split_combo(self) -> None:
+        selected_split = (
+            self.combo_current_data(self.tts_split_combo)
+            if self.tts_split_combo.count()
+            else TTS_SPLIT_PARAGRAPHS
+        )
+        self.tts_split_combo.blockSignals(True)
+        try:
+            self.tts_split_combo.clear()
+            for split_mode in (TTS_SPLIT_PARAGRAPHS, TTS_SPLIT_LINES):
+                self.tts_split_combo.addItem(self.tts_text(split_mode), split_mode)
+            self.set_combo_data(self.tts_split_combo, selected_split, [TTS_SPLIT_PARAGRAPHS, TTS_SPLIT_LINES])
+        finally:
+            self.tts_split_combo.blockSignals(False)
+
+    def retranslate_tts_page(self) -> None:
+        if not hasattr(self, "tts_engine_combo"):
+            return
+        self.populate_tts_engine_combo()
+        self.populate_tts_local_device_combo()
+        if hasattr(self, "tts_split_combo"):
+            self.populate_tts_split_combo()
+        self.update_tts_local_device_options()
+        self.update_tts_local_preset_tooltip()
+        self.update_tts_mode_note()
+        self.update_block_settings_controls()
+
     def tts_engine_key(self):
         engine = self.tts_engine_combo.currentData()
         return engine if isinstance(engine, str) and engine in TTS_ENGINE_LABEL_BY_KEY else "edge"
@@ -158,7 +214,7 @@ class TtsWorkflowMixin:
     def update_tts_local_preset_tooltip(self):
         if not hasattr(self, "tts_local_preset_combo"):
             return
-        self.tts_local_preset_combo.setToolTip(local_tts_preset_description(self.tts_local_preset_key()))
+        self.tts_local_preset_combo.setToolTip(self.tts_text(local_tts_preset_description(self.tts_local_preset_key())))
 
     def update_tts_local_device_options(self):
         if not hasattr(self, "tts_local_device_combo"):
@@ -175,13 +231,13 @@ class TtsWorkflowMixin:
                 if item is not None:
                     item.setEnabled(enabled)
                 if device == "auto":
-                    tooltip = "Uses CUDA when available; otherwise falls back to CPU."
+                    tooltip = self.tts_text("Uses CUDA when available; otherwise falls back to CPU.")
                 elif device == "cpu":
-                    tooltip = "Forces CPU execution."
+                    tooltip = self.tts_text("Forces CPU execution.")
                 elif enabled:
-                    tooltip = "Uses the detected CUDA GPU."
+                    tooltip = self.tts_text("Uses the detected CUDA GPU.")
                 else:
-                    tooltip = "CUDA is not available in the current ML runtime on this machine."
+                    tooltip = self.tts_text("CUDA is not available in the current ML runtime on this machine.")
                 self.tts_local_device_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             self.set_tts_local_device_key(selected_device)
         finally:
@@ -234,7 +290,9 @@ class TtsWorkflowMixin:
         available = not local or self.local_multi_voice_available()
         self.tts_multi_mode_button.setEnabled(available)
         if local and not available:
-            self.tts_multi_mode_button.setToolTip("Local multi-voice requires at least two ready local voices.")
+            self.tts_multi_mode_button.setToolTip(
+                self.tts_text("Local multi-voice requires at least two ready local voices.")
+            )
             if self.tts_mode_index() == 1:
                 self.set_tts_mode(0)
         else:
@@ -251,7 +309,7 @@ class TtsWorkflowMixin:
         try:
             self.local_voice_profile_combo.clear()
             if not profiles:
-                self.local_voice_profile_combo.addItem("No ready local voices", "")
+                self.local_voice_profile_combo.addItem(self.tts_text("No ready local voices"), "")
                 self.local_voice_profile_combo.setEnabled(False)
             else:
                 self.populate_local_voice_combo(self.local_voice_profile_combo, profiles, target_profile_id)
@@ -280,7 +338,7 @@ class TtsWorkflowMixin:
             self.local_voice_profile_status.setText(local_voice_status_text(profile))
         else:
             self.local_voice_profile_status.setText(
-                "Create a ready reference profile or complete a voice training job."
+                self.tts_text("Create a ready reference profile or complete a voice training job.")
             )
         self.update_tts_button_state()
 
@@ -292,14 +350,18 @@ class TtsWorkflowMixin:
         partials = partial_download_files(local_tts_model_cache_dir())
         if selected_voice and not local_voice_requires_base_xtts(selected_voice) and not model_ready:
             self.local_tts_model_status.setText(
-                "Trained model selected. Download XTTS-v2 is only required for reference clone voices."
+                self.tts_text("Trained model selected. Download XTTS-v2 is only required for reference clone voices.")
             )
         elif model_ready:
-            self.local_tts_model_status.setText("XTTS-v2 model ready.")
+            self.local_tts_model_status.setText(self.tts_text("XTTS-v2 model ready."))
         elif partials:
-            self.local_tts_model_status.setText("XTTS-v2 model download is incomplete. Download again to repair it.")
+            self.local_tts_model_status.setText(
+                self.tts_text("XTTS-v2 model download is incomplete. Download again to repair it.")
+            )
         else:
-            self.local_tts_model_status.setText("XTTS-v2 model not downloaded. Required once for all languages.")
+            self.local_tts_model_status.setText(
+                self.tts_text("XTTS-v2 model not downloaded. Required once for all languages.")
+            )
         if hasattr(self, "local_tts_model_status_box"):
             self.local_tts_model_status_box.setVisible(
                 model_ready or bool(selected_voice and not local_voice_requires_base_xtts(selected_voice))
@@ -323,11 +385,11 @@ class TtsWorkflowMixin:
             if local_tts_model_ready() or (
                 selected_voice and not local_voice_requires_base_xtts(selected_voice)
             ):
-                self.tts_status.setText("Local TTS ready.")
+                self.tts_status.setText(self.tts_text("Local TTS ready."))
             else:
-                self.tts_status.setText("Download XTTS-v2 before Local TTS generation.")
+                self.tts_status.setText(self.tts_text("Download XTTS-v2 before Local TTS generation."))
         elif hasattr(self, "tts_status"):
-            self.tts_status.setText("Ready.")
+            self.tts_status.setText(self.tts_text("Ready."))
         self.update_tts_multi_mode_availability()
         self.update_block_settings_controls()
         self.refresh_block_voice_combo_for_engine()
@@ -431,7 +493,7 @@ class TtsWorkflowMixin:
         try:
             self.block_voice_combo.clear()
             if not profiles:
-                self.block_voice_combo.addItem("No ready local voices", "")
+                self.block_voice_combo.addItem(self.tts_text("No ready local voices"), "")
                 self.block_voice_combo.setEnabled(False)
             else:
                 self.populate_local_voice_combo(self.block_voice_combo, profiles, target_profile_id)
@@ -443,12 +505,14 @@ class TtsWorkflowMixin:
         if not hasattr(self, "block_voice_label"):
             return
         local = self.tts_engine_key() == "local"
-        self.block_voice_label.setText("Block local voice" if local else "Block voice")
+        self.block_voice_label.setText(self.tts_text("Block local voice") if local else self.tts_text("Block voice"))
         self.block_rate_label.setVisible(not local)
         self.block_rate_combo.setVisible(not local)
-        self.apply_current_block_button.setText("Use current profile" if local else "Use current voice")
+        self.apply_current_block_button.setText(
+            self.tts_text("Use current profile") if local else self.tts_text("Use current voice")
+        )
         self.apply_all_blocks_button.setText(
-            "Use current profile for all" if local else "Use current voice for all"
+            self.tts_text("Use current profile for all") if local else self.tts_text("Use current voice for all")
         )
 
     def voice_selected(self, label):
@@ -491,7 +555,7 @@ class TtsWorkflowMixin:
     def select_input_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select input file",
+            self.tts_text("Select input file"),
             self.tts_input_picker.text() or str(Path.home()),
             qt_file_filter(SUPPORTED_FILETYPES),
         )
@@ -509,7 +573,7 @@ class TtsWorkflowMixin:
             initial = suggested_output_path(self.tts_input_picker.text())
         if not initial:
             initial = str(Path.home() / "audio.mp3")
-        path, _ = QFileDialog.getSaveFileName(self, "Save audio as", initial, "MP3 files (*.mp3)")
+        path, _ = QFileDialog.getSaveFileName(self, self.tts_text("Save audio as"), initial, "MP3 files (*.mp3)")
         if path:
             self.tts_output_picker.set_text(ensure_mp3_suffix(path))
             self.last_auto_save_path = ""
@@ -529,9 +593,9 @@ class TtsWorkflowMixin:
         self.input_file_error_message = ""
         self.is_detecting_language = True
         self.voice_combo.setEnabled(False)
-        self.voice_status.setText("Detecting file language...")
+        self.voice_status.setText(self.tts_text("Detecting file language..."))
         self.hide_input_warning()
-        self.tts_status.setText("Reading file text...")
+        self.tts_status.setText(self.tts_text("Reading file text..."))
         self.update_tts_button_state()
         threading.Thread(target=self.detect_language_worker, args=(path, file_signature(path)), daemon=True).start()
 
@@ -700,7 +764,7 @@ class TtsWorkflowMixin:
         return next((profile for profile in self.ready_tts_voice_profiles() if profile["id"] == profile_id), None)
 
     def split_tts_text_blocks(self, text):
-        if self.tts_split_combo.currentText() == TTS_SPLIT_LINES:
+        if self.combo_current_data(self.tts_split_combo) == TTS_SPLIT_LINES:
             blocks = [line.strip() for line in text.splitlines() if line.strip()]
         else:
             blocks = [
@@ -1124,8 +1188,8 @@ class TtsWorkflowMixin:
         try:
             input_path, save_path, voice, rate = self.collect_single_tts_options()
         except ValueError as exc:
-            self.tts_status.setText("Error.")
-            self.show_error("Error", str(exc))
+            self.tts_status.setText(self.tts_text("Error."))
+            self.show_error(self.tts_text("Error"), str(exc))
             return
         signature = file_signature(input_path)
         cached_text = self.cached_input_text if signature == self.cached_input_signature else None
@@ -1140,10 +1204,10 @@ class TtsWorkflowMixin:
         try:
             source_path, save_path, segments = self.collect_multi_tts_options()
         except ValueError as exc:
-            self.tts_status.setText("Error.")
-            self.show_error("Error", str(exc))
+            self.tts_status.setText(self.tts_text("Error."))
+            self.show_error(self.tts_text("Error"), str(exc))
             return
-        self.start_tts_busy("Generating multi-voice audio...", percent=True)
+        self.start_tts_busy(self.tts_text("Generating multi-voice audio..."), percent=True)
         threading.Thread(
             target=self.multi_voice_conversion_worker,
             args=(source_path, save_path, segments),
@@ -1154,20 +1218,26 @@ class TtsWorkflowMixin:
         try:
             source_path, save_path, segments, device, preset = self.collect_local_multi_tts_options()
         except ValueError as exc:
-            self.tts_status.setText("Error.")
+            self.tts_status.setText(self.tts_text("Error."))
             self.show_error("Local TTS", str(exc))
             return
         python_path = ml_python_path()
         worker_path = local_tts_worker_path()
         if not python_path.is_file():
-            self.tts_status.setText("Local TTS environment missing.")
-            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            self.tts_status.setText(self.tts_text("Local TTS environment missing."))
+            self.show_error(
+                self.tts_text("Local TTS environment missing"),
+                self.tts_text("Could not find the ML Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.tts_status.setText("Local TTS worker missing.")
-            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            self.tts_status.setText(self.tts_text("Local TTS worker missing."))
+            self.show_error(
+                self.tts_text("Local TTS worker missing"),
+                self.tts_text("Could not find:\n{path}", path=worker_path),
+            )
             return
-        self.start_tts_busy("Starting local multi-voice TTS...", percent=True)
+        self.start_tts_busy(self.tts_text("Starting local multi-voice TTS..."), percent=True)
         threading.Thread(
             target=self.local_multi_tts_conversion_worker,
             args=(python_path, worker_path, source_path, save_path, segments, device, preset),
@@ -1176,8 +1246,8 @@ class TtsWorkflowMixin:
 
     def confirm_xtts_model_license(self):
         return self.ask_question(
-            "Download XTTS-v2",
-            (
+            self.tts_text("Download XTTS-v2"),
+            self.tts_text(
                 "XTTS-v2 is a single multilingual model of about 1.8-2.3 GB.\n\n"
                 "The model uses the Coqui Public Model License and is limited to non-commercial use, "
                 "including generated output.\n\n"
@@ -1188,28 +1258,34 @@ class TtsWorkflowMixin:
     def start_local_tts_model_download(self):
         if local_tts_model_ready():
             self.update_local_tts_model_status()
-            self.show_info("Local TTS", "XTTS-v2 model is already downloaded.")
+            self.show_info("Local TTS", self.tts_text("XTTS-v2 model is already downloaded."))
             return
         python_path = ml_python_path()
         worker_path = local_tts_worker_path()
         if not python_path.is_file():
-            self.tts_status.setText("Local TTS environment missing.")
-            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            self.tts_status.setText(self.tts_text("Local TTS environment missing."))
+            self.show_error(
+                self.tts_text("Local TTS environment missing"),
+                self.tts_text("Could not find the ML Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.tts_status.setText("Local TTS worker missing.")
-            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            self.tts_status.setText(self.tts_text("Local TTS worker missing."))
+            self.show_error(
+                self.tts_text("Local TTS worker missing"),
+                self.tts_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         try:
             ensure_free_space(local_tts_model_dir(), LOCAL_TTS_MODEL_MIN_FREE_BYTES, "XTTS-v2 model download")
         except ValueError as exc:
-            self.tts_status.setText("Not enough disk space.")
+            self.tts_status.setText(self.tts_text("Not enough disk space."))
             self.show_error("Local TTS", str(exc))
             return
         if not self.confirm_xtts_model_license():
-            self.tts_status.setText("XTTS-v2 download cancelled.")
+            self.tts_status.setText(self.tts_text("XTTS-v2 download cancelled."))
             return
-        self.start_tts_busy("Downloading XTTS-v2 model...", percent=True)
+        self.start_tts_busy(self.tts_text("Downloading XTTS-v2 model..."), percent=True)
         threading.Thread(
             target=self.local_tts_model_download_worker,
             args=(python_path, worker_path),
@@ -1233,7 +1309,7 @@ class TtsWorkflowMixin:
                     self.post(self.update_tts_progress_percent, output.progress_percent)
                 return
             if output.is_status:
-                self.post(self.tts_status.setText, output.status or "")
+                self.post(self.tts_status.setText, self.tts_text(output.status or ""))
 
         try:
             result = run_worker_process_job(
@@ -1260,27 +1336,36 @@ class TtsWorkflowMixin:
             self.post(self.finish_tts_conversion)
 
     def local_tts_model_download_succeeded(self):
-        self.tts_status.setText("XTTS-v2 model ready.")
+        self.tts_status.setText(self.tts_text("XTTS-v2 model ready."))
         self.update_local_tts_model_status()
         self.refresh_home_diagnostics()
-        self.show_info("Local TTS", f"XTTS-v2 model downloaded:\n{local_tts_model_cache_dir()}")
+        self.show_info(
+            "Local TTS",
+            self.tts_text("XTTS-v2 model downloaded:\n{path}", path=local_tts_model_cache_dir()),
+        )
 
     def start_local_tts_conversion(self):
         try:
             input_path, save_path, profile, device, preset = self.collect_local_tts_options()
         except ValueError as exc:
-            self.tts_status.setText("Error.")
+            self.tts_status.setText(self.tts_text("Error."))
             self.show_error("Local TTS", str(exc))
             return
         python_path = ml_python_path()
         worker_path = local_tts_worker_path()
         if not python_path.is_file():
-            self.tts_status.setText("Local TTS environment missing.")
-            self.show_error("Local TTS environment missing", f"Could not find the ML Python runtime:\n{python_path}")
+            self.tts_status.setText(self.tts_text("Local TTS environment missing."))
+            self.show_error(
+                self.tts_text("Local TTS environment missing"),
+                self.tts_text("Could not find the ML Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.tts_status.setText("Local TTS worker missing.")
-            self.show_error("Local TTS worker missing", f"Could not find:\n{worker_path}")
+            self.tts_status.setText(self.tts_text("Local TTS worker missing."))
+            self.show_error(
+                self.tts_text("Local TTS worker missing"),
+                self.tts_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         signature = file_signature(input_path)
         cached_text = self.cached_input_text if signature == self.cached_input_signature else None
@@ -1644,7 +1729,7 @@ class TtsWorkflowMixin:
                     )
                     timeline_cursor += part_duration
                     self.post(self.update_tts_progress_percent, (index / total) * 90)
-                self.post(self.tts_status.setText, "Merging audio blocks...")
+                self.post(self.tts_status.setText, self.tts_text("Merging audio blocks..."))
                 self.post(self.update_tts_progress_percent, 95)
                 temp_output = temp_dir / Path(save_path).name
                 if len(part_paths) == 1:
@@ -1673,33 +1758,30 @@ class TtsWorkflowMixin:
 
     def conversion_succeeded(self, save_path):
         self.tts_last_output_path = save_path
-        self.tts_status.setText("Done.")
+        self.tts_status.setText(self.tts_text("Done."))
         self.record_job("TTS", "MP3 generated", self.tts_input_picker.text(), save_path)
-        self.show_info("Success", f"Audio saved:\n{save_path}")
+        self.show_info(self.tts_text("Success"), self.tts_text("Audio saved:\n{path}", path=save_path))
 
     def conversion_failed(self, message):
-        self.tts_status.setText("Error.")
+        self.tts_status.setText(self.tts_text("Error."))
         if (
             self.tts_engine_key() == "local"
             and self.tts_local_device_key() != "cpu"
             and is_cuda_runtime_failure(message)
             and self.ask_question(
-                "Local TTS CUDA failed",
-                (
-                    "Local TTS failed in the CUDA runtime.\n\n"
-                    "Retry the same job on CPU now?"
-                ),
+                self.tts_text("Local TTS CUDA failed"),
+                self.tts_text("Local TTS failed in the CUDA runtime.\n\nRetry the same job on CPU now?"),
                 default_yes=True,
             )
         ):
             self.set_tts_local_device_key("cpu")
-            self.tts_status.setText("Retrying Local TTS on CPU...")
+            self.tts_status.setText(self.tts_text("Retrying Local TTS on CPU..."))
             QTimer.singleShot(250, self.start_tts_conversion)
             return
-        self.show_error("Error", message)
+        self.show_error(self.tts_text("Error"), message)
 
     def conversion_cancelled(self):
-        self.tts_status.setText("Cancelled.")
+        self.tts_status.setText(self.tts_text("Cancelled."))
 
     def finish_tts_conversion(self):
         self.is_converting = False
@@ -1719,7 +1801,7 @@ class TtsWorkflowMixin:
         process = getattr(self, "tts_process", None)
         if process is not None and process.poll() is None:
             process.terminate()
-        self.tts_status.setText("Cancelling TTS job...")
+        self.tts_status.setText(self.tts_text("Cancelling TTS job..."))
         self.update_tts_button_state()
 
     def open_tts_output(self):
@@ -1735,7 +1817,7 @@ class TtsWorkflowMixin:
         try:
             self.load_audio_cleanup_source(self.tts_last_output_path)
         except ValueError as exc:
-            self.show_error("Audio Cleanup", str(exc))
+            self.show_error(self.tts_text("Audio Cleanup"), str(exc))
             return
         self.show_page(5)
 
@@ -1804,9 +1886,8 @@ class TtsWorkflowMixin:
         voice_card = Card("Voice")
         voice_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.tts_engine_combo = QComboBox()
-        for label in TTS_ENGINE_LABELS:
-            self.tts_engine_combo.addItem(label, TTS_ENGINE_BY_LABEL[label])
-        self.tts_engine_combo.currentTextChanged.connect(lambda _text: self.tts_engine_changed())
+        self.populate_tts_engine_combo()
+        self.tts_engine_combo.currentIndexChanged.connect(lambda _index: self.tts_engine_changed())
         voice_card.content_layout.addWidget(QLabel("Engine"))
         voice_card.content_layout.addWidget(self.tts_engine_combo)
 
@@ -1858,9 +1939,8 @@ class TtsWorkflowMixin:
         self.local_voice_profile_status.setObjectName("Muted")
         self.local_voice_profile_status.setWordWrap(True)
         self.tts_local_device_combo = QComboBox()
-        for label in STT_DEVICE_LABELS:
-            self.tts_local_device_combo.addItem(label, STT_DEVICE_BY_LABEL[label])
-        self.tts_local_device_combo.currentTextChanged.connect(lambda _text: self.tts_local_device_changed())
+        self.populate_tts_local_device_combo()
+        self.tts_local_device_combo.currentIndexChanged.connect(lambda _index: self.tts_local_device_changed())
         self.tts_local_preset_combo = QComboBox()
         for preset_key, preset in LOCAL_TTS_PRESETS.items():
             self.tts_local_preset_combo.addItem(preset["label"], preset_key)
@@ -1995,7 +2075,7 @@ class TtsWorkflowMixin:
             )
         else:
             text = "Split the document into blocks and assign voice or speed per block."
-        self.tts_mode_note.setText(text)
+        self.tts_mode_note.setText(self.tts_text(text))
 
     def build_multi_tts_tab(self):
         tab = QWidget()
@@ -2006,8 +2086,8 @@ class TtsWorkflowMixin:
         left = Card("Blocks")
         split_row = QHBoxLayout()
         self.tts_split_combo = QComboBox()
-        self.tts_split_combo.addItems([TTS_SPLIT_PARAGRAPHS, TTS_SPLIT_LINES])
-        self.tts_split_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.populate_tts_split_combo()
+        self.tts_split_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
         split_button = QPushButton("Split document")
         merge_button = QPushButton("Merge selected")
         split_button.clicked.connect(self.split_tts_document_into_blocks)
@@ -2058,4 +2138,3 @@ class TtsWorkflowMixin:
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(1, 2)
         return tab
-

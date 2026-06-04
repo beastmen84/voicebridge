@@ -52,8 +52,50 @@ STT_OUTPUT_MIN_FREE_BYTES = 64 * 1024 * 1024
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class SttWorkflowMixin:
+    def stt_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def populate_stt_mode_combo(self) -> None:
+        selected_mode = (
+            self.combo_current_data(self.stt_mode_combo)
+            if self.stt_mode_combo.count()
+            else next(iter(STT_MODE_LABELS))
+        )
+        self.stt_mode_combo.blockSignals(True)
+        try:
+            self.stt_mode_combo.clear()
+            for label in STT_MODE_LABELS:
+                self.stt_mode_combo.addItem(self.stt_text(label), label)
+            self.set_combo_data(self.stt_mode_combo, selected_mode, list(STT_MODE_LABELS))
+        finally:
+            self.stt_mode_combo.blockSignals(False)
+
+    def populate_stt_device_combo(self) -> None:
+        selected_device = self.stt_device_key() if self.stt_device_combo.count() else "auto"
+        self.stt_device_combo.blockSignals(True)
+        try:
+            self.stt_device_combo.clear()
+            for label in STT_DEVICE_LABELS:
+                self.stt_device_combo.addItem(self.stt_text(label), STT_DEVICE_BY_LABEL[label])
+            self.set_stt_device_key(selected_device)
+        finally:
+            self.stt_device_combo.blockSignals(False)
+
+    def retranslate_stt_page(self) -> None:
+        if not hasattr(self, "stt_mode_combo"):
+            return
+        self.populate_stt_mode_combo()
+        self.populate_stt_device_combo()
+        self.populate_stt_language_combo()
+        self.update_stt_device_options()
+        self.stt_mode_changed()
+
     def stt_mode_key(self):
-        return STT_MODE_LABELS.get(self.stt_mode_combo.currentText(), "transcript")
+        return STT_MODE_LABELS.get(self.combo_current_data(self.stt_mode_combo), "transcript")
 
     def stt_language_key(self):
         language_code = self.stt_language_combo.currentData(Qt.ItemDataRole.UserRole)
@@ -94,13 +136,13 @@ class SttWorkflowMixin:
                 if item is not None:
                     item.setEnabled(enabled)
                 if device == "auto":
-                    tooltip = "Uses CUDA when available; otherwise falls back to CPU."
+                    tooltip = self.stt_text("Uses CUDA when available; otherwise falls back to CPU.")
                 elif device == "cpu":
-                    tooltip = "Forces CPU execution."
+                    tooltip = self.stt_text("Forces CPU execution.")
                 elif enabled:
-                    tooltip = "Uses the detected CUDA GPU."
+                    tooltip = self.stt_text("Uses the detected CUDA GPU.")
                 else:
-                    tooltip = "CUDA is not available in the current STT runtime on this machine."
+                    tooltip = self.stt_text("CUDA is not available in the current STT runtime on this machine.")
                 self.stt_device_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             self.set_stt_device_key(selected_device)
         finally:
@@ -130,7 +172,7 @@ class SttWorkflowMixin:
     def select_stt_media_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select audio or video file",
+            self.stt_text("Select audio or video file"),
             self.stt_media_picker.text() or str(Path.home()),
             "Audio/video files (*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.mp4 *.mkv *.mov *.avi *.webm);;All files (*.*)",
         )
@@ -142,7 +184,7 @@ class SttWorkflowMixin:
     def select_stt_text_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select transcript file",
+            self.stt_text("Select transcript file"),
             self.stt_text_picker.text() or str(Path.home()),
             "Transcript files (*.txt *.md *.docx *.doc);;All files (*.*)",
         )
@@ -158,7 +200,7 @@ class SttWorkflowMixin:
             else "SubRip subtitles (*.srt);;All files (*.*)"
         )
         initial = self.stt_output_picker.text() or str(Path.home() / f"output{suffix}")
-        path, _ = QFileDialog.getSaveFileName(self, "Save output as", initial, filter_text)
+        path, _ = QFileDialog.getSaveFileName(self, self.stt_text("Save output as"), initial, filter_text)
         if path:
             self.stt_output_picker.set_text(str(Path(path).with_suffix(suffix)))
             self.save_user_settings()
@@ -230,13 +272,13 @@ class SttWorkflowMixin:
     def toggle_stt_details(self):
         if self.stt_log.isVisible():
             self.stt_log.hide()
-            self.stt_details_button.setText("Show details")
+            self.stt_details_button.setText(self.stt_text("Show details"))
             return
         if not self.stt_log_lines and self.stt_preflight_details:
             for line in self.stt_preflight_details:
                 self.append_stt_log(line)
         self.stt_log.show()
-        self.stt_details_button.setText("Hide details")
+        self.stt_details_button.setText(self.stt_text("Hide details"))
 
     @staticmethod
     def prepare_stt_transcript_file(text_path):
@@ -267,22 +309,22 @@ class SttWorkflowMixin:
         mode = self.stt_mode_key()
         language = self.stt_language_key()
         if not media_path:
-            raise ValueError("Please select an audio or video file.")
+            raise ValueError(self.stt_text("Please select an audio or video file."))
         if not os.path.isfile(media_path):
-            raise ValueError("The selected media file does not exist.")
+            raise ValueError(self.stt_text("The selected media file does not exist."))
         ffmpeg = find_ffmpeg_exe()
         if ffmpeg:
             info = probe_audio_info(ffmpeg, media_path)
             duration = info.get("duration_seconds") or 0
             if not info.get("has_audio") or duration <= 0:
-                raise ValueError("The selected media file has no readable audio stream.")
+                raise ValueError(self.stt_text("The selected media file has no readable audio stream."))
         if not output_path:
-            raise ValueError("Please choose where to save the output file.")
+            raise ValueError(self.stt_text("Please choose where to save the output file."))
         device = self.stt_device_key()
         if device == "cuda" and not self.stt_cuda_available:
-            raise ValueError("CUDA is not available in the current STT runtime on this machine.")
+            raise ValueError(self.stt_text("CUDA is not available in the current STT runtime on this machine."))
         if mode == "align_text" and (not text_path or not os.path.isfile(text_path)):
-            raise ValueError("Please select the transcript text file to align.")
+            raise ValueError(self.stt_text("Please select the transcript text file to align."))
         output_path = str(Path(output_path).with_suffix(self.stt_output_suffix()))
         validate_output_path(output_path, source_path=media_path, expected_suffixes={self.stt_output_suffix()})
         ensure_free_space(output_path, STT_OUTPUT_MIN_FREE_BYTES, "STT output")
@@ -294,17 +336,17 @@ class SttWorkflowMixin:
         try:
             media_path, output_path, text_path, mode, model, language, device = self.collect_stt_options()
         except ValueError as exc:
-            self.stt_status.setText("Error.")
-            self.show_error("Error", str(exc))
+            self.stt_status.setText(self.stt_text("Error."))
+            self.show_error(self.stt_text("Error"), str(exc))
             return
         if not self.stt_preflight_ok:
-            self.stt_status.setText("STT offline package incomplete.")
+            self.stt_status.setText(self.stt_text("STT offline package incomplete."))
             self.reset_stt_log()
             for line in self.stt_preflight_details:
                 self.append_stt_log(line)
             if not self.stt_log.isVisible():
                 self.toggle_stt_details()
-            self.show_error("STT offline package incomplete", self.stt_preflight_label.text())
+            self.show_error(self.stt_text("STT offline package incomplete"), self.stt_preflight_label.text())
             return
         if mode in STT_SRT_MODES and language != "auto" and not self.stt_alignment_language_ready(language):
             self.handle_stt_alignment_model_missing(language, "selected")
@@ -312,10 +354,16 @@ class SttWorkflowMixin:
         python_path = stt_python_path()
         worker_path = stt_worker_path()
         if not python_path.is_file():
-            self.show_error("STT environment missing", f"Could not find the STT Python runtime:\n{python_path}")
+            self.show_error(
+                self.stt_text("STT environment missing"),
+                self.stt_text("Could not find the STT Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
+            self.show_error(
+                self.stt_text("STT worker missing"),
+                self.stt_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         worker_text_path = text_path
         cleanup_text_path = None
@@ -323,8 +371,11 @@ class SttWorkflowMixin:
             try:
                 worker_text_path, cleanup_text_path = self.prepare_stt_transcript_file(text_path)
             except (OSError, RuntimeError, ValueError) as exc:
-                self.stt_status.setText("Error.")
-                self.show_error("Transcript file error", f"Could not read transcript file.\n\n{exc}")
+                self.stt_status.setText(self.stt_text("Error."))
+                self.show_error(
+                    self.stt_text("Transcript file error"),
+                    self.stt_text("Could not read transcript file.\n\n{message}", message=exc),
+                )
                 return
         self.stt_cancel_requested = False
         self.stt_process = None
@@ -332,7 +383,7 @@ class SttWorkflowMixin:
         self.reset_stt_log()
         self.is_stt_running = True
         self.show_percent_progress(self.stt_progress, 0)
-        self.stt_status.setText("Starting offline transcription...")
+        self.stt_status.setText(self.stt_text("Starting offline transcription..."))
         self.append_stt_log(f"Starting mode={mode}, language={language}, device={device}, model={model}")
         if cleanup_text_path:
             self.append_stt_log(f"Prepared transcript text from: {text_path}")
@@ -410,7 +461,7 @@ class SttWorkflowMixin:
                 return
             self.post(self.append_stt_log, output.line)
             if output.is_status:
-                self.post(self.stt_status.setText, output.status or "")
+                self.post(self.stt_status.setText, self.stt_text(output.status or ""))
 
         def include_in_recent_output(output: WorkerProcessOutput) -> bool:
             return not output.is_progress and not output.line.startswith(MISSING_ALIGNMENT_PREFIX)
@@ -453,40 +504,55 @@ class SttWorkflowMixin:
     def handle_stt_alignment_model_missing(self, language_code, source="detected"):
         language_code = (language_code or "").strip().lower()
         if not language_code:
-            self.stt_status.setText("Alignment model missing.")
-            self.show_error("Alignment model missing", "The required alignment model is not included.")
+            self.stt_status.setText(self.stt_text("Alignment model missing."))
+            self.show_error(
+                self.stt_text("Alignment model missing"),
+                self.stt_text("The required alignment model is not included."),
+            )
             return
 
         language_label = f"{language_name(language_code)} ({language_code})"
-        self.stt_status.setText("Alignment model required.")
-        source_label = "Lingua selezionata" if source == "selected" else "Lingua rilevata"
+        self.stt_status.setText(self.stt_text("Alignment model required."))
+        source_label = (
+            self.stt_text("Selected language")
+            if source == "selected"
+            else self.stt_text("Detected language")
+        )
         if self.ask_question(
-            "Alignment model missing",
-            (
-                f"{source_label}: {language_label}.\n\n"
-                "Il modello di allineamento non è incluso. Vuoi scaricarlo ora?\n\n"
-                "Dopo il download questa lingua funzionerà offline su questo computer."
+            self.stt_text("Alignment model missing"),
+            self.stt_text(
+                "{source_label}: {language_label}.\n\n"
+                "The alignment model is not included. Download it now?\n\n"
+                "After download, this language will work offline on this computer.",
+                source_label=source_label,
+                language_label=language_label,
             ),
             default_yes=True,
         ):
             self.start_alignment_model_download(language_code)
         else:
             self.append_stt_log(f"Alignment model download skipped for language: {language_code}")
-            self.stt_status.setText("Alignment model required.")
+            self.stt_status.setText(self.stt_text("Alignment model required."))
 
     def start_alignment_model_download(self, language_code):
         python_path = stt_python_path()
         worker_path = stt_worker_path()
         if not python_path.is_file():
-            self.show_error("STT environment missing", f"Could not find the STT Python runtime:\n{python_path}")
+            self.show_error(
+                self.stt_text("STT environment missing"),
+                self.stt_text("Could not find the STT Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
+            self.show_error(
+                self.stt_text("STT worker missing"),
+                self.stt_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         try:
             ensure_free_space(stt_model_dir(), STT_ALIGNMENT_DOWNLOAD_MIN_FREE_BYTES, "alignment model download")
         except ValueError as exc:
-            self.stt_status.setText("Not enough disk space.")
+            self.stt_status.setText(self.stt_text("Not enough disk space."))
             self.show_error("STT", str(exc))
             return
 
@@ -494,7 +560,12 @@ class SttWorkflowMixin:
         self.stt_process = None
         self.is_stt_running = True
         self.show_percent_progress(self.stt_progress, 0)
-        self.stt_status.setText(f"Downloading alignment model for {language_name(language_code)}...")
+        self.stt_status.setText(
+            self.stt_text(
+                "Downloading alignment model for {language}...",
+                language=language_name(language_code),
+            )
+        )
         self.append_stt_log(f"Downloading alignment model for language: {language_code}")
         self.update_stt_button_state()
         self.update_tts_button_state()
@@ -511,15 +582,21 @@ class SttWorkflowMixin:
         python_path = stt_python_path()
         worker_path = stt_worker_path()
         if not python_path.is_file():
-            self.show_error("STT environment missing", f"Could not find the STT Python runtime:\n{python_path}")
+            self.show_error(
+                self.stt_text("STT environment missing"),
+                self.stt_text("Could not find the STT Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.show_error("STT worker missing", f"Could not find:\n{worker_path}")
+            self.show_error(
+                self.stt_text("STT worker missing"),
+                self.stt_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         try:
             ensure_free_space(stt_model_dir(), STT_DOWNLOAD_MIN_FREE_BYTES, "Whisper large-v3 download")
         except ValueError as exc:
-            self.stt_status.setText("Not enough disk space.")
+            self.stt_status.setText(self.stt_text("Not enough disk space."))
             self.show_error("STT", str(exc))
             return
 
@@ -527,7 +604,7 @@ class SttWorkflowMixin:
         self.stt_process = None
         self.is_stt_running = True
         self.show_percent_progress(self.stt_progress, 0)
-        self.stt_status.setText("Downloading Whisper large-v3 model...")
+        self.stt_status.setText(self.stt_text("Downloading Whisper large-v3 model..."))
         self.append_stt_log("Downloading Whisper large-v3 model and STT runtime caches.")
         self.update_stt_button_state()
         self.update_tts_button_state()
@@ -561,7 +638,7 @@ class SttWorkflowMixin:
                 return
             self.post(self.append_stt_log, output.line)
             if output.is_status:
-                self.post(self.stt_status.setText, output.status or "")
+                self.post(self.stt_status.setText, self.stt_text(output.status or ""))
 
         try:
             result = run_worker_process_job(
@@ -616,7 +693,7 @@ class SttWorkflowMixin:
                 return
             self.post(self.append_stt_log, output.line)
             if output.is_status:
-                self.post(self.stt_status.setText, output.status or "")
+                self.post(self.stt_status.setText, self.stt_text(output.status or ""))
 
         try:
             result = run_worker_process_job(
@@ -654,12 +731,12 @@ class SttWorkflowMixin:
         self.populate_stt_language_combo()
         self.set_stt_language_code(language_code)
         self.save_user_settings()
-        self.stt_status.setText("Alignment model downloaded. Restarting SRT job...")
+        self.stt_status.setText(self.stt_text("Alignment model downloaded. Restarting SRT job..."))
         self.append_stt_log(f"Alignment model ready for language: {language_code}")
         QTimer.singleShot(250, self.start_stt_job)
 
     def stt_model_download_succeeded(self):
-        self.stt_status.setText("Whisper large-v3 model downloaded.")
+        self.stt_status.setText(self.stt_text("Whisper large-v3 model downloaded."))
         self.append_stt_log(f"Whisper model ready: {stt_model_dir()}")
         self.refresh_stt_preflight_async()
         self.refresh_home_diagnostics()
@@ -668,7 +745,7 @@ class SttWorkflowMixin:
         if not self.is_stt_running:
             return
         self.stt_cancel_requested = True
-        self.stt_status.setText("Cancelling...")
+        self.stt_status.setText(self.stt_text("Cancelling..."))
         self.append_stt_log("Cancellation requested.")
         process = self.stt_process
         if process is not None and process.poll() is None:
@@ -683,34 +760,34 @@ class SttWorkflowMixin:
             self.stt_last_srt_path = output_path
             self.stt_last_media_path = media_path
             self.sync_video_subtitle_inputs_from_stt()
-        self.stt_status.setText("Done.")
+        self.stt_status.setText(self.stt_text("Done."))
         self.append_stt_log(f"Output saved: {output_path}")
         self.record_job("STT", "Transcript/SRT generated", media_path or self.stt_media_picker.text(), output_path)
-        self.show_info("Success", f"Output saved:\n{output_path}")
+        self.show_info(self.stt_text("Success"), self.stt_text("Output saved:\n{path}", path=output_path))
 
     def stt_job_cancelled(self):
-        self.stt_status.setText("Cancelled.")
+        self.stt_status.setText(self.stt_text("Cancelled."))
         self.append_stt_log("Job cancelled.")
 
     def stt_job_failed(self, message):
-        self.stt_status.setText("Error.")
+        self.stt_status.setText(self.stt_text("Error."))
         self.append_stt_log(f"ERROR: {message}")
         if (
             self.stt_device_key() != "cpu"
             and is_cuda_runtime_failure(message)
             and self.ask_question(
-                "STT CUDA failed",
-                "Transcription failed in the CUDA runtime.\n\nRetry the same job on CPU now?",
+                self.stt_text("STT CUDA failed"),
+                self.stt_text("Transcription failed in the CUDA runtime.\n\nRetry the same job on CPU now?"),
                 default_yes=True,
             )
         ):
             self.set_stt_device_key("cpu")
             self.preferred_stt_device_key = "cpu"
             self.save_user_settings()
-            self.stt_status.setText("Retrying transcription on CPU...")
+            self.stt_status.setText(self.stt_text("Retrying transcription on CPU..."))
             QTimer.singleShot(250, self.start_stt_job)
             return
-        self.show_error("STT Error", message)
+        self.show_error(self.stt_text("STT Error"), message)
 
     def finish_stt_job(self):
         self.is_stt_running = False
@@ -756,19 +833,16 @@ class SttWorkflowMixin:
         settings_card = Card("Transcription settings")
         settings_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.stt_mode_combo = QComboBox()
-        self.stt_mode_combo.addItems(list(STT_MODE_LABELS))
-        self.stt_mode_combo.currentTextChanged.connect(self.stt_mode_changed)
+        self.populate_stt_mode_combo()
+        self.stt_mode_combo.currentIndexChanged.connect(lambda _index: self.stt_mode_changed())
         self.stt_language_combo = QComboBox()
         self.stt_language_combo.setMinimumWidth(260)
         self.stt_language_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.populate_stt_language_combo()
-        self.stt_language_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.stt_language_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
         self.stt_device_combo = QComboBox()
-        self.stt_device_combo.addItems(STT_DEVICE_LABELS)
-        for index in range(self.stt_device_combo.count()):
-            label = self.stt_device_combo.itemText(index)
-            self.stt_device_combo.setItemData(index, STT_DEVICE_BY_LABEL[label], Qt.ItemDataRole.UserRole)
-        self.stt_device_combo.currentTextChanged.connect(lambda _text: self.stt_device_changed())
+        self.populate_stt_device_combo()
+        self.stt_device_combo.currentIndexChanged.connect(lambda _index: self.stt_device_changed())
         self.update_stt_device_options()
         settings_card.content_layout.addWidget(QLabel("Mode"))
         settings_card.content_layout.addWidget(self.stt_mode_combo)
@@ -837,4 +911,3 @@ class SttWorkflowMixin:
         self.update_stt_model_status()
         self.update_stt_button_state()
         return page
-

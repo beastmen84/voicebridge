@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
+from voicebridge.i18n import translate_ui
 from voicebridge.voice_modeling import list_voice_modeling_exports, list_voice_modeling_job_configs
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
@@ -7,6 +8,13 @@ LOCAL_VOICES_TAB_PROFILES = 0
 LOCAL_VOICES_TAB_DATASETS = 1
 LOCAL_VOICES_TAB_SETUP = 2
 LOCAL_VOICES_TAB_TRAINING = 3
+
+
+def _ui_text(owner, key: str, **kwargs) -> str:
+    translator = getattr(owner, "ui_text", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    return translate_ui(key, **kwargs)
 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyMethodMayBeStatic
@@ -38,15 +46,15 @@ class LocalVoicesWorkflowMixin:
         self.local_voice_tabs.setTabEnabled(LOCAL_VOICES_TAB_TRAINING, training_enabled)
         self.local_voice_tabs.setTabToolTip(
             LOCAL_VOICES_TAB_DATASETS,
-            "" if datasets_enabled else "Create a Modeling dataset profile first.",
+            "" if datasets_enabled else _ui_text(self, "local_voices.tooltip.datasets_disabled"),
         )
         self.local_voice_tabs.setTabToolTip(
             LOCAL_VOICES_TAB_SETUP,
-            "" if setup_enabled else "Export a usable dataset first.",
+            "" if setup_enabled else _ui_text(self, "local_voices.tooltip.setup_disabled"),
         )
         self.local_voice_tabs.setTabToolTip(
             LOCAL_VOICES_TAB_TRAINING,
-            "" if training_enabled else "Save a training config from Setup first.",
+            "" if training_enabled else _ui_text(self, "local_voices.tooltip.training_disabled"),
         )
         if not self.local_voice_tabs.isTabEnabled(self.local_voice_tabs.currentIndex()):
             fallback_tab = LOCAL_VOICES_TAB_DATASETS if datasets_enabled else LOCAL_VOICES_TAB_PROFILES
@@ -63,19 +71,42 @@ class LocalVoicesWorkflowMixin:
         layout = QVBoxLayout(page)
         layout.setContentsMargins(28, 26, 28, 24)
         layout.setSpacing(16)
-        self.page_header(
+        self.local_voices_title_label, self.local_voices_subtitle_label, _badge_label = self.page_header(
             layout,
-            "Local Voices",
-            "Manage local voice profiles, collect modeling datasets and configure XTTS-v2 training.",
+            _ui_text(self, "local_voices.title"),
+            _ui_text(self, "local_voices.subtitle"),
         )
 
         self.local_voice_tabs = QTabWidget()
         self.local_voice_tabs.setObjectName("WorkspaceTabs")
-        self.local_voice_tabs.addTab(self.build_voice_profiles_page(include_header=False), "Profiles")
-        self.local_voice_tabs.addTab(self.build_modeling_datasets_page(include_header=False), "Datasets")
-        self.local_voice_tabs.addTab(self.build_voice_modeling_page(include_header=False), "Setup")
-        self.local_voice_tabs.addTab(self.build_voice_training_page(include_header=False), "Training")
+        self.local_voice_tabs.addTab(
+            self.build_voice_profiles_page(include_header=False),
+            _ui_text(self, "local_voices.tab.profiles"),
+        )
+        self.local_voice_tabs.addTab(
+            self.build_modeling_datasets_page(include_header=False),
+            _ui_text(self, "local_voices.tab.datasets"),
+        )
+        self.local_voice_tabs.addTab(
+            self.build_voice_modeling_page(include_header=False),
+            _ui_text(self, "local_voices.tab.setup"),
+        )
+        self.local_voice_tabs.addTab(
+            self.build_voice_training_page(include_header=False),
+            _ui_text(self, "local_voices.tab.training"),
+        )
         self.local_voice_tabs.currentChanged.connect(self.local_voice_tab_changed)
         layout.addWidget(self.local_voice_tabs, 1)
         self.update_local_voice_tabs()
         return page
+
+    def retranslate_local_voices_page(self) -> None:
+        if not hasattr(self, "local_voice_tabs"):
+            return
+        self.local_voices_title_label.setText(_ui_text(self, "local_voices.title"))
+        self.local_voices_subtitle_label.setText(_ui_text(self, "local_voices.subtitle"))
+        self.local_voice_tabs.setTabText(LOCAL_VOICES_TAB_PROFILES, _ui_text(self, "local_voices.tab.profiles"))
+        self.local_voice_tabs.setTabText(LOCAL_VOICES_TAB_DATASETS, _ui_text(self, "local_voices.tab.datasets"))
+        self.local_voice_tabs.setTabText(LOCAL_VOICES_TAB_SETUP, _ui_text(self, "local_voices.tab.setup"))
+        self.local_voice_tabs.setTabText(LOCAL_VOICES_TAB_TRAINING, _ui_text(self, "local_voices.tab.training"))
+        self.update_local_voice_tabs()

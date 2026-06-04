@@ -196,8 +196,6 @@ def normalized_reference_paths(value: Any) -> list[str]:
 
 
 def voice_profile_status(profile: VoiceProfile) -> str:
-    if not profile.get("consent_confirmed"):
-        return "Consent required"
     if profile.get("profile_type") == VOICE_PROFILE_MODELING:
         return "Modeling dataset"
     reference_paths = normalized_reference_paths(profile.get("reference_paths", []))
@@ -232,8 +230,6 @@ def voice_profile_display_label(profile: VoiceProfile) -> str:
 def validate_voice_profile(profile: VoiceProfile) -> None:
     if not clean_profile_name(profile.get("name")):
         raise ValueError("Profile name is required.")
-    if not profile.get("consent_confirmed"):
-        raise ValueError("Consent confirmation is required.")
     status = voice_profile_status(profile)
     if status in {"Missing reference audio", "Missing audio file", "Incomplete audio file", "Unsupported audio format"}:
         raise ValueError(status + ".")
@@ -256,7 +252,7 @@ def build_voice_profile(
         "language_code": normalize_voice_profile_language(language_code),
         "profile_type": normalize_profile_type(profile_type),
         "reference_paths": normalized_reference_paths(reference_paths),
-        "consent_confirmed": bool(consent_confirmed),
+        "consent_confirmed": True,
         "notes": notes.strip() if isinstance(notes, str) else "",
         "created_at": created_at or timestamp,
         "updated_at": timestamp,

@@ -43,6 +43,24 @@ from voicebridge.voice_modeling import (
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class VoiceModelingWorkflowMixin:
+    def voice_modeling_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def populate_voice_modeling_device_combo(self) -> None:
+        selected_device = self.voice_modeling_device_key() if self.voice_modeling_device_combo.count() else "auto"
+        self.voice_modeling_device_combo.blockSignals(True)
+        try:
+            self.voice_modeling_device_combo.clear()
+            for label in STT_DEVICE_LABELS:
+                self.voice_modeling_device_combo.addItem(self.voice_modeling_text(label), STT_DEVICE_BY_LABEL[label])
+            self.set_voice_modeling_device_key(selected_device)
+        finally:
+            self.voice_modeling_device_combo.blockSignals(False)
+
     def voice_modeling_device_key(self) -> str:
         device = self.voice_modeling_device_combo.currentData(Qt.ItemDataRole.UserRole)
         return device if isinstance(device, str) and device in STT_DEVICE_LABEL_BY_KEY else "auto"
@@ -75,13 +93,15 @@ class VoiceModelingWorkflowMixin:
                 if item is not None:
                     item.setEnabled(enabled)
                 if device == "auto":
-                    tooltip = "Uses CUDA when available; otherwise falls back to CPU."
+                    tooltip = self.voice_modeling_text("Uses CUDA when available; otherwise falls back to CPU.")
                 elif device == "cpu":
-                    tooltip = "Forces CPU training."
+                    tooltip = self.voice_modeling_text("Forces CPU training.")
                 elif enabled:
-                    tooltip = "Uses the detected CUDA GPU."
+                    tooltip = self.voice_modeling_text("Uses the detected CUDA GPU.")
                 else:
-                    tooltip = "CUDA is not available in the current ML runtime on this machine."
+                    tooltip = self.voice_modeling_text(
+                        "CUDA is not available in the current ML runtime on this machine."
+                    )
                 self.voice_modeling_device_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             self.set_voice_modeling_device_key(selected_device)
         finally:
@@ -103,16 +123,19 @@ class VoiceModelingWorkflowMixin:
         try:
             self.voice_modeling_export_combo.clear()
             if not exports:
-                self.voice_modeling_export_combo.addItem("No valid dataset exports found.", "")
+                self.voice_modeling_export_combo.addItem(
+                    self.voice_modeling_text("No valid dataset exports found."),
+                    "",
+                )
                 item = self.voice_modeling_export_combo.model().item(0)
                 if item is not None:
                     item.setEnabled(False)
                 self.voice_modeling_export_info = None
                 self.voice_modeling_dataset_info.setPlainText(
-                    "Export a Usable or Good dataset from Local Voices > Datasets first."
+                    self.voice_modeling_text("Export a Usable or Good dataset from Local Voices > Datasets first.")
                 )
                 self.voice_modeling_output_picker.set_text("")
-                self.voice_modeling_status.setText("No valid dataset export found.")
+                self.voice_modeling_status.setText(self.voice_modeling_text("No valid dataset export found."))
                 self.update_voice_modeling_buttons()
                 return
             selected_index = 0
@@ -136,7 +159,7 @@ class VoiceModelingWorkflowMixin:
 
     def select_voice_modeling_dataset_folder(self) -> None:
         initial = self.selected_voice_modeling_export_path() or str(modeling_dataset_exports_root())
-        path = QFileDialog.getExistingDirectory(self, "Select exported dataset", initial)
+        path = QFileDialog.getExistingDirectory(self, self.voice_modeling_text("Select exported dataset"), initial)
         if path:
             self.set_external_voice_modeling_export(path)
 
@@ -147,7 +170,7 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_export_info = None
             self.voice_modeling_dataset_info.setPlainText(str(exc))
             self.voice_modeling_output_picker.set_text("")
-            self.voice_modeling_status.setText("Dataset not ready.")
+            self.voice_modeling_status.setText(self.voice_modeling_text("Dataset not ready."))
             self.update_voice_modeling_buttons()
             return
         export_path = export_info["dataset_dir"]
@@ -173,9 +196,9 @@ class VoiceModelingWorkflowMixin:
         dataset_dir = self.selected_voice_modeling_export_path()
         if not dataset_dir:
             self.voice_modeling_export_info = None
-            self.voice_modeling_dataset_info.setPlainText("Select an exported dataset.")
+            self.voice_modeling_dataset_info.setPlainText(self.voice_modeling_text("Select an exported dataset."))
             self.voice_modeling_output_picker.set_text("")
-            self.voice_modeling_status.setText("No dataset selected.")
+            self.voice_modeling_status.setText(self.voice_modeling_text("No dataset selected."))
             self.update_voice_modeling_buttons()
             return None
         try:
@@ -184,7 +207,7 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_export_info = None
             self.voice_modeling_dataset_info.setPlainText(str(exc))
             self.voice_modeling_output_picker.set_text("")
-            self.voice_modeling_status.setText("Dataset not ready.")
+            self.voice_modeling_status.setText(self.voice_modeling_text("Dataset not ready."))
             self.update_voice_modeling_buttons()
             return None
         self.apply_voice_modeling_export(export_info)
@@ -197,16 +220,18 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_export_info = export_info
         self.voice_modeling_dataset_info.setPlainText(voice_modeling_export_summary_text(export_info))
         self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
-        self.voice_modeling_status.setText("Dataset export validated.")
+        self.voice_modeling_status.setText(self.voice_modeling_text("Dataset export validated."))
         self.update_voice_modeling_buttons()
         if getattr(self, "voice_modeling_auto_preflight_enabled", False):
             self.refresh_voice_modeling_preflight_async()
         elif hasattr(self, "voice_modeling_preflight_label"):
-            self.voice_modeling_preflight_label.setText("Preflight not run yet. Use Refresh preflight.")
+            self.voice_modeling_preflight_label.setText(
+                self.voice_modeling_text("Preflight not run yet. Use Refresh preflight.")
+            )
 
     def select_voice_modeling_output_folder(self) -> None:
         initial = self.voice_modeling_output_picker.text() or str(Path.home())
-        path = QFileDialog.getExistingDirectory(self, "Select model output folder", initial)
+        path = QFileDialog.getExistingDirectory(self, self.voice_modeling_text("Select model output folder"), initial)
         if path:
             self.voice_modeling_output_picker.set_text(path)
             self.update_voice_modeling_buttons()
@@ -215,7 +240,7 @@ class VoiceModelingWorkflowMixin:
     def select_voice_modeling_resume_checkpoint(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select resume checkpoint",
+            self.voice_modeling_text("Select resume checkpoint"),
             self.voice_modeling_resume_picker.text() or str(Path.home()),
             "Checkpoint files (*.pth *.pt *.ckpt);;All files (*.*)",
         )
@@ -232,7 +257,9 @@ class VoiceModelingWorkflowMixin:
         if getattr(self, "_voice_modeling_preflight_refreshing", False):
             return
         self.voice_modeling_preflight_ok = False
-        self.voice_modeling_preflight_label.setText("Preflight needs refresh after configuration changes.")
+        self.voice_modeling_preflight_label.setText(
+            self.voice_modeling_text("Preflight needs refresh after configuration changes.")
+        )
         self.voice_modeling_preflight_box.setObjectName("WarningBox")
         self.voice_modeling_preflight_box.style().unpolish(self.voice_modeling_preflight_box)
         self.voice_modeling_preflight_box.style().polish(self.voice_modeling_preflight_box)
@@ -250,7 +277,9 @@ class VoiceModelingWorkflowMixin:
         device = self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto"
         self._voice_modeling_preflight_refreshing = True
         self.voice_modeling_preflight_refresh_button.setEnabled(False)
-        self.voice_modeling_preflight_label.setText("Checking Voice Modeling prerequisites...")
+        self.voice_modeling_preflight_label.setText(
+            self.voice_modeling_text("Checking Voice Modeling prerequisites...")
+        )
         threading.Thread(
             target=self.refresh_voice_modeling_preflight_worker,
             args=(export_info, output_dir, resume_checkpoint, device),
@@ -301,8 +330,8 @@ class VoiceModelingWorkflowMixin:
 
     def confirm_xtts_dvae_download(self) -> bool:
         return self.ask_question(
-            "Download XTTS-v2 training assets",
-            (
+            self.voice_modeling_text("Download XTTS-v2 training assets"),
+            self.voice_modeling_text(
                 "XTTS-v2 DVAE is about 211 MB and mel_stats.pth is also needed for voice modeling/fine-tuning.\n\n"
                 "The file is distributed with XTTS-v2 under the Coqui Public Model License, "
                 "limited to non-commercial use.\n\n"
@@ -314,22 +343,26 @@ class VoiceModelingWorkflowMixin:
         if local_tts_dvae_ready() and local_tts_mel_stats_ready():
             self.update_voice_modeling_dvae_status()
             self.show_info(
-                "Voice Modeling",
-                (
+                self.voice_modeling_text("Voice Modeling"),
+                self.voice_modeling_text(
                     "XTTS-v2 training assets are already downloaded:\n"
-                    f"{local_tts_dvae_path()}\n{local_tts_mel_stats_path()}"
+                    "{dvae_path}\n{mel_stats_path}",
+                    dvae_path=local_tts_dvae_path(),
+                    mel_stats_path=local_tts_mel_stats_path(),
                 ),
             )
             return
         if not self.confirm_xtts_dvae_download():
-            self.voice_modeling_status.setText("Training assets download cancelled.")
+            self.voice_modeling_status.setText(self.voice_modeling_text("Training assets download cancelled."))
             return
         self.voice_modeling_dvae_download_running = True
         self.voice_modeling_dvae_progress.setRange(0, 100)
         self.voice_modeling_dvae_progress.setValue(0)
         self.voice_modeling_dvae_progress.setFormat("%p%")
         self.voice_modeling_dvae_progress.show()
-        self.voice_modeling_preflight_label.setText("Downloading XTTS-v2 training assets...")
+        self.voice_modeling_preflight_label.setText(
+            self.voice_modeling_text("Downloading XTTS-v2 training assets...")
+        )
         self.update_voice_modeling_dvae_status()
         threading.Thread(target=self.xtts_dvae_download_worker, daemon=True).start()
 
@@ -348,22 +381,28 @@ class VoiceModelingWorkflowMixin:
 
     def xtts_dvae_download_succeeded(self, path: str) -> None:
         self.voice_modeling_dvae_download_running = False
-        self.voice_modeling_status.setText("XTTS-v2 training assets ready.")
+        self.voice_modeling_status.setText(self.voice_modeling_text("XTTS-v2 training assets ready."))
         self.update_voice_modeling_dvae_status()
         self.refresh_home_diagnostics()
         self.refresh_voice_modeling_preflight_async()
-        self.show_info("Voice Modeling", f"XTTS-v2 training assets ready:\n{path}")
+        self.show_info(
+            self.voice_modeling_text("Voice Modeling"),
+            self.voice_modeling_text("XTTS-v2 training assets ready:\n{path}", path=path),
+        )
 
     def xtts_dvae_download_failed(self, message: str) -> None:
         self.voice_modeling_dvae_download_running = False
-        self.voice_modeling_status.setText("Training assets download failed.")
+        self.voice_modeling_status.setText(self.voice_modeling_text("Training assets download failed."))
         self.update_voice_modeling_dvae_status()
-        self.show_error("Voice Modeling", message)
+        self.show_error(self.voice_modeling_text("Voice Modeling"), message)
 
     def save_voice_modeling_config(self) -> None:
         export_info = self.voice_modeling_export_info or self.validate_voice_modeling_dataset()
         if not export_info:
-            self.show_error("Voice Modeling", "Select a valid exported dataset first.")
+            self.show_error(
+                self.voice_modeling_text("Voice Modeling"),
+                self.voice_modeling_text("Select a valid exported dataset first."),
+            )
             return
         try:
             config = build_voice_modeling_job_config(
@@ -376,14 +415,19 @@ class VoiceModelingWorkflowMixin:
             )
             config_path = save_voice_modeling_job_config(config)
         except (OSError, ValueError) as exc:
-            self.voice_modeling_status.setText("Error.")
-            self.show_error("Voice Modeling", str(exc))
+            self.voice_modeling_status.setText(self.voice_modeling_text("Error."))
+            self.show_error(self.voice_modeling_text("Voice Modeling"), str(exc))
             return
-        self.voice_modeling_status.setText(f"Training job configured: {config_path}")
+        self.voice_modeling_status.setText(
+            self.voice_modeling_text("Training job configured: {path}", path=config_path)
+        )
         if hasattr(self, "voice_training_job_combo"):
             self.refresh_voice_training_jobs(str(config_path))
         self.update_local_voice_tabs()
-        self.show_info("Voice Modeling", f"Training job config saved:\n{config_path}")
+        self.show_info(
+            self.voice_modeling_text("Voice Modeling"),
+            self.voice_modeling_text("Training job config saved:\n{path}", path=config_path),
+        )
         open_path(config_path.parent)
 
     def open_voice_modeling_output_folder(self) -> None:
@@ -456,8 +500,7 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_clear_resume_button = QPushButton("Clear checkpoint")
         self.voice_modeling_clear_resume_button.clicked.connect(self.clear_voice_modeling_resume_checkpoint)
         self.voice_modeling_device_combo = QComboBox()
-        for label in STT_DEVICE_LABELS:
-            self.voice_modeling_device_combo.addItem(label, STT_DEVICE_BY_LABEL[label])
+        self.populate_voice_modeling_device_combo()
         self.voice_modeling_device_combo.currentTextChanged.connect(lambda _text: self.voice_modeling_device_changed())
         self.voice_modeling_epochs_spin = QSpinBox()
         self.voice_modeling_epochs_spin.setRange(1, 500)

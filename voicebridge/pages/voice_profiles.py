@@ -3,7 +3,6 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -22,6 +21,7 @@ from voicebridge.audio_recorder import (
     AudioRecorderError,
     list_input_devices,
 )
+from voicebridge.i18n import translate_ui
 from voicebridge.languages import language_name
 from voicebridge.local_voice_deletion import (
     build_voice_profile_deletion_plan,
@@ -43,7 +43,6 @@ from voicebridge.voice_profiles import (
     VOICE_PROFILE_LANGUAGES,
     VOICE_PROFILE_MODELING,
     VOICE_PROFILE_REFERENCE,
-    VOICE_PROFILE_TYPES,
     VoiceProfile,
     build_voice_profile,
     load_voice_profiles,
@@ -53,9 +52,46 @@ from voicebridge.voice_profiles import (
 )
 
 
+def _ui_text(owner, key: str, **kwargs) -> str:
+    translator = getattr(owner, "ui_text", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    return translate_ui(key, **kwargs)
+
+
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 # noinspection PyMethodMayBeStatic,PyStringConversionWithoutDunderMethod
 class VoiceProfilesWorkflowMixin:
+    def voice_profile_status_text(self, status: str) -> str:
+        status_key = {
+            "Modeling dataset": "voice_profiles.status.modeling_dataset",
+            "Missing reference audio": "voice_profiles.status.missing_reference_audio",
+            "Missing audio file": "voice_profiles.status.missing_audio_file",
+            "Incomplete audio file": "voice_profiles.status.incomplete_audio_file",
+            "Unsupported audio format": "voice_profiles.status.unsupported_audio_format",
+            "Ready": "voice_profiles.status.ready",
+        }.get(status)
+        return _ui_text(self, status_key) if status_key else status
+
+    def populate_voice_profile_type_combo(self, selected_type: str | None = None) -> None:
+        if not hasattr(self, "profile_type_combo"):
+            return
+        selected_type = selected_type or self.voice_profile_type()
+        self.profile_type_combo.blockSignals(True)
+        try:
+            self.profile_type_combo.clear()
+            self.profile_type_combo.addItem(
+                _ui_text(self, "voice_profiles.type.reference"),
+                VOICE_PROFILE_REFERENCE,
+            )
+            self.profile_type_combo.addItem(
+                _ui_text(self, "voice_profiles.type.modeling"),
+                VOICE_PROFILE_MODELING,
+            )
+            self.set_voice_profile_type(selected_type)
+        finally:
+            self.profile_type_combo.blockSignals(False)
+
     def load_voice_profile_store(self) -> None:
         self.voice_profiles = load_voice_profiles()
         self.selected_voice_profile_id = ""
@@ -91,12 +127,15 @@ class VoiceProfilesWorkflowMixin:
             return
         self.voice_profiles_list.clear()
         if not self.voice_profiles:
-            self.voice_profiles_list.addItem("No voice profiles yet.")
+            self.voice_profiles_list.addItem(_ui_text(self, "voice_profiles.empty"))
             self.update_voice_profile_buttons()
             return
         for profile in sorted(self.voice_profiles, key=lambda profile_item: profile_item["name"].casefold()):
             status = voice_profile_status(profile)
-            label = f"{profile['name']} | {language_name(profile['language_code'])} | {status}"
+            label = (
+                f"{profile['name']} | {language_name(profile['language_code'])} | "
+                f"{self.voice_profile_status_text(status)}"
+            )
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, profile["id"])
             self.voice_profiles_list.addItem(item)
@@ -119,9 +158,8 @@ class VoiceProfilesWorkflowMixin:
         self.set_voice_profile_language_code(profile["language_code"])
         self.set_voice_profile_type(profile["profile_type"])
         self.profile_reference_picker.set_text(profile["reference_paths"][0] if profile["reference_paths"] else "")
-        self.profile_consent_check.setChecked(profile["consent_confirmed"])
         self.profile_notes_edit.setPlainText(profile["notes"])
-        self.profile_status_label.setText(voice_profile_status(profile))
+        self.profile_status_label.setText(self.voice_profile_status_text(voice_profile_status(profile)))
         self.update_voice_profile_buttons()
 
     def new_voice_profile(self) -> None:
@@ -133,24 +171,23 @@ class VoiceProfilesWorkflowMixin:
         self.set_voice_profile_language_code("it")
         self.set_voice_profile_type(VOICE_PROFILE_REFERENCE)
         self.profile_reference_picker.set_text("")
-        self.profile_consent_check.setChecked(False)
         self.profile_notes_edit.clear()
-        self.profile_status_label.setText("New profile.")
-        self.profile_record_status_label.setText("Record a guided 30s voice sample for the selected profile.")
+        self.profile_status_label.setText(_ui_text(self, "voice_profiles.status.new"))
+        self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.record_prompt"))
         self.update_voice_profile_buttons()
 
     def voice_profile_type_changed(self) -> None:
         if self.voice_profile_type() == VOICE_PROFILE_MODELING:
-            self.profile_record_status_label.setText("Use Local Voices > Datasets to collect clips for this voice.")
+            self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.modeling_prompt"))
         else:
-            self.profile_record_status_label.setText("Record a guided 30s voice sample for the selected profile.")
+            self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.record_prompt"))
         self.update_voice_profile_buttons()
 
     def select_voice_profile_reference(self) -> None:
         suffixes = " ".join(f"*{suffix}" for suffix in sorted(VOICE_PROFILE_AUDIO_SUFFIXES))
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select reference audio",
+            _ui_text(self, "voice_profiles.dialog.select_reference_audio"),
             self.profile_reference_picker.text() or str(Path.home()),
             f"Audio files ({suffixes});;All files (*.*)",
         )
@@ -177,7 +214,7 @@ class VoiceProfilesWorkflowMixin:
                 if device.index == current_device_index:
                     self.profile_microphone_combo.setCurrentIndex(self.profile_microphone_combo.count() - 1)
             if not devices:
-                self.profile_record_status_label.setText("No microphone input was detected by sounddevice.")
+                self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.no_microphone"))
         finally:
             self.profile_microphone_combo.blockSignals(False)
         self.update_voice_profile_buttons()
@@ -190,11 +227,17 @@ class VoiceProfilesWorkflowMixin:
         if self.voice_profile_is_recording():
             return
         if not self.profile_name_edit.text().strip():
-            self.show_error("Voice Profiles", "Enter a profile name before recording.")
+            self.show_error(
+                _ui_text(self, "voice_profiles.error.title"),
+                _ui_text(self, "voice_profiles.error.enter_name_before_recording"),
+            )
             return
         device = self.selected_voice_profile_audio_device()
         if device is None:
-            self.show_error("Voice Profiles", "No microphone input was detected.")
+            self.show_error(
+                _ui_text(self, "voice_profiles.error.title"),
+                _ui_text(self, "voice_profiles.error.no_microphone"),
+            )
             return
 
         dialog = VoiceProfileRecordingDialog(
@@ -204,7 +247,7 @@ class VoiceProfilesWorkflowMixin:
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.recording_path is None:
-            self.profile_record_status_label.setText("Recording cancelled.")
+            self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.recording_cancelled"))
             self.update_voice_profile_buttons()
             return
 
@@ -232,7 +275,7 @@ class VoiceProfilesWorkflowMixin:
             language_code=self.voice_profile_language_code(),
             profile_type=existing["profile_type"] if existing else self.voice_profile_type(),
             reference_paths=[self.profile_reference_picker.text()],
-            consent_confirmed=self.profile_consent_check.isChecked(),
+            consent_confirmed=True,
             notes=self.profile_notes_edit.toPlainText(),
             profile_id=existing["id"] if existing else None,
             created_at=existing["created_at"] if existing else None,
@@ -245,7 +288,7 @@ class VoiceProfilesWorkflowMixin:
             profile = self.collect_voice_profile_form()
         except ValueError as exc:
             self.profile_status_label.setText("Error.")
-            self.show_error("Voice Profiles", str(exc))
+            self.show_error(_ui_text(self, "voice_profiles.error.title"), str(exc))
             return
 
         updated = False
@@ -259,10 +302,13 @@ class VoiceProfilesWorkflowMixin:
         save_voice_profiles(self.voice_profiles)
         self.sync_modeling_datasets_with_profiles()
         self.selected_voice_profile_id = profile["id"]
-        self.profile_status_label.setText(voice_profile_status(profile))
+        translated_status = self.voice_profile_status_text(voice_profile_status(profile))
+        self.profile_status_label.setText(translated_status)
         self.refresh_voice_profiles_list()
         self.refresh_local_voice_profile_combo(profile["id"])
-        self.profile_status_label.setText(f"Saved: {profile['name']} | {voice_profile_status(profile)}")
+        self.profile_status_label.setText(
+            _ui_text(self, "voice_profiles.status.saved", name=profile["name"], status=translated_status)
+        )
         self.update_local_voice_tabs()
 
     def linked_modeling_datasets_for_voice_profile(self, profile: VoiceProfile) -> list[ModelingDataset]:
@@ -284,11 +330,11 @@ class VoiceProfilesWorkflowMixin:
             self.modeling_datasets = load_modeling_datasets()
         deletion_plan = build_voice_profile_deletion_plan(profile, self.modeling_datasets)
         if deletion_plan.has_linked_modeling_work and not self.ask_question(
-            "Delete voice profile and modeling work?",
+            _ui_text(self, "voice_profiles.dialog.delete_title"),
             voice_profile_deletion_confirmation_text(deletion_plan),
             default_yes=False,
         ):
-            self.profile_status_label.setText("Delete cancelled.")
+            self.profile_status_label.setText(_ui_text(self, "voice_profiles.status.delete_cancelled"))
             return
 
         deletion_result = delete_voice_profile_and_linked_modeling_assets(
@@ -348,23 +394,24 @@ class VoiceProfilesWorkflowMixin:
         if include_header:
             self.page_header(
                 layout,
-                "Voice Profiles",
-                "Manage local reference voices for future Local TTS generation.",
+                _ui_text(self, "voice_profiles.title"),
+                _ui_text(self, "voice_profiles.subtitle"),
             )
 
         grid = QGridLayout()
         grid.setSpacing(16)
         layout.addLayout(grid)
 
-        profiles_card = Card("Profiles")
+        profiles_card = Card(_ui_text(self, "voice_profiles.card.profiles"))
+        self.voice_profiles_card_title = profiles_card.title_label
         profiles_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.voice_profiles_list = QListWidget()
         self.voice_profiles_list.setMinimumHeight(360)
         self.voice_profiles_list.currentRowChanged.connect(lambda _row: self.voice_profile_selection_changed())
         profile_list_actions = QHBoxLayout()
         profile_list_actions.setContentsMargins(0, 0, 0, 0)
-        self.profile_new_button = QPushButton("New")
-        self.profile_delete_button = QPushButton("Delete")
+        self.profile_new_button = QPushButton(_ui_text(self, "voice_profiles.button.new"))
+        self.profile_delete_button = QPushButton(_ui_text(self, "voice_profiles.button.delete"))
         self.profile_new_button.clicked.connect(self.new_voice_profile)
         self.profile_delete_button.clicked.connect(self.delete_selected_voice_profile)
         profile_list_actions.addWidget(self.profile_new_button)
@@ -373,65 +420,67 @@ class VoiceProfilesWorkflowMixin:
         profiles_card.content_layout.addWidget(self.voice_profiles_list)
         profiles_card.content_layout.addLayout(profile_list_actions)
 
-        editor_card = Card("Profile editor")
+        editor_card = Card(_ui_text(self, "voice_profiles.card.editor"))
+        self.voice_profile_editor_card_title = editor_card.title_label
         editor_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.profile_name_edit = QLineEdit()
         self.profile_name_edit.setMinimumHeight(34)
         self.profile_type_combo = QComboBox()
-        for label, profile_type in VOICE_PROFILE_TYPES.items():
-            self.profile_type_combo.addItem(label, profile_type)
+        self.populate_voice_profile_type_combo(VOICE_PROFILE_REFERENCE)
         self.profile_type_combo.currentIndexChanged.connect(lambda _index: self.voice_profile_type_changed())
         self.profile_language_combo = QComboBox()
         for language_code in VOICE_PROFILE_LANGUAGES:
             self.profile_language_combo.addItem(language_name(language_code), language_code)
-        self.profile_reference_picker = FilePicker("Reference audio")
+        self.profile_reference_picker = FilePicker(_ui_text(self, "voice_profiles.file.reference_audio"))
         self.profile_reference_picker.button.clicked.connect(self.select_voice_profile_reference)
         self.profile_reference_picker.edit.textChanged.connect(lambda _text: self.update_voice_profile_buttons())
         self.profile_microphone_combo = QComboBox()
-        self.profile_record_button = QPushButton("Record")
-        self.profile_play_button = QPushButton("Play")
+        self.profile_record_button = QPushButton(_ui_text(self, "voice_profiles.button.record"))
+        self.profile_play_button = QPushButton(_ui_text(self, "voice_profiles.button.play"))
         self.profile_record_button.clicked.connect(self.start_voice_profile_recording)
         self.profile_play_button.clicked.connect(self.play_voice_profile_reference)
-        self.profile_record_status_label = QLabel("Record a guided 30s voice sample for the selected profile.")
+        self.profile_record_status_label = QLabel(_ui_text(self, "voice_profiles.status.record_prompt"))
         self.profile_record_status_label.setObjectName("Muted")
         self.profile_record_status_label.setWordWrap(True)
         self.profile_audio_output = QAudioOutput(self)
         self.profile_media_player = QMediaPlayer(self)
         self.profile_media_player.setAudioOutput(self.profile_audio_output)
-        self.profile_consent_check = QCheckBox("Voice owner consent confirmed")
         self.profile_notes_edit = QPlainTextEdit()
         self.profile_notes_edit.setMinimumHeight(90)
-        self.profile_notes_edit.setPlaceholderText("Notes")
-        self.profile_status_label = QLabel("New profile.")
+        self.profile_notes_edit.setPlaceholderText(_ui_text(self, "voice_profiles.notes.placeholder"))
+        self.profile_status_label = QLabel(_ui_text(self, "voice_profiles.status.new"))
         self.profile_status_label.setObjectName("StatusText")
 
-        editor_card.content_layout.addWidget(QLabel("Name"))
+        self.profile_name_label = QLabel(_ui_text(self, "voice_profiles.label.name"))
+        editor_card.content_layout.addWidget(self.profile_name_label)
         editor_card.content_layout.addWidget(self.profile_name_edit)
         editor_row = QHBoxLayout()
         editor_row.setContentsMargins(0, 0, 0, 0)
-        editor_row.addWidget(QLabel("Type"))
+        self.profile_type_label = QLabel(_ui_text(self, "voice_profiles.label.type"))
+        editor_row.addWidget(self.profile_type_label)
         editor_row.addWidget(self.profile_type_combo)
-        editor_row.addWidget(QLabel("Language"))
+        self.profile_language_label = QLabel(_ui_text(self, "voice_profiles.label.language"))
+        editor_row.addWidget(self.profile_language_label)
         editor_row.addWidget(self.profile_language_combo, 1)
         editor_card.content_layout.addLayout(editor_row)
         editor_card.content_layout.addWidget(self.profile_reference_picker)
         recorder_row = QHBoxLayout()
         recorder_row.setContentsMargins(0, 0, 0, 0)
-        recorder_row.addWidget(QLabel("Microphone"))
+        self.profile_microphone_label = QLabel(_ui_text(self, "voice_profiles.label.microphone"))
+        recorder_row.addWidget(self.profile_microphone_label)
         recorder_row.addWidget(self.profile_microphone_combo, 1)
         recorder_row.addWidget(self.profile_record_button)
         recorder_row.addWidget(self.profile_play_button)
         editor_card.content_layout.addLayout(recorder_row)
         editor_card.content_layout.addWidget(self.profile_record_status_label)
-        editor_card.content_layout.addWidget(self.profile_consent_check)
         editor_card.content_layout.addWidget(self.profile_notes_edit)
 
         editor_actions = QHBoxLayout()
         editor_actions.setContentsMargins(0, 0, 0, 0)
-        self.profile_save_button = QPushButton("Save profile")
+        self.profile_save_button = QPushButton(_ui_text(self, "voice_profiles.button.save"))
         self.profile_save_button.setObjectName("PrimaryButton")
-        self.profile_open_reference_button = QPushButton("Open audio")
-        self.profile_open_folder_button = QPushButton("Open folder")
+        self.profile_open_reference_button = QPushButton(_ui_text(self, "voice_profiles.button.open_audio"))
+        self.profile_open_folder_button = QPushButton(_ui_text(self, "voice_profiles.button.open_folder"))
         self.profile_save_button.clicked.connect(self.save_voice_profile_from_form)
         self.profile_open_reference_button.clicked.connect(self.open_voice_profile_reference)
         self.profile_open_folder_button.clicked.connect(self.open_voice_profile_reference_folder)
@@ -452,3 +501,32 @@ class VoiceProfilesWorkflowMixin:
         self.refresh_voice_profiles_list()
         self.refresh_voice_profile_microphones()
         return page
+
+    def retranslate_voice_profiles_page(self) -> None:
+        if not hasattr(self, "voice_profiles_list"):
+            return
+        if getattr(self, "voice_profiles_card_title", None) is not None:
+            self.voice_profiles_card_title.setText(_ui_text(self, "voice_profiles.card.profiles"))
+        if getattr(self, "voice_profile_editor_card_title", None) is not None:
+            self.voice_profile_editor_card_title.setText(_ui_text(self, "voice_profiles.card.editor"))
+        self.profile_new_button.setText(_ui_text(self, "voice_profiles.button.new"))
+        self.profile_delete_button.setText(_ui_text(self, "voice_profiles.button.delete"))
+        self.profile_record_button.setText(_ui_text(self, "voice_profiles.button.record"))
+        self.profile_play_button.setText(_ui_text(self, "voice_profiles.button.play"))
+        self.profile_save_button.setText(_ui_text(self, "voice_profiles.button.save"))
+        self.profile_open_reference_button.setText(_ui_text(self, "voice_profiles.button.open_audio"))
+        self.profile_open_folder_button.setText(_ui_text(self, "voice_profiles.button.open_folder"))
+        self.profile_name_label.setText(_ui_text(self, "voice_profiles.label.name"))
+        self.profile_type_label.setText(_ui_text(self, "voice_profiles.label.type"))
+        self.profile_language_label.setText(_ui_text(self, "voice_profiles.label.language"))
+        self.profile_microphone_label.setText(_ui_text(self, "voice_profiles.label.microphone"))
+        self.profile_reference_picker.label.setText(_ui_text(self, "voice_profiles.file.reference_audio"))
+        self.profile_notes_edit.setPlaceholderText(_ui_text(self, "voice_profiles.notes.placeholder"))
+        self.populate_voice_profile_type_combo()
+        selected_profile = self.selected_voice_profile()
+        if selected_profile:
+            self.profile_status_label.setText(self.voice_profile_status_text(voice_profile_status(selected_profile)))
+        else:
+            self.profile_status_label.setText(_ui_text(self, "voice_profiles.status.new"))
+        self.voice_profile_type_changed()
+        self.refresh_voice_profiles_list()

@@ -6,6 +6,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -54,6 +55,7 @@ from voicebridge.constants import (
     VIDEO_SUBTITLE_POSITION_LABELS,
     VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
 )
+from voicebridge.i18n import UI_LANGUAGES, normalize_ui_language, translate_static_ui_text, translate_ui
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.media_tools import (
     BlackFrame,
@@ -95,6 +97,9 @@ class VoiceBridgeQt(
     PageBuilderMixin,
     QMainWindow,
 ):
+    I18N_SOURCE_TEXT_PROPERTY = "voicebridge_i18n_source_text"
+    I18N_SOURCE_PLACEHOLDER_PROPERTY = "voicebridge_i18n_source_placeholder"
+    I18N_SOURCE_TOOLTIP_PROPERTY = "voicebridge_i18n_source_tooltip"
     stack: QStackedWidget
     nav_home: QPushButton
     nav_tts: QPushButton
@@ -103,6 +108,13 @@ class VoiceBridgeQt(
     nav_video: QPushButton
     nav_audio_cleanup: QPushButton
     nav_cleanup: QPushButton
+    app_subtitle_label: QLabel
+    main_tools_label: QLabel
+    advanced_tools_label: QLabel
+    support_tools_label: QLabel
+    ui_language_label: QLabel
+    ui_language_combo: QComboBox
+    status_section_label: QLabel
     local_voice_tabs: QTabWidget
     status_tiles: dict[str, QLabel]
     job_history_list: QListWidget
@@ -165,7 +177,6 @@ class VoiceBridgeQt(
     profile_record_button: QPushButton
     profile_play_button: QPushButton
     profile_record_status_label: QLabel
-    profile_consent_check: QCheckBox
     profile_notes_edit: QPlainTextEdit
     profile_status_label: QLabel
     profile_save_button: QPushButton
@@ -411,6 +422,7 @@ class VoiceBridgeQt(
         super().__init__()
         cleanup_app_config_on_startup()
         self.app_settings = load_app_settings()
+        self.ui_language = normalize_ui_language(self.app_settings.get("ui_language"))
         self.is_restoring_settings = True
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(1100, 680)
@@ -539,6 +551,100 @@ class VoiceBridgeQt(
         chevron_icon = resource_path(Path("images") / "chevron_down.svg").as_posix()
         apply_app_style(self, check_icon, chevron_icon)
 
+    def ui_text(self, key: str, **kwargs: Any) -> str:
+        return translate_ui(key, self.ui_language, **kwargs)
+
+    def static_ui_text(self, text: str) -> str:
+        return translate_static_ui_text(text, self.ui_language)
+
+    def format_static_ui_text(self, text: str, **kwargs: Any) -> str:
+        return self.static_ui_text(text).format(**kwargs)
+
+    def translated_widget_text(self, widget: QWidget, current_text: str, property_name: str) -> str:
+        source_text = widget.property(property_name)
+        if not isinstance(source_text, str) or current_text not in {
+            source_text,
+            translate_static_ui_text(source_text, "it"),
+        }:
+            source_text = current_text
+            widget.setProperty(property_name, source_text)
+        return self.static_ui_text(source_text)
+
+    def translate_widget_tooltip(self, widget: QWidget) -> None:
+        tooltip = widget.toolTip()
+        if not tooltip:
+            return
+        widget.setToolTip(self.translated_widget_text(widget, tooltip, self.I18N_SOURCE_TOOLTIP_PROPERTY))
+
+    def apply_static_ui_translations(self) -> None:
+        if not hasattr(self, "stack"):
+            return
+        for widget in self.findChildren(QWidget):
+            if isinstance(widget, QAbstractButton):
+                text = widget.text()
+                if text:
+                    widget.setText(self.translated_widget_text(widget, text, self.I18N_SOURCE_TEXT_PROPERTY))
+                self.translate_widget_tooltip(widget)
+            elif isinstance(widget, QLabel):
+                text = widget.text()
+                if text and widget.objectName() != "StatusTile":
+                    widget.setText(self.translated_widget_text(widget, text, self.I18N_SOURCE_TEXT_PROPERTY))
+                self.translate_widget_tooltip(widget)
+            elif isinstance(widget, QLineEdit | QPlainTextEdit):
+                placeholder = widget.placeholderText()
+                if placeholder:
+                    widget.setPlaceholderText(
+                        self.translated_widget_text(
+                            widget,
+                            placeholder,
+                            self.I18N_SOURCE_PLACEHOLDER_PROPERTY,
+                        )
+                    )
+                self.translate_widget_tooltip(widget)
+
+    def populate_ui_language_combo(self) -> None:
+        self.ui_language_combo.blockSignals(True)
+        try:
+            self.ui_language_combo.clear()
+            for language_code, label in UI_LANGUAGES.items():
+                self.ui_language_combo.addItem(label, language_code)
+                if language_code == self.ui_language:
+                    self.ui_language_combo.setCurrentIndex(self.ui_language_combo.count() - 1)
+        finally:
+            self.ui_language_combo.blockSignals(False)
+
+    def ui_language_changed(self) -> None:
+        language_code = self.ui_language_combo.currentData(Qt.ItemDataRole.UserRole)
+        self.ui_language = normalize_ui_language(language_code)
+        self.retranslate_ui()
+        self.save_user_settings()
+
+    def retranslate_ui(self) -> None:
+        if not hasattr(self, "nav_home"):
+            return
+        self.apply_static_ui_translations()
+        self.app_subtitle_label.setText(self.ui_text("app.subtitle"))
+        self.nav_home.setText(self.ui_text("nav.dashboard"))
+        self.nav_tts.setText(self.ui_text("nav.tts"))
+        self.nav_local_voices.setText(self.ui_text("nav.local_voices"))
+        self.nav_stt.setText(self.ui_text("nav.transcription"))
+        self.nav_video.setText(self.ui_text("nav.subtitles"))
+        self.nav_audio_cleanup.setText(self.ui_text("nav.audio_cleanup"))
+        self.nav_cleanup.setText(self.ui_text("nav.video_cleanup"))
+        self.main_tools_label.setText(self.ui_text("sidebar.main_tools"))
+        self.advanced_tools_label.setText(self.ui_text("sidebar.advanced_tools"))
+        self.support_tools_label.setText(self.ui_text("sidebar.support_tools"))
+        self.ui_language_label.setText(self.ui_text("sidebar.ui_language"))
+        self.ui_language_combo.setToolTip(self.ui_text("sidebar.ui_language.tooltip"))
+        self.status_section_label.setText(self.ui_text("sidebar.status"))
+        self.retranslate_local_voices_page()
+        self.retranslate_voice_profiles_page()
+        self.retranslate_subtitles_page()
+        self.retranslate_stt_page()
+        self.retranslate_tts_page()
+        self.retranslate_audio_cleanup_page()
+        self.retranslate_video_cleanup_page()
+
     def build_ui(self):
         root = QWidget()
         root_layout = QHBoxLayout(root)
@@ -555,46 +661,55 @@ class VoiceBridgeQt(
 
         title = QLabel(APP_NAME)
         title.setObjectName("AppTitle")
-        subtitle = QLabel("Voice and subtitle tools")
-        subtitle.setObjectName("AppSubtitle")
+        self.app_subtitle_label = QLabel(self.ui_text("app.subtitle"))
+        self.app_subtitle_label.setObjectName("AppSubtitle")
         side_layout.addWidget(title)
-        side_layout.addWidget(subtitle)
+        side_layout.addWidget(self.app_subtitle_label)
         side_layout.addSpacing(18)
 
-        self.nav_home = self.nav_button("Dashboard", lambda: self.show_page(0))
-        self.nav_tts = self.nav_button("Text to Speech", lambda: self.show_page(1))
-        self.nav_local_voices = self.nav_button("Local Voices", lambda: self.show_page(2))
-        self.nav_stt = self.nav_button("Transcription", lambda: self.show_page(3))
-        self.nav_video = self.nav_button("Subtitles", lambda: self.show_page(4))
-        self.nav_audio_cleanup = self.nav_button("Audio Cleanup", lambda: self.show_page(5))
-        self.nav_cleanup = self.nav_button("Video Cleanup", lambda: self.show_page(6))
+        self.nav_home = self.nav_button(self.ui_text("nav.dashboard"), lambda: self.show_page(0))
+        self.nav_tts = self.nav_button(self.ui_text("nav.tts"), lambda: self.show_page(1))
+        self.nav_local_voices = self.nav_button(self.ui_text("nav.local_voices"), lambda: self.show_page(2))
+        self.nav_stt = self.nav_button(self.ui_text("nav.transcription"), lambda: self.show_page(3))
+        self.nav_video = self.nav_button(self.ui_text("nav.subtitles"), lambda: self.show_page(4))
+        self.nav_audio_cleanup = self.nav_button(self.ui_text("nav.audio_cleanup"), lambda: self.show_page(5))
+        self.nav_cleanup = self.nav_button(self.ui_text("nav.video_cleanup"), lambda: self.show_page(6))
         side_layout.addWidget(self.nav_home)
 
-        main_tools_label = QLabel("MAIN TOOLS")
-        main_tools_label.setObjectName("SidebarSection")
+        self.main_tools_label = QLabel(self.ui_text("sidebar.main_tools"))
+        self.main_tools_label.setObjectName("SidebarSection")
         side_layout.addSpacing(8)
-        side_layout.addWidget(main_tools_label)
+        side_layout.addWidget(self.main_tools_label)
         side_layout.addWidget(self.nav_tts)
         side_layout.addWidget(self.nav_stt)
 
-        advanced_tools_label = QLabel("ADVANCED TOOLS")
-        advanced_tools_label.setObjectName("SidebarSection")
+        self.advanced_tools_label = QLabel(self.ui_text("sidebar.advanced_tools"))
+        self.advanced_tools_label.setObjectName("SidebarSection")
         side_layout.addSpacing(8)
-        side_layout.addWidget(advanced_tools_label)
+        side_layout.addWidget(self.advanced_tools_label)
         side_layout.addWidget(self.nav_local_voices)
 
-        support_tools_label = QLabel("SUPPORT TOOLS")
-        support_tools_label.setObjectName("SidebarSection")
+        self.support_tools_label = QLabel(self.ui_text("sidebar.support_tools"))
+        self.support_tools_label.setObjectName("SidebarSection")
         side_layout.addSpacing(8)
-        side_layout.addWidget(support_tools_label)
+        side_layout.addWidget(self.support_tools_label)
         side_layout.addWidget(self.nav_video)
         side_layout.addWidget(self.nav_audio_cleanup)
         side_layout.addWidget(self.nav_cleanup)
         side_layout.addStretch(1)
 
-        status_label = QLabel("STATUS")
-        status_label.setObjectName("SidebarSection")
-        side_layout.addWidget(status_label)
+        self.ui_language_label = QLabel(self.ui_text("sidebar.ui_language"))
+        self.ui_language_label.setObjectName("SidebarSection")
+        self.ui_language_combo = QComboBox()
+        self.ui_language_combo.setToolTip(self.ui_text("sidebar.ui_language.tooltip"))
+        self.populate_ui_language_combo()
+        self.ui_language_combo.currentIndexChanged.connect(lambda _index: self.ui_language_changed())
+        side_layout.addWidget(self.ui_language_label)
+        side_layout.addWidget(self.ui_language_combo)
+
+        self.status_section_label = QLabel(self.ui_text("sidebar.status"))
+        self.status_section_label.setObjectName("SidebarSection")
+        side_layout.addWidget(self.status_section_label)
 
         status_panel = QWidget()
         status_panel.setObjectName("SidebarStatus")
@@ -627,6 +742,7 @@ class VoiceBridgeQt(
         root_layout.addWidget(sidebar)
         root_layout.addWidget(self.stack, 1)
         self.restore_user_settings()
+        self.retranslate_ui()
         self.show_page(0)
         self.refresh_home_diagnostics()
 
@@ -635,6 +751,23 @@ class VoiceBridgeQt(
         if not isinstance(value, str) or not value:
             return
         if allowed_values is not None and value not in allowed_values:
+            return
+        combo.setCurrentText(value)
+
+    @staticmethod
+    def combo_current_data(combo: QComboBox) -> str:
+        value = combo.currentData(Qt.ItemDataRole.UserRole)
+        return value if isinstance(value, str) and value else combo.currentText()
+
+    @staticmethod
+    def set_combo_data(combo: QComboBox, value: Any, allowed_values: list[str] | None = None) -> None:
+        if not isinstance(value, str) or not value:
+            return
+        if allowed_values is not None and value not in allowed_values:
+            return
+        index = combo.findData(value, Qt.ItemDataRole.UserRole)
+        if index >= 0:
+            combo.setCurrentIndex(index)
             return
         combo.setCurrentText(value)
 
@@ -675,7 +808,7 @@ class VoiceBridgeQt(
             self.set_tts_local_preset_key(tts_settings.get("local_preset"))
             self.saved_tts_voice_profile_id = self.setting_str(tts_settings.get("voice_profile_id"))
             self.refresh_local_voice_profile_combo(self.saved_tts_voice_profile_id)
-            self.set_combo_text(
+            self.set_combo_data(
                 self.tts_split_combo,
                 tts_settings.get("split_mode"),
                 [TTS_SPLIT_PARAGRAPHS, TTS_SPLIT_LINES],
@@ -684,15 +817,15 @@ class VoiceBridgeQt(
             self.set_tts_mode(tab_index)
 
             stt_settings = self.setting_section("stt")
-            self.set_combo_text(self.stt_mode_combo, stt_settings.get("mode_label"), list(STT_MODE_LABELS))
+            self.set_combo_data(self.stt_mode_combo, stt_settings.get("mode_label"), list(STT_MODE_LABELS))
             self.restore_stt_language_selection(stt_settings)
             self.preferred_stt_device_key = self.setting_str(stt_settings.get("device"), "auto")
             self.set_stt_device_key(self.preferred_stt_device_key)
 
             video_settings = self.setting_section("video_subtitles")
             self.set_video_subtitle_mode(video_settings.get("mode_label"))
-            self.set_combo_text(self.video_quality_combo, video_settings.get("quality_label"), BURN_QUALITY_LABELS)
-            self.set_combo_text(
+            self.set_combo_data(self.video_quality_combo, video_settings.get("quality_label"), BURN_QUALITY_LABELS)
+            self.set_combo_data(
                 self.video_position_combo,
                 video_settings.get("position_label"),
                 list(VIDEO_SUBTITLE_POSITION_LABELS),
@@ -701,25 +834,25 @@ class VoiceBridgeQt(
             self.video_outline_spin.setValue(self.safe_int(video_settings.get("outline"), 2, 0, 8))
             self.video_shadow_spin.setValue(self.safe_int(video_settings.get("shadow"), 0, 0, 4))
             self.video_margin_spin.setValue(self.safe_int(video_settings.get("margin_v"), 36, 0, 160))
-            self.set_combo_text(
+            self.set_combo_data(
                 self.video_text_color_combo,
                 video_settings.get("text_color_label"),
                 VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
             )
-            self.set_combo_text(
+            self.set_combo_data(
                 self.video_outline_color_combo,
                 video_settings.get("outline_color_label"),
                 VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS,
             )
             self.video_background_box_check.setChecked(bool(video_settings.get("background_box", False)))
-            self.set_combo_text(
+            self.set_combo_data(
                 self.video_box_color_combo,
                 video_settings.get("box_color_label"),
                 VIDEO_SUBTITLE_BOX_COLOR_LABELS,
             )
 
             cleanup_settings = self.setting_section("video_cleanup")
-            self.set_combo_text(
+            self.set_combo_data(
                 self.cleanup_quality_combo,
                 cleanup_settings.get("quality_label"),
                 VIDEO_CLEANUP_QUALITY_LABELS,
@@ -731,10 +864,10 @@ class VoiceBridgeQt(
         self.stt_mode_changed()
         self.video_subtitle_mode_changed()
         self.update_video_subtitle_style_options()
-        self.update_video_quality_description(self.video_quality_combo.currentText())
+        self.update_video_quality_description()
         self.refresh_audio_cleanup_input_info()
         self.cleanup_media_changed()
-        self.update_cleanup_quality_description(self.cleanup_quality_combo.currentText())
+        self.update_cleanup_quality_description()
         self.refresh_job_history()
 
     def save_user_settings(self) -> None:
@@ -742,6 +875,7 @@ class VoiceBridgeQt(
             return
 
         settings = dict(self.app_settings)
+        settings["ui_language"] = self.ui_language
         settings["preferred_voice_short_names"] = sorted(self.preferred_voice_short_names)
         settings["job_history"] = list(self.job_history[:30])
         settings["downloaded_alignment_languages"] = sorted(self.downloaded_alignment_languages)
@@ -765,12 +899,12 @@ class VoiceBridgeQt(
                 "local_preset": self.tts_local_preset_key(),
                 "rate": self.rate_combo.currentText(),
                 "tab_index": self.tts_mode_index(),
-                "split_mode": self.tts_split_combo.currentText(),
+                "split_mode": self.combo_current_data(self.tts_split_combo),
             }
 
         if hasattr(self, "stt_mode_combo"):
             settings["stt"] = {
-                "mode_label": self.stt_mode_combo.currentText(),
+                "mode_label": self.combo_current_data(self.stt_mode_combo),
                 "language_label": self.stt_language_combo.currentText(),
                 "language_code": self.stt_language_key(),
                 "device": self.stt_device_key(),
@@ -779,21 +913,21 @@ class VoiceBridgeQt(
         if hasattr(self, "video_embed_mode_button"):
             settings["video_subtitles"] = {
                 "mode_label": self.video_subtitle_mode_label(),
-                "quality_label": self.video_quality_combo.currentText(),
+                "quality_label": self.combo_current_data(self.video_quality_combo),
                 "font_size": self.video_font_size_spin.value(),
                 "outline": self.video_outline_spin.value(),
                 "shadow": self.video_shadow_spin.value(),
                 "margin_v": self.video_margin_spin.value(),
-                "position_label": self.video_position_combo.currentText(),
-                "text_color_label": self.video_text_color_combo.currentText(),
-                "outline_color_label": self.video_outline_color_combo.currentText(),
+                "position_label": self.combo_current_data(self.video_position_combo),
+                "text_color_label": self.combo_current_data(self.video_text_color_combo),
+                "outline_color_label": self.combo_current_data(self.video_outline_color_combo),
                 "background_box": self.video_background_box_check.isChecked(),
-                "box_color_label": self.video_box_color_combo.currentText(),
+                "box_color_label": self.combo_current_data(self.video_box_color_combo),
             }
 
         if hasattr(self, "cleanup_quality_combo"):
             settings["video_cleanup"] = {
-                "quality_label": self.cleanup_quality_combo.currentText(),
+                "quality_label": self.combo_current_data(self.cleanup_quality_combo),
             }
 
         self.app_settings = settings
@@ -919,13 +1053,12 @@ class VoiceBridgeQt(
         )
         return [button for button in order if buttons & button]
 
-    @staticmethod
-    def message_box_button_text(button):
+    def message_box_button_text(self, button):
         if button == QMessageBox.StandardButton.Yes:
-            return "Yes"
+            return self.static_ui_text("Yes")
         if button == QMessageBox.StandardButton.No:
-            return "No"
-        return "OK"
+            return self.static_ui_text("No")
+        return self.static_ui_text("OK")
 
     @staticmethod
     def message_box_standard_icon(icon):
@@ -948,8 +1081,12 @@ class VoiceBridgeQt(
 
     def stt_language_label(self, language_code):
         if language_code == "auto":
-            return STT_LANGUAGE_AUTO_LABEL
-        suffix = "offline ready" if self.stt_alignment_language_ready(language_code) else "download for SRT"
+            return self.static_ui_text(STT_LANGUAGE_AUTO_LABEL)
+        suffix = (
+            self.static_ui_text("offline ready")
+            if self.stt_alignment_language_ready(language_code)
+            else self.static_ui_text("download for SRT")
+        )
         return f"{LANGUAGE_NAMES[language_code]} ({suffix})"
 
     def set_stt_language_code(self, language_code):
@@ -967,13 +1104,15 @@ class VoiceBridgeQt(
             index = self.stt_language_combo.count() - 1
             self.stt_language_combo.setItemData(index, code, Qt.ItemDataRole.UserRole)
             if code == "auto":
-                tooltip = "Detects the spoken language automatically."
+                tooltip = self.static_ui_text("Detects the spoken language automatically.")
             elif code in STT_ALIGNMENT_READY_LANGUAGES and stt_alignment_model_ready(code):
-                tooltip = "Included in the offline package for SRT alignment."
+                tooltip = self.static_ui_text("Included in the offline package for SRT alignment.")
             elif code in self.downloaded_alignment_languages:
-                tooltip = "Downloaded on this computer and available offline for SRT alignment."
+                tooltip = self.static_ui_text("Downloaded on this computer and available offline for SRT alignment.")
             else:
-                tooltip = "Markdown transcripts work offline; SRT alignment downloads this language on request."
+                tooltip = self.static_ui_text(
+                    "Markdown transcripts work offline; SRT alignment downloads this language on request."
+                )
             self.stt_language_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
         self.set_stt_language_code(selected_code if selected_code in STT_LANGUAGE_CODES else "auto")
 

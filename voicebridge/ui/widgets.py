@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QPushButto
 class Card(QFrame):
     def __init__(self, title=None, parent=None):
         super().__init__(parent)
+        self.title_label: QLabel | None = None
         self.setObjectName("Card")
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.content_layout: QVBoxLayout = QVBoxLayout(self)
@@ -13,6 +14,7 @@ class Card(QFrame):
             label = QLabel(title)
             label.setObjectName("CardTitle")
             self.content_layout.addWidget(label)
+            self.title_label = label
 
 
 class FilePicker(QWidget):

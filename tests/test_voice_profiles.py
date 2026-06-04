@@ -129,7 +129,7 @@ def test_reference_profile_ready_status(tmp_path: Path) -> None:
     validate_voice_profile(profile)
 
 
-def test_profile_validation_rejects_missing_consent(tmp_path: Path) -> None:
+def test_profile_validation_treats_missing_consent_as_legacy_non_blocking(tmp_path: Path) -> None:
     reference = tmp_path / "voice.wav"
     write_audio_marker(reference)
     profile = build_voice_profile(
@@ -140,9 +140,9 @@ def test_profile_validation_rejects_missing_consent(tmp_path: Path) -> None:
         consent_confirmed=False,
     )
 
-    assert voice_profile_status(profile) == "Consent required"
-    with pytest.raises(ValueError, match="Consent"):
-        validate_voice_profile(profile)
+    assert profile["consent_confirmed"] is True
+    assert voice_profile_status(profile) == "Ready"
+    validate_voice_profile(profile)
 
 
 def test_modeling_profile_status(tmp_path: Path) -> None:

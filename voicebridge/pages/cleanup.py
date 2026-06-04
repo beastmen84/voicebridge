@@ -158,12 +158,52 @@ class ClearableFilmstripListWidget(QListWidget):
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class VideoCleanupWorkflowMixin:
+    def video_cleanup_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def video_cleanup_quality_label(self) -> str:
+        return self.combo_current_data(self.cleanup_quality_combo)
+
+    def video_cleanup_conflict_message(self, conflicts: dict[int, set[str]]) -> str:
+        frames = ", ".join(f"#{frame_number}" for frame_number in sorted(conflicts)[:8])
+        suffix = f", +{len(conflicts) - 8} more" if len(conflicts) > 8 else ""
+        return self.video_cleanup_text(
+            "Frame(s) {frames}{suffix} have more than one queued cleanup action.",
+            frames=frames,
+            suffix=suffix,
+        )
+
+    def populate_video_cleanup_quality_combo(self) -> None:
+        selected_quality = (
+            self.video_cleanup_quality_label()
+            if hasattr(self, "cleanup_quality_combo") and self.cleanup_quality_combo.count()
+            else BURN_QUALITY_AUTO_LABEL
+        )
+        self.cleanup_quality_combo.blockSignals(True)
+        try:
+            self.cleanup_quality_combo.clear()
+            for quality_label in VIDEO_CLEANUP_QUALITY_LABELS:
+                self.cleanup_quality_combo.addItem(self.video_cleanup_text(quality_label), quality_label)
+            self.set_combo_data(self.cleanup_quality_combo, selected_quality, VIDEO_CLEANUP_QUALITY_LABELS)
+        finally:
+            self.cleanup_quality_combo.blockSignals(False)
+
+    def retranslate_video_cleanup_page(self) -> None:
+        if not hasattr(self, "cleanup_quality_combo"):
+            return
+        self.populate_video_cleanup_quality_combo()
+        self.update_cleanup_quality_description()
+
     def cleanup_media_changed(self):
         self.update_cleanup_output(force=False)
         media_path = self.cleanup_media_picker.text()
         if self.cleanup_detected_media_path and media_path != self.cleanup_detected_media_path:
             self.cleanup_last_output_path = ""
-            self.clear_cleanup_detection_results("Ready.")
+            self.clear_cleanup_detection_results(self.video_cleanup_text("Ready."))
             self.reset_video_cleanup_changes()
         if media_path and Path(media_path).is_file() and media_path != self.cleanup_detected_media_path:
             self.start_video_cleanup_review_load(media_path)
@@ -190,7 +230,7 @@ class VideoCleanupWorkflowMixin:
         if hasattr(self, "cleanup_filmstrip_list"):
             self.cleanup_filmstrip_list.clear()
         if hasattr(self, "cleanup_filmstrip_status"):
-            self.cleanup_filmstrip_status.setText("Select a video file to load frame review.")
+            self.cleanup_filmstrip_status.setText(self.video_cleanup_text("Select a video file to load frame review."))
         if hasattr(self, "cleanup_filmstrip_scroll"):
             self.cleanup_filmstrip_scroll.setEnabled(False)
             self.cleanup_filmstrip_scroll.setValue(0)
@@ -204,21 +244,21 @@ class VideoCleanupWorkflowMixin:
         if not hasattr(self, "cleanup_results"):
             return
         self.cleanup_results.clear()
-        self.cleanup_results.addItem(VIDEO_CLEANUP_BLACK_EMPTY_TEXT)
+        self.cleanup_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_BLACK_EMPTY_TEXT))
 
     def reset_cleanup_suspicious_results_empty(self) -> None:
         if not hasattr(self, "cleanup_suspicious_results"):
             return
         self.cleanup_suspicious_results.clear()
-        self.cleanup_suspicious_results.addItem(VIDEO_CLEANUP_SUSPICIOUS_EMPTY_TEXT)
+        self.cleanup_suspicious_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_SUSPICIOUS_EMPTY_TEXT))
 
     def reset_cleanup_results_ready(self) -> None:
         if hasattr(self, "cleanup_results"):
             self.cleanup_results.clear()
-            self.cleanup_results.addItem(VIDEO_CLEANUP_BLACK_READY_TEXT)
+            self.cleanup_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_BLACK_READY_TEXT))
         if hasattr(self, "cleanup_suspicious_results"):
             self.cleanup_suspicious_results.clear()
-            self.cleanup_suspicious_results.addItem(VIDEO_CLEANUP_SUSPICIOUS_READY_TEXT)
+            self.cleanup_suspicious_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_SUSPICIOUS_READY_TEXT))
 
     def clear_cleanup_detected_marks(self):
         self.cleanup_detected_frames = []
@@ -237,8 +277,11 @@ class VideoCleanupWorkflowMixin:
         self.update_cleanup_filmstrip_item_styles()
         self.update_video_cleanup_button_state()
 
-    def update_cleanup_quality_description(self, text):
-        self.cleanup_quality_description.setText(VIDEO_CLEANUP_QUALITY_DESCRIPTIONS.get(text, ""))
+    def update_cleanup_quality_description(self, _text=None):
+        quality_label = self.video_cleanup_quality_label()
+        self.cleanup_quality_description.setText(
+            self.video_cleanup_text(VIDEO_CLEANUP_QUALITY_DESCRIPTIONS.get(quality_label, ""))
+        )
         self.save_user_settings()
 
     def update_cleanup_output(self, force=False):
@@ -256,7 +299,7 @@ class VideoCleanupWorkflowMixin:
     def select_cleanup_media_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select video file",
+            self.video_cleanup_text("Select video file"),
             self.cleanup_media_picker.text() or str(Path.home()),
             "Video files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v);;All files (*.*)",
         )
@@ -271,7 +314,12 @@ class VideoCleanupWorkflowMixin:
             suggest_video_cleanup_output_path(media_path) if media_path else str(Path.home() / "cleaned_video.mp4")
         )
         filter_text = "MP4 video (*.mp4);;Matroska video (*.mkv);;QuickTime video (*.mov);;All files (*.*)"
-        path, selected_filter = QFileDialog.getSaveFileName(self, "Save cleaned video as", suggested, filter_text)
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            self.video_cleanup_text("Save cleaned video as"),
+            suggested,
+            filter_text,
+        )
         if path:
             default_suffix = (
                 ".mkv"
@@ -296,17 +344,21 @@ class VideoCleanupWorkflowMixin:
     def collect_video_cleanup_media(self):
         media_path = self.cleanup_media_picker.text()
         if not media_path:
-            raise ValueError("Please select a video file.")
+            raise ValueError(self.video_cleanup_text("Please select a video file."))
         media = Path(media_path)
         if not media.is_file():
-            raise ValueError("The selected video file does not exist.")
+            raise ValueError(self.video_cleanup_text("The selected video file does not exist."))
         if media.suffix.lower() not in STT_VIDEO_SUFFIXES:
-            raise ValueError("The selected file must be a video.")
+            raise ValueError(self.video_cleanup_text("The selected file must be a video."))
         ffmpeg = find_ffmpeg_exe()
         if ffmpeg:
             info = probe_video_info(ffmpeg, media)
             if not info.get("width") or not info.get("height") or not info.get("duration_seconds"):
-                raise ValueError("The selected video file could not be inspected or has no readable video stream.")
+                raise ValueError(
+                    self.video_cleanup_text(
+                        "The selected video file could not be inspected or has no readable video stream."
+                    )
+                )
         return media_path
 
     def start_video_cleanup_review_load(self, media_path: str | None = None) -> None:
@@ -315,11 +367,13 @@ class VideoCleanupWorkflowMixin:
             return
         media = Path(media_path)
         if not media.is_file() or media.suffix.lower() not in STT_VIDEO_SUFFIXES:
-            self.cleanup_filmstrip_status.setText("Select a readable video file to load frame review.")
+            self.cleanup_filmstrip_status.setText(
+                self.video_cleanup_text("Select a readable video file to load frame review.")
+            )
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.cleanup_filmstrip_status.setText("ffmpeg unavailable for frame review.")
+            self.cleanup_filmstrip_status.setText(self.video_cleanup_text("ffmpeg unavailable for frame review."))
             return
         self.cleanup_filmstrip_generation += 1
         generation = self.cleanup_filmstrip_generation
@@ -337,7 +391,7 @@ class VideoCleanupWorkflowMixin:
         self.reset_cleanup_suspicious_results_empty()
         if hasattr(self, "cleanup_filmstrip_list"):
             self.cleanup_filmstrip_list.clear()
-        self.cleanup_filmstrip_status.setText("Loading frame review...")
+        self.cleanup_filmstrip_status.setText(self.video_cleanup_text("Loading frame review..."))
         self.update_video_cleanup_button_state()
         threading.Thread(
             target=self.video_cleanup_review_worker,
@@ -349,7 +403,7 @@ class VideoCleanupWorkflowMixin:
         try:
             source_video_info = probe_video_info(ffmpeg, media_path)
             if not source_video_info.get("width") or not source_video_info.get("height"):
-                raise ValueError("The selected video has no readable video stream.")
+                raise ValueError(self.video_cleanup_text("The selected video has no readable video stream."))
             self.post(self.cleanup_frame_review_loaded, generation, media_path, source_video_info)
         except (OSError, RuntimeError, ValueError) as exc:
             self.post(self.cleanup_frame_review_failed, generation, media_path, str(exc))
@@ -364,7 +418,7 @@ class VideoCleanupWorkflowMixin:
         self.reset_cleanup_results_ready()
         self.configure_cleanup_filmstrip_scroll()
         self.refresh_cleanup_filmstrip()
-        self.cleanup_status.setText("Frame review ready.")
+        self.cleanup_status.setText(self.video_cleanup_text("Frame review ready."))
         self.update_video_cleanup_button_state()
 
     def cleanup_frame_review_failed(self, generation: int, media_path: str, message: str) -> None:
@@ -372,9 +426,9 @@ class VideoCleanupWorkflowMixin:
             return
         self.cleanup_detected_media_path = ""
         self.clear_cleanup_filmstrip_cache()
-        self.cleanup_filmstrip_status.setText("Frame review unavailable.")
+        self.cleanup_filmstrip_status.setText(self.video_cleanup_text("Frame review unavailable."))
         self.update_cleanup_filmstrip_timeline_label()
-        self.cleanup_status.setText("Error.")
+        self.cleanup_status.setText(self.video_cleanup_text("Error."))
         self.append_cleanup_log(f"ERROR: {message}")
         self.update_video_cleanup_button_state()
 
@@ -414,11 +468,10 @@ class VideoCleanupWorkflowMixin:
             return max(1, round(fps * duration_seconds))
         return 0
 
-    @staticmethod
-    def cleanup_action_label_for_key(action: str) -> str:
+    def cleanup_action_label_for_key(self, action: str) -> str:
         for label, key in VIDEO_CLEANUP_METHOD_BY_LABEL.items():
             if key == action:
-                return label
+                return self.video_cleanup_text(label)
         return str(action)
 
     @staticmethod
@@ -492,8 +545,11 @@ class VideoCleanupWorkflowMixin:
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(8)
         label = QLabel(
-            f"Marked frame pending action | #{frame_number} / "
-            f"{self.cleanup_frame_time_seconds(frame_number):.3f}s"
+            self.video_cleanup_text(
+                "Marked frame pending action | #{frame_number} / {time:.3f}s",
+                frame_number=frame_number,
+                time=self.cleanup_frame_time_seconds(frame_number),
+            )
         )
         label.setObjectName("Muted")
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -517,7 +573,7 @@ class VideoCleanupWorkflowMixin:
             self.cleanup_changes_list.clear()
             pending_frames = self.selected_cleanup_frame_numbers()
             if not self.cleanup_changes and not pending_frames:
-                self.cleanup_changes_list.addItem("No applied changes.")
+                self.cleanup_changes_list.addItem(self.video_cleanup_text("No applied changes."))
             else:
                 for index, change in enumerate(self.cleanup_changes, start=1):
                     item = QListWidgetItem()
@@ -539,17 +595,30 @@ class VideoCleanupWorkflowMixin:
         pending_count = len(self.selected_cleanup_frame_numbers())
         if conflicts:
             self.cleanup_changes_status.setText(
-                f"{format_video_cleanup_conflicts(conflicts)} Remove the duplicate queued change before cleaning."
+                self.video_cleanup_text(
+                    "{conflict_message} Remove the duplicate queued change before cleaning.",
+                    conflict_message=self.video_cleanup_conflict_message(conflicts),
+                )
             )
         else:
             self.cleanup_changes_status.setText(
-                f"{len(self.cleanup_changes)} change(s) queued; {pending_count} marked frame(s) pending action."
+                self.video_cleanup_text(
+                    "{change_count} change(s) queued; {pending_count} marked frame(s) pending action.",
+                    change_count=len(self.cleanup_changes),
+                    pending_count=pending_count,
+                )
                 if self.cleanup_changes and pending_count
-                else f"{len(self.cleanup_changes)} change(s) queued."
+                else self.video_cleanup_text(
+                    "{change_count} change(s) queued.",
+                    change_count=len(self.cleanup_changes),
+                )
                 if self.cleanup_changes
-                else f"{pending_count} marked frame(s) pending Freeze or Remove."
+                else self.video_cleanup_text(
+                    "{pending_count} marked frame(s) pending Freeze or Remove.",
+                    pending_count=pending_count,
+                )
                 if pending_count
-                else "Mark frames, then apply Freeze or Remove before cleaning video."
+                else self.video_cleanup_text("Mark frames, then apply Freeze or Remove before cleaning video.")
             )
         self.update_cleanup_filmstrip_item_styles()
         self.update_video_cleanup_button_state()
@@ -603,15 +672,21 @@ class VideoCleanupWorkflowMixin:
     def apply_video_cleanup_change(self, action: str):
         frames = self.cleanup_pending_action_frames()
         if not frames:
-            self.show_error("Video Cleanup", "Select a pending marked row or a marked frame before applying cleanup.")
+            self.show_error(
+                self.video_cleanup_text("Video Cleanup"),
+                self.video_cleanup_text("Select a pending marked row or a marked frame before applying cleanup."),
+            )
             return
         queued_frames = self.cleanup_queued_frame_numbers()
         duplicate_frames = sorted(set(frames) & queued_frames)
         if duplicate_frames:
             self.show_error(
-                "Video Cleanup",
-                f"{self.format_cleanup_frame_ranges(duplicate_frames)} already has a queued cleanup action. "
-                "Remove that queued change before choosing another action.",
+                self.video_cleanup_text("Video Cleanup"),
+                self.video_cleanup_text(
+                    "{frames} already has a queued cleanup action. "
+                    "Remove that queued change before choosing another action.",
+                    frames=self.format_cleanup_frame_ranges(duplicate_frames),
+                ),
             )
             return
         self.cleanup_changes.extend({"action": action, "frames": [frame_number]} for frame_number in frames)
@@ -632,9 +707,13 @@ class VideoCleanupWorkflowMixin:
         )
         self.cleanup_changes_list.setCurrentRow(target_row)
         if len(frames) == 1:
-            self.cleanup_status.setText(f"Queued video cleanup change {target_row + 1}.")
+            self.cleanup_status.setText(
+                self.video_cleanup_text("Queued video cleanup change {number}.", number=target_row + 1)
+            )
         else:
-            self.cleanup_status.setText(f"Queued {len(frames)} video cleanup changes.")
+            self.cleanup_status.setText(
+                self.video_cleanup_text("Queued {count} video cleanup changes.", count=len(frames))
+            )
 
     def remove_selected_video_cleanup_change(self):
         item = self.cleanup_changes_list.currentItem()
@@ -649,16 +728,16 @@ class VideoCleanupWorkflowMixin:
         self.refresh_video_cleanup_changes_list()
         if self.cleanup_changes:
             self.cleanup_changes_list.setCurrentRow(min(index, len(self.cleanup_changes) - 1))
-        self.cleanup_status.setText("Removed queued video cleanup change.")
+        self.cleanup_status.setText(self.video_cleanup_text("Removed queued video cleanup change."))
 
     def collect_video_cleanup_repair_options(self):
         media_path = self.collect_video_cleanup_media()
         if self.cleanup_detected_media_path != media_path:
-            raise ValueError("Load frame review for this video before cleaning frames.")
+            raise ValueError(self.video_cleanup_text("Load frame review for this video before cleaning frames."))
         if not self.cleanup_video_total_frames:
-            raise ValueError("Frame review is not ready yet.")
+            raise ValueError(self.video_cleanup_text("Frame review is not ready yet."))
         if not self.cleanup_changes:
-            raise ValueError("Apply at least one video cleanup change before cleaning video.")
+            raise ValueError(self.video_cleanup_text("Apply at least one video cleanup change before cleaning video."))
 
         output_path = self.cleanup_output_picker.text()
         if not output_path:
@@ -667,7 +746,7 @@ class VideoCleanupWorkflowMixin:
         output_path = self.normalize_cleanup_output_path(output_path, media_path)
         output = Path(output_path)
         if output.suffix.lower() not in {".mp4", ".mkv", ".mov", ".m4v"}:
-            raise ValueError("Repaired video output must be .mp4, .mkv, .mov or .m4v.")
+            raise ValueError(self.video_cleanup_text("Repaired video output must be .mp4, .mkv, .mov or .m4v."))
         validate_output_path(output, source_path=media_path, expected_suffixes={".mp4", ".mkv", ".mov", ".m4v"})
         source_size = Path(media_path).stat().st_size if Path(media_path).is_file() else 0
         ensure_free_space(output, max(VIDEO_OUTPUT_MIN_FREE_BYTES, source_size), "video cleanup output")
@@ -675,31 +754,37 @@ class VideoCleanupWorkflowMixin:
         self.save_user_settings()
 
         cleanup_quality = VIDEO_CLEANUP_QUALITY_BY_LABEL.get(
-            self.cleanup_quality_combo.currentText(),
+            self.video_cleanup_quality_label(),
             BURN_QUALITY_AUTO,
         )
         conflicts = conflicting_video_cleanup_change_frames(self.cleanup_changes)
         if conflicts:
             raise ValueError(
-                f"{format_video_cleanup_conflicts(conflicts)} Remove the duplicate queued change before cleaning."
+                self.video_cleanup_text(
+                    "{conflict_message} Remove the duplicate queued change before cleaning.",
+                    conflict_message=self.video_cleanup_conflict_message(conflicts),
+                )
             )
         self.cleanup_changes = normalize_video_cleanup_change_plan(self.cleanup_changes)
         changes = list(self.cleanup_changes)
         if not changes:
-            raise ValueError("Apply at least one video cleanup change before cleaning video.")
+            raise ValueError(self.video_cleanup_text("Apply at least one video cleanup change before cleaning video."))
         return media_path, output_path, cleanup_quality, changes
 
     def start_video_cleanup_from_page(self):
         try:
             media_path = self.collect_video_cleanup_media()
         except ValueError as exc:
-            self.cleanup_status.setText("Error.")
-            self.show_error("Video Cleanup", str(exc))
+            self.cleanup_status.setText(self.video_cleanup_text("Error."))
+            self.show_error(self.video_cleanup_text("Video Cleanup"), str(exc))
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.cleanup_status.setText("ffmpeg missing.")
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
+            self.cleanup_status.setText(self.video_cleanup_text("ffmpeg missing."))
+            self.show_error(
+                self.video_cleanup_text("ffmpeg missing"),
+                self.video_cleanup_text("Could not find ffmpeg. Use the full VoiceBridge bundle."),
+            )
             return
 
         self.cleanup_cancel_requested = False
@@ -708,10 +793,10 @@ class VideoCleanupWorkflowMixin:
         self.clear_cleanup_detected_marks()
         self.reset_cleanup_log()
         self.cleanup_results.clear()
-        self.cleanup_results.addItem("Detecting black-frame candidates...")
+        self.cleanup_results.addItem(self.video_cleanup_text("Detecting black-frame candidates..."))
         self.is_cleanup_running = True
         self.show_indeterminate_progress(self.cleanup_progress)
-        self.cleanup_status.setText("Detecting black frames...")
+        self.cleanup_status.setText(self.video_cleanup_text("Detecting black frames..."))
         self.append_cleanup_log(f"Detecting black frames: {media_path}")
         self.update_video_cleanup_button_state()
         self.update_tts_button_state()
@@ -728,23 +813,32 @@ class VideoCleanupWorkflowMixin:
         try:
             media_path = self.collect_video_cleanup_media()
         except ValueError as exc:
-            self.cleanup_status.setText("Error.")
-            self.show_error("Video Cleanup", str(exc))
+            self.cleanup_status.setText(self.video_cleanup_text("Error."))
+            self.show_error(self.video_cleanup_text("Video Cleanup"), str(exc))
             return
         if self.cleanup_detected_media_path != media_path or not self.cleanup_video_total_frames:
-            self.cleanup_status.setText("Frame review not ready.")
-            self.show_error("Video Cleanup", "Load frame review for this video before detecting frame glitches.")
+            self.cleanup_status.setText(self.video_cleanup_text("Frame review not ready."))
+            self.show_error(
+                self.video_cleanup_text("Video Cleanup"),
+                self.video_cleanup_text("Load frame review for this video before detecting frame glitches."),
+            )
             return
 
         python_path = ml_python_path()
         worker_path = video_anomaly_worker_path()
         if not python_path.is_file():
-            self.cleanup_status.setText("ML runtime missing.")
-            self.show_error("Video Cleanup", f"Could not find ML Python runtime:\n{python_path}")
+            self.cleanup_status.setText(self.video_cleanup_text("ML runtime missing."))
+            self.show_error(
+                self.video_cleanup_text("Video Cleanup"),
+                self.video_cleanup_text("Could not find ML Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.cleanup_status.setText("Anomaly worker missing.")
-            self.show_error("Video Cleanup", f"Could not find:\n{worker_path}")
+            self.cleanup_status.setText(self.video_cleanup_text("Anomaly worker missing."))
+            self.show_error(
+                self.video_cleanup_text("Video Cleanup"),
+                self.video_cleanup_text("Could not find:\n{path}", path=worker_path),
+            )
             return
 
         self.cleanup_cancel_requested = False
@@ -752,10 +846,10 @@ class VideoCleanupWorkflowMixin:
         self.stop_cleanup_filmstrip_background_work()
         self.clear_cleanup_suspicious_results()
         self.cleanup_suspicious_results.clear()
-        self.cleanup_suspicious_results.addItem("Detecting suspicious frame glitches...")
+        self.cleanup_suspicious_results.addItem(self.video_cleanup_text("Detecting suspicious frame glitches..."))
         self.is_cleanup_running = True
         self.update_cleanup_progress_percent(0)
-        self.cleanup_status.setText("Detecting suspicious frame glitches...")
+        self.cleanup_status.setText(self.video_cleanup_text("Detecting suspicious frame glitches..."))
         self.append_cleanup_log("")
         self.append_cleanup_log(f"Detecting suspicious frame glitches: {media_path}")
         self.update_video_cleanup_button_state()
@@ -773,13 +867,16 @@ class VideoCleanupWorkflowMixin:
         try:
             media_path, output_path, cleanup_quality, changes = self.collect_video_cleanup_repair_options()
         except ValueError as exc:
-            self.cleanup_status.setText("Error.")
-            self.show_error("Video Cleanup", str(exc))
+            self.cleanup_status.setText(self.video_cleanup_text("Error."))
+            self.show_error(self.video_cleanup_text("Video Cleanup"), str(exc))
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.cleanup_status.setText("ffmpeg missing.")
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
+            self.cleanup_status.setText(self.video_cleanup_text("ffmpeg missing."))
+            self.show_error(
+                self.video_cleanup_text("ffmpeg missing"),
+                self.video_cleanup_text("Could not find ffmpeg. Use the full VoiceBridge bundle."),
+            )
             return
 
         self.cleanup_cancel_requested = False
@@ -788,7 +885,9 @@ class VideoCleanupWorkflowMixin:
         self.is_cleanup_running = True
         self.update_cleanup_progress_percent(0)
         total_frames = sum(len(change["frames"]) for change in changes)
-        self.cleanup_status.setText(f"Cleaning {len(changes)} queued change(s)...")
+        self.cleanup_status.setText(
+            self.video_cleanup_text("Cleaning {count} queued change(s)...", count=len(changes))
+        )
         self.append_cleanup_log("")
         self.append_cleanup_log(f"Queued video cleanup changes: {len(changes)}")
         for index, change in enumerate(changes, start=1):
@@ -851,7 +950,7 @@ class VideoCleanupWorkflowMixin:
         def handle_worker_output(output: WorkerProcessOutput) -> None:
             nonlocal result_payload
             if output.is_status and output.status:
-                self.post(self.cleanup_status.setText, output.status)
+                self.post(self.cleanup_status.setText, self.video_cleanup_text(output.status))
                 self.post(self.append_cleanup_log, output.status)
                 return
             if output.is_progress and output.progress_percent is not None:
@@ -963,7 +1062,11 @@ class VideoCleanupWorkflowMixin:
                     frame_times = [frame / safe_fps for frame in adjusted_frames]
                     self.post(
                         self.cleanup_status.setText,
-                        f"Cleaning change {index} of {len(changes)}...",
+                        self.video_cleanup_text(
+                            "Cleaning change {index} of {count}...",
+                            index=index,
+                            count=len(changes),
+                        ),
                     )
                     self.post(
                         self.append_cleanup_log,
@@ -1893,7 +1996,9 @@ class VideoCleanupWorkflowMixin:
             if frame > 0 and frame not in queued_frames
         ]
         if not selected:
-            self.cleanup_status.setText("Select one or more unqueued frames in the frame review first.")
+            self.cleanup_status.setText(
+                self.video_cleanup_text("Select one or more unqueued frames in the frame review first.")
+            )
             return
         self.cleanup_marked_frame_numbers.update(selected)
         self.cleanup_filmstrip_list.clearSelection()
@@ -1903,7 +2008,7 @@ class VideoCleanupWorkflowMixin:
     def unmark_selected_cleanup_filmstrip_frames(self) -> None:
         selected = self.cleanup_filmstrip_selected_frames()
         if not selected:
-            self.cleanup_status.setText("Select one or more frames in the frame review first.")
+            self.cleanup_status.setText(self.video_cleanup_text("Select one or more frames in the frame review first."))
             return
         for frame_number in selected:
             self.cleanup_marked_frame_numbers.discard(frame_number)
@@ -1929,7 +2034,15 @@ class VideoCleanupWorkflowMixin:
     def add_cleanup_result_row(self, frame: BlackFrame, repairable: bool, reason: str) -> None:
         frame_number = frame["frame"]
         item = QListWidgetItem()
-        item.setText(f"Frame {frame_number} | {frame['time']:.3f}s | {frame['pblack']}% black | {reason}")
+        item.setText(
+            self.video_cleanup_text(
+                "Frame {frame_number} | {time:.3f}s | {pblack}% black | {reason}",
+                frame_number=frame_number,
+                time=frame["time"],
+                pblack=frame["pblack"],
+                reason=self.video_cleanup_text(reason),
+            )
+        )
         item.setData(Qt.ItemDataRole.UserRole, frame_number)
         self.cleanup_results.addItem(item)
 
@@ -1947,10 +2060,17 @@ class VideoCleanupWorkflowMixin:
         frame_number = int(anomaly["frame"])
         item = QListWidgetItem()
         item.setText(
-            f"Frame {frame_number} | {float(anomaly['time']):.3f}s | "
-            f"{self.cleanup_suspicious_kind_label(str(anomaly['kind']))} | score {float(anomaly['score']):.1f}"
+            self.video_cleanup_text(
+                "Frame {frame_number} | {time:.3f}s | {kind} | score {score:.1f}",
+                frame_number=frame_number,
+                time=float(anomaly["time"]),
+                kind=self.video_cleanup_text(self.cleanup_suspicious_kind_label(str(anomaly["kind"]))),
+                score=float(anomaly["score"]),
+            )
         )
-        item.setToolTip(str(anomaly.get("reason") or "Review this frame before marking it manually."))
+        item.setToolTip(
+            self.video_cleanup_text(str(anomaly.get("reason") or "Review this frame before marking it manually."))
+        )
         item.setData(Qt.ItemDataRole.UserRole, frame_number)
         self.cleanup_suspicious_results.addItem(item)
 
@@ -1981,13 +2101,19 @@ class VideoCleanupWorkflowMixin:
         self.configure_cleanup_filmstrip_scroll()
         self.refresh_cleanup_filmstrip()
         if not black_frames:
-            self.cleanup_results.addItem("No black-frame candidates found.")
+            self.cleanup_results.addItem(self.video_cleanup_text("No black-frame candidates found."))
             self.update_video_cleanup_button_state()
             return
-        self.cleanup_results.addItem(f"Black-frame candidates: {len(black_frames)}")
-        self.cleanup_results.addItem(f"Repairable isolated frames: {len(isolated_frames)}")
+        self.cleanup_results.addItem(
+            self.video_cleanup_text("Black-frame candidates: {count}", count=len(black_frames))
+        )
+        self.cleanup_results.addItem(
+            self.video_cleanup_text("Repairable isolated frames: {count}", count=len(isolated_frames))
+        )
         if longer_runs:
-            self.cleanup_results.addItem(f"Longer black runs left untouched: {len(longer_runs)}")
+            self.cleanup_results.addItem(
+                self.video_cleanup_text("Longer black runs left untouched: {count}", count=len(longer_runs))
+            )
         reason_by_frame = self.cleanup_long_run_reason_map(longer_runs)
         isolated_set = set(isolated_frames)
         for frame in black_frames[:120]:
@@ -2002,7 +2128,9 @@ class VideoCleanupWorkflowMixin:
             )
             self.add_cleanup_result_row(frame, repairable, reason)
         if len(black_frames) > 120:
-            self.cleanup_results.addItem(f"...and {len(black_frames) - 120} more candidates in the log.")
+            self.cleanup_results.addItem(
+                self.video_cleanup_text("...and {count} more candidates in the log.", count=len(black_frames) - 120)
+            )
         self.update_video_cleanup_button_state()
 
     def cleanup_anomaly_detection_finished(self, media_path: str, anomalies: list[dict]) -> None:
@@ -2016,13 +2144,16 @@ class VideoCleanupWorkflowMixin:
         }
         self.cleanup_suspicious_results.clear()
         if not anomalies:
-            self.cleanup_suspicious_results.addItem("No suspicious frame anomalies found.")
+            self.cleanup_suspicious_results.addItem(self.video_cleanup_text("No suspicious frame anomalies found."))
         else:
             for anomaly in anomalies[:160]:
                 self.add_cleanup_suspicious_row(anomaly)
             if len(anomalies) > 160:
                 self.cleanup_suspicious_results.addItem(
-                    f"...and {len(anomalies) - 160} more suspicious frame(s) in the log."
+                    self.video_cleanup_text(
+                        "...and {count} more suspicious frame(s) in the log.",
+                        count=len(anomalies) - 160,
+                    )
                 )
         self.refresh_cleanup_filmstrip()
         self.update_video_cleanup_button_state()
@@ -2031,10 +2162,14 @@ class VideoCleanupWorkflowMixin:
         if black_frames:
             actionable_count = len([frame_number for frame_number in isolated_frames if int(frame_number) > 0])
             self.cleanup_status.setText(
-                f"Detected {len(black_frames)} black-frame candidate(s); {actionable_count} marked pending action."
+                self.video_cleanup_text(
+                    "Detected {candidate_count} black-frame candidate(s); {actionable_count} marked pending action.",
+                    candidate_count=len(black_frames),
+                    actionable_count=actionable_count,
+                )
             )
         else:
-            self.cleanup_status.setText("No black-frame candidates found.")
+            self.cleanup_status.setText(self.video_cleanup_text("No black-frame candidates found."))
         if longer_runs:
             self.append_cleanup_log(
                 f"Longer black runs were detected: {len(longer_runs)}. "
@@ -2042,18 +2177,22 @@ class VideoCleanupWorkflowMixin:
             )
 
     def video_anomaly_detect_succeeded(self, anomalies: list[dict]) -> None:
-        self.cleanup_status.setText(f"Detected {len(anomalies)} suspicious frame(s).")
+        self.cleanup_status.setText(
+            self.video_cleanup_text("Detected {count} suspicious frame(s).", count=len(anomalies))
+        )
         self.append_cleanup_log(
             f"Suspicious frame detection completed: {len(anomalies)} candidate(s), review only."
         )
 
     def video_cleanup_no_repair_needed(self):
-        self.cleanup_status.setText("No video cleanup changes queued.")
+        self.cleanup_status.setText(self.video_cleanup_text("No video cleanup changes queued."))
         self.append_cleanup_log("No video cleanup changes were queued. No output video was created.")
 
     def video_cleanup_repair_succeeded(self, output_path, change_count, affected_frame_count):
         self.cleanup_last_output_path = output_path
-        self.cleanup_status.setText(f"Applied {change_count} video cleanup change(s).")
+        self.cleanup_status.setText(
+            self.video_cleanup_text("Applied {change_count} video cleanup change(s).", change_count=change_count)
+        )
         self.append_cleanup_log(f"Video saved: {output_path}")
         self.record_job(
             "CLEAN",
@@ -2062,16 +2201,19 @@ class VideoCleanupWorkflowMixin:
             output_path,
             f"{change_count} change(s), {affected_frame_count} frame reference(s)",
         )
-        self.show_info("Video Cleanup", f"Video saved:\n{output_path}")
+        self.show_info(
+            self.video_cleanup_text("Video Cleanup"),
+            self.video_cleanup_text("Video saved:\n{path}", path=output_path),
+        )
 
     def video_cleanup_job_cancelled(self):
-        self.cleanup_status.setText("Cancelled.")
+        self.cleanup_status.setText(self.video_cleanup_text("Cancelled."))
         self.append_cleanup_log("Job cancelled.")
 
     def video_cleanup_job_failed(self, message):
-        self.cleanup_status.setText("Error.")
+        self.cleanup_status.setText(self.video_cleanup_text("Error."))
         self.append_cleanup_log(f"ERROR: {message}")
-        self.show_error("Video Cleanup", message)
+        self.show_error(self.video_cleanup_text("Video Cleanup"), message)
 
     def finish_video_cleanup_job(self):
         self.is_cleanup_running = False
@@ -2086,7 +2228,7 @@ class VideoCleanupWorkflowMixin:
         if not self.is_cleanup_running:
             return
         self.cleanup_cancel_requested = True
-        self.cleanup_status.setText("Cancelling...")
+        self.cleanup_status.setText(self.video_cleanup_text("Cancelling..."))
         self.append_cleanup_log("Cancellation requested.")
         self.update_video_cleanup_button_state()
         process = self.cleanup_process
@@ -2244,10 +2386,11 @@ class VideoCleanupWorkflowMixin:
         self.cleanup_media_picker.edit.textChanged.connect(self.cleanup_media_changed)
         self.cleanup_quality_label = QLabel("Output quality")
         self.cleanup_quality_combo = QComboBox()
-        self.cleanup_quality_combo.addItems(VIDEO_CLEANUP_QUALITY_LABELS)
-        self.cleanup_quality_combo.setCurrentText(BURN_QUALITY_AUTO_LABEL)
-        self.cleanup_quality_combo.currentTextChanged.connect(self.update_cleanup_quality_description)
-        self.cleanup_quality_description = QLabel(VIDEO_CLEANUP_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
+        self.populate_video_cleanup_quality_combo()
+        self.cleanup_quality_combo.currentIndexChanged.connect(lambda _index: self.update_cleanup_quality_description())
+        self.cleanup_quality_description = QLabel(
+            self.video_cleanup_text(VIDEO_CLEANUP_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
+        )
         self.cleanup_quality_description.setObjectName("Muted")
         self.cleanup_quality_description.setWordWrap(True)
         self.cleanup_rule_note = QLabel(
@@ -2378,14 +2521,14 @@ class VideoCleanupWorkflowMixin:
         self.cleanup_results = QListWidget()
         self.cleanup_results.setMinimumHeight(160)
         self.cleanup_results.itemDoubleClicked.connect(self.cleanup_result_item_double_clicked)
-        self.cleanup_results.addItem(VIDEO_CLEANUP_BLACK_EMPTY_TEXT)
+        self.cleanup_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_BLACK_EMPTY_TEXT))
         results_card.content_layout.addWidget(self.cleanup_results)
 
         suspicious_card = Card("Suspicious frames")
         self.cleanup_suspicious_results = QListWidget()
         self.cleanup_suspicious_results.setMinimumHeight(160)
         self.cleanup_suspicious_results.itemDoubleClicked.connect(self.cleanup_suspicious_item_double_clicked)
-        self.cleanup_suspicious_results.addItem(VIDEO_CLEANUP_SUSPICIOUS_EMPTY_TEXT)
+        self.cleanup_suspicious_results.addItem(self.video_cleanup_text(VIDEO_CLEANUP_SUSPICIOUS_EMPTY_TEXT))
         suspicious_card.content_layout.addWidget(self.cleanup_suspicious_results)
 
         results_grid.addWidget(results_card, 0, 0)

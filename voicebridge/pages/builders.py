@@ -90,6 +90,7 @@ class PageBuilderMixin(HomePageMixin):
     def page_header(layout, title, subtitle, badge="", badge_name="BadgeBlue"):
         header = QVBoxLayout()
         header.setSpacing(4)
+        badge_label = None
         if badge:
             badge_label = QLabel(badge)
             badge_label.setObjectName(badge_name)
@@ -102,3 +103,4 @@ class PageBuilderMixin(HomePageMixin):
         header.addWidget(title_label)
         header.addWidget(subtitle_label)
         layout.addLayout(header)
+        return title_label, subtitle_label, badge_label

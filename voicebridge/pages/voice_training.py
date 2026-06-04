@@ -22,6 +22,13 @@ from voicebridge.voice_modeling import (
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences
 class VoiceTrainingWorkflowMixin:
+    def voice_training_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
     def selected_voice_training_job_path(self) -> str:
         config_path = self.voice_training_job_combo.currentData(Qt.ItemDataRole.UserRole)
         return config_path if isinstance(config_path, str) else ""
@@ -38,11 +45,13 @@ class VoiceTrainingWorkflowMixin:
         try:
             self.voice_training_job_combo.clear()
             if not jobs:
-                self.voice_training_job_combo.addItem("No training jobs configured.", "")
+                self.voice_training_job_combo.addItem(self.voice_training_text("No training jobs configured."), "")
                 item = self.voice_training_job_combo.model().item(0)
                 if item is not None:
                     item.setEnabled(False)
-                self.voice_training_job_status.setPlainText("Save a training config from Setup first.")
+                self.voice_training_job_status.setPlainText(
+                    self.voice_training_text("Save a training config from Setup first.")
+                )
                 self.update_voice_training_buttons()
                 return
             selected_index = 0
@@ -60,10 +69,12 @@ class VoiceTrainingWorkflowMixin:
     def voice_training_job_changed(self) -> None:
         config_path = self.selected_voice_training_job_path()
         if not config_path:
-            self.voice_training_job_status.setPlainText("No training job selected.")
+            self.voice_training_job_status.setPlainText(self.voice_training_text("No training job selected."))
             self.update_voice_training_buttons()
             return
-        self.voice_training_job_status.setPlainText(f"Selected job config:\n{config_path}")
+        self.voice_training_job_status.setPlainText(
+            self.voice_training_text("Selected job config:\n{path}", path=config_path)
+        )
         self.update_voice_training_buttons()
 
     def update_voice_training_buttons(self) -> None:
@@ -91,7 +102,7 @@ class VoiceTrainingWorkflowMixin:
             plan = prepare_voice_modeling_training_job(config_path)
         except (OSError, ValueError) as exc:
             self.voice_training_job_status.setPlainText(str(exc))
-            self.show_error("Voice Training", str(exc))
+            self.show_error(self.voice_training_text("Voice Training"), str(exc))
             return
         self.voice_training_job_status.setPlainText(voice_modeling_training_plan_text(plan))
         self.refresh_voice_training_jobs(config_path)
@@ -102,8 +113,8 @@ class VoiceTrainingWorkflowMixin:
 
     def start_voice_training_run(self) -> None:
         if not self.ask_question(
-            "Start voice training",
-            (
+            self.voice_training_text("Start voice training"),
+            self.voice_training_text(
                 "This will start XTTS-v2 fine-tuning in the ML runtime and can take a long time.\n\n"
                 "Continue?"
             ),
@@ -119,17 +130,27 @@ class VoiceTrainingWorkflowMixin:
         python_path = ml_python_path()
         worker_path = voice_modeling_worker_path()
         if not python_path.is_file():
-            self.show_error("Voice Training", f"Could not find the ML Python runtime:\n{python_path}")
+            self.show_error(
+                self.voice_training_text("Voice Training"),
+                self.voice_training_text("Could not find the ML Python runtime:\n{path}", path=python_path),
+            )
             return
         if not worker_path.is_file():
-            self.show_error("Voice Training", f"Could not find:\n{worker_path}")
+            self.show_error(
+                self.voice_training_text("Voice Training"),
+                self.voice_training_text("Could not find:\n{path}", path=worker_path),
+            )
             return
         self.voice_training_running = True
         self.voice_training_cancel_requested = False
         self.voice_training_progress.setValue(0)
         self.voice_training_progress.show()
         self.voice_training_job_status.clear()
-        self.append_voice_training_log("Starting dry run..." if dry_run else "Starting training...")
+        self.append_voice_training_log(
+            self.voice_training_text("Starting dry run...")
+            if dry_run
+            else self.voice_training_text("Starting training...")
+        )
         self.update_voice_training_buttons()
         threading.Thread(
             target=self.voice_training_worker,
@@ -177,7 +198,11 @@ class VoiceTrainingWorkflowMixin:
         self.voice_training_job_status.appendPlainText(message)
 
     def voice_training_succeeded(self, dry_run: bool) -> None:
-        self.append_voice_training_log("Dry run completed." if dry_run else "Training completed.")
+        self.append_voice_training_log(
+            self.voice_training_text("Dry run completed.")
+            if dry_run
+            else self.voice_training_text("Training completed.")
+        )
         self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
         self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
@@ -187,8 +212,10 @@ class VoiceTrainingWorkflowMixin:
         if (
             is_cuda_runtime_failure(message)
             and self.ask_question(
-                "Voice Training CUDA failed",
-                "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?",
+                self.voice_training_text("Voice Training CUDA failed"),
+                self.voice_training_text(
+                    "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?"
+                ),
                 default_yes=False,
             )
         ):
@@ -198,18 +225,21 @@ class VoiceTrainingWorkflowMixin:
                 config["device"] = "cpu"
                 save_voice_modeling_job_config(config)
             except (OSError, ValueError) as exc:
-                self.show_error("Voice Training", f"Could not switch the training job to CPU.\n\n{exc}")
+                self.show_error(
+                    self.voice_training_text("Voice Training"),
+                    self.voice_training_text("Could not switch the training job to CPU.\n\n{message}", message=exc),
+                )
             else:
-                self.append_voice_training_log("Job switched to CPU. Retrying...")
+                self.append_voice_training_log(self.voice_training_text("Job switched to CPU. Retrying..."))
                 self.refresh_voice_training_jobs(config_path)
                 QTimer.singleShot(250, lambda: self.start_voice_training_worker(dry_run=False))
                 return
-        self.show_error("Voice Training", message)
+        self.show_error(self.voice_training_text("Voice Training"), message)
         self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
         self.update_local_voice_tabs()
 
     def voice_training_cancelled(self) -> None:
-        self.append_voice_training_log("Cancelled.")
+        self.append_voice_training_log(self.voice_training_text("Cancelled."))
 
     def finish_voice_training_worker(self) -> None:
         self.voice_training_running = False
@@ -223,7 +253,7 @@ class VoiceTrainingWorkflowMixin:
         process = getattr(self, "voice_training_process", None)
         if process is not None and process.poll() is None:
             process.terminate()
-        self.append_voice_training_log("Cancelling...")
+        self.append_voice_training_log(self.voice_training_text("Cancelling..."))
         self.update_voice_training_buttons()
 
     def build_voice_training_page(self, include_header: bool = True):

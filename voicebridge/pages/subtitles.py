@@ -72,6 +72,37 @@ VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker
 class SubtitlesWorkflowMixin:
+    def subtitle_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
+    def populate_video_subtitle_combo(self, combo: QComboBox, labels: list[str] | tuple[str, ...]) -> None:
+        selected = self.combo_current_data(combo) if combo.count() else labels[0]
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            for label in labels:
+                combo.addItem(self.subtitle_text(label), label)
+            self.set_combo_data(combo, selected, list(labels))
+        finally:
+            combo.blockSignals(False)
+
+    def retranslate_subtitles_page(self) -> None:
+        if not hasattr(self, "video_quality_combo"):
+            return
+        self.video_embed_mode_button.setText(self.subtitle_text(VIDEO_SUBTITLE_EMBED_LABEL))
+        self.video_burn_mode_button.setText(self.subtitle_text(VIDEO_SUBTITLE_BURN_LABEL))
+        self.populate_video_subtitle_combo(self.video_quality_combo, BURN_QUALITY_LABELS)
+        self.populate_video_subtitle_combo(self.video_position_combo, tuple(VIDEO_SUBTITLE_POSITION_LABELS))
+        self.populate_video_subtitle_combo(self.video_text_color_combo, tuple(VIDEO_SUBTITLE_TEXT_COLOR_LABELS))
+        self.populate_video_subtitle_combo(self.video_outline_color_combo, tuple(VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS))
+        self.populate_video_subtitle_combo(self.video_box_color_combo, tuple(VIDEO_SUBTITLE_BOX_COLOR_LABELS))
+        self.video_subtitle_mode_changed()
+        self.update_video_quality_description()
+
     def video_subtitle_mode_label(self):
         if getattr(self, "video_burn_mode_button", None) and self.video_burn_mode_button.isChecked():
             return VIDEO_SUBTITLE_BURN_LABEL
@@ -106,8 +137,9 @@ class SubtitlesWorkflowMixin:
     def video_subtitle_mode_changed(self):
         mode = self.video_subtitle_mode_key()
         burn = mode == "burn"
+        mode_description_label = VIDEO_SUBTITLE_BURN_LABEL if burn else VIDEO_SUBTITLE_EMBED_LABEL
         self.video_mode_note.setText(
-            VIDEO_SUBTITLE_MODE_DESCRIPTIONS[VIDEO_SUBTITLE_BURN_LABEL if burn else VIDEO_SUBTITLE_EMBED_LABEL]
+            self.subtitle_text(VIDEO_SUBTITLE_MODE_DESCRIPTIONS[mode_description_label])
         )
         for widget in (
             self.video_quality_label,
@@ -121,8 +153,9 @@ class SubtitlesWorkflowMixin:
         self.update_video_subtitle_output(force=False)
         self.save_user_settings()
 
-    def update_video_quality_description(self, text):
-        self.video_quality_description.setText(BURN_QUALITY_DESCRIPTIONS.get(text, ""))
+    def update_video_quality_description(self, _text=None):
+        quality_label = self.combo_current_data(self.video_quality_combo)
+        self.video_quality_description.setText(self.subtitle_text(BURN_QUALITY_DESCRIPTIONS.get(quality_label, "")))
         self.save_user_settings()
 
     def collect_video_subtitle_style(self) -> SubtitleStyle:
@@ -130,19 +163,19 @@ class SubtitlesWorkflowMixin:
             "font_size": self.video_font_size_spin.value(),
             "outline": self.video_outline_spin.value(),
             "margin_v": self.video_margin_spin.value(),
-            "alignment": VIDEO_SUBTITLE_POSITION_LABELS.get(self.video_position_combo.currentText(), 2),
+            "alignment": VIDEO_SUBTITLE_POSITION_LABELS.get(self.combo_current_data(self.video_position_combo), 2),
             "text_color": VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL.get(
-                self.video_text_color_combo.currentText(),
+                self.combo_current_data(self.video_text_color_combo),
                 VIDEO_SUBTITLE_TEXT_COLOR_BY_LABEL["White"],
             ),
             "outline_color": VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL.get(
-                self.video_outline_color_combo.currentText(),
+                self.combo_current_data(self.video_outline_color_combo),
                 VIDEO_SUBTITLE_OUTLINE_COLOR_BY_LABEL["Black"],
             ),
             "shadow": self.video_shadow_spin.value(),
             "background_box": self.video_background_box_check.isChecked(),
             "box_color": VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL.get(
-                self.video_box_color_combo.currentText(),
+                self.combo_current_data(self.video_box_color_combo),
                 VIDEO_SUBTITLE_BOX_COLOR_BY_LABEL["Black 70%"],
             ),
         }
@@ -176,7 +209,7 @@ class SubtitlesWorkflowMixin:
     def select_video_subtitle_media_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select video file",
+            self.subtitle_text("Select video file"),
             self.video_media_picker.text() or str(Path.home()),
             "Video files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v);;All files (*.*)",
         )
@@ -189,7 +222,7 @@ class SubtitlesWorkflowMixin:
     def select_video_subtitle_srt_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select SRT subtitle file",
+            self.subtitle_text("Select SRT subtitle file"),
             self.video_srt_picker.text() or str(Path.home()),
             "SubRip subtitles (*.srt);;All files (*.*)",
         )
@@ -207,7 +240,12 @@ class SubtitlesWorkflowMixin:
             filter_text = "MP4 video (*.mp4);;All files (*.*)"
         else:
             filter_text = "MP4 video (*.mp4);;Matroska video (*.mkv);;All files (*.*)"
-        path, selected_filter = QFileDialog.getSaveFileName(self, "Save subtitled video as", suggested, filter_text)
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            self.subtitle_text("Save subtitled video as"),
+            suggested,
+            filter_text,
+        )
         if path:
             default_suffix = ".mkv" if mode == "embed" and "Matroska" in selected_filter else ".mp4"
             self.video_output_picker.set_text(normalize_video_subtitle_output_path(path, mode, default_suffix))
@@ -230,7 +268,7 @@ class SubtitlesWorkflowMixin:
         validate_video_subtitle_inputs(mode, media_path, srt_path, output_path)
         source_size = Path(media_path).stat().st_size if Path(media_path).is_file() else 0
         ensure_free_space(output_path, max(VIDEO_OUTPUT_MIN_FREE_BYTES, source_size), "subtitled video output")
-        burn_quality = BURN_QUALITY_BY_LABEL.get(self.video_quality_combo.currentText(), BURN_QUALITY_AUTO)
+        burn_quality = BURN_QUALITY_BY_LABEL.get(self.combo_current_data(self.video_quality_combo), BURN_QUALITY_AUTO)
         subtitle_style = self.collect_video_subtitle_style() if mode == "burn" else None
         self.video_output_picker.set_text(output_path)
         self.save_user_settings()
@@ -247,8 +285,8 @@ class SubtitlesWorkflowMixin:
                 subtitle_style,
             ) = self.collect_video_subtitle_options()
         except ValueError as exc:
-            self.video_status.setText("Error.")
-            self.show_error("Subtitles", str(exc))
+            self.video_status.setText(self.subtitle_text("Error."))
+            self.show_error(self.subtitle_text("Subtitles"), str(exc))
             return
         self.start_video_subtitle_job(mode, media_path, srt_path, output_path, burn_quality, subtitle_style)
 
@@ -258,14 +296,23 @@ class SubtitlesWorkflowMixin:
         media_path = self.video_media_picker.text()
         srt_path = self.video_srt_picker.text()
         if not media_path or not Path(media_path).is_file():
-            self.show_error("Preview subtitles", "Select an existing video file.")
+            self.show_error(
+                self.subtitle_text("Preview subtitles"),
+                self.subtitle_text("Select an existing video file."),
+            )
             return
         if not srt_path or not Path(srt_path).is_file() or Path(srt_path).suffix.lower() != ".srt":
-            self.show_error("Preview subtitles", "Select an existing .srt subtitle file.")
+            self.show_error(
+                self.subtitle_text("Preview subtitles"),
+                self.subtitle_text("Select an existing .srt subtitle file."),
+            )
             return
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
+            self.show_error(
+                self.subtitle_text("ffmpeg missing"),
+                self.subtitle_text("Could not find ffmpeg. Use the full VoiceBridge bundle."),
+            )
             return
 
         timestamp_seconds = first_srt_timestamp_seconds(srt_path)
@@ -293,16 +340,16 @@ class SubtitlesWorkflowMixin:
             )
             if result.returncode != 0 or not Path(preview_path).is_file():
                 self.show_error(
-                    "Preview subtitles",
+                    self.subtitle_text("Preview subtitles"),
                     (result.stderr or result.stdout or "Could not generate subtitle preview.").strip(),
                 )
                 return
 
             dialog = QDialog(self)
-            dialog.setWindowTitle("Subtitle style preview")
+            dialog.setWindowTitle(self.subtitle_text("Subtitle style preview"))
             dialog.setMinimumWidth(860)
             layout = QVBoxLayout(dialog)
-            header = QLabel(f"Preview at {timestamp_seconds:.2f}s")
+            header = QLabel(self.subtitle_text("Preview at {time:.2f}s", time=timestamp_seconds))
             header.setObjectName("CardTitle")
             image = QLabel()
             image.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -318,8 +365,8 @@ class SubtitlesWorkflowMixin:
                     )
                 )
             else:
-                image.setText("Preview unavailable")
-            close_button = QPushButton("Close")
+                image.setText(self.subtitle_text("Preview unavailable"))
+            close_button = QPushButton(self.subtitle_text("Close"))
             close_button.clicked.connect(dialog.accept)
             footer = QHBoxLayout()
             footer.addStretch(1)
@@ -340,14 +387,17 @@ class SubtitlesWorkflowMixin:
     ):
         ffmpeg = find_ffmpeg_exe()
         if not ffmpeg:
-            self.video_status.setText("ffmpeg missing.")
-            self.show_error("ffmpeg missing", "Could not find ffmpeg. Use the full VoiceBridge bundle.")
+            self.video_status.setText(self.subtitle_text("ffmpeg missing."))
+            self.show_error(
+                self.subtitle_text("ffmpeg missing"),
+                self.subtitle_text("Could not find ffmpeg. Use the full VoiceBridge bundle."),
+            )
             return
         try:
             validate_video_subtitle_inputs(mode, media_path, srt_path, output_path)
         except ValueError as exc:
-            self.video_status.setText("Error.")
-            self.show_error("Subtitles", str(exc))
+            self.video_status.setText(self.subtitle_text("Error."))
+            self.show_error(self.subtitle_text("Subtitles"), str(exc))
             return
         self.video_cancel_requested = False
         self.video_process = None
@@ -357,7 +407,9 @@ class SubtitlesWorkflowMixin:
         self.is_video_running = True
         self.show_indeterminate_progress(self.video_progress)
         self.video_status.setText(
-            "Embedding subtitle track..." if mode == "embed" else "Burning subtitles into video..."
+            self.subtitle_text("Embedding subtitle track...")
+            if mode == "embed"
+            else self.subtitle_text("Burning subtitles into video...")
         )
         self.reset_video_log()
         log_line = f"Starting video subtitle mode={mode}, media={media_path}, srt={srt_path}, output={output_path}"
@@ -533,7 +585,7 @@ class SubtitlesWorkflowMixin:
         if not self.is_video_running:
             return
         self.video_cancel_requested = True
-        self.video_status.setText("Cancelling...")
+        self.video_status.setText(self.subtitle_text("Cancelling..."))
         self.append_video_log("Cancellation requested.")
         self.update_video_subtitle_button_state()
         process = self.video_process
@@ -545,7 +597,11 @@ class SubtitlesWorkflowMixin:
 
     def video_subtitle_job_succeeded(self, output_path, mode):
         self.video_last_output_path = output_path
-        self.video_status.setText("Subtitles embedded." if mode == "embed" else "Subtitles burned into video.")
+        self.video_status.setText(
+            self.subtitle_text("Subtitles embedded.")
+            if mode == "embed"
+            else self.subtitle_text("Subtitles burned into video.")
+        )
         self.append_video_log(f"Video saved: {output_path}")
         self.record_job(
             "VIDEO",
@@ -554,16 +610,19 @@ class SubtitlesWorkflowMixin:
             output_path,
             "embedded" if mode == "embed" else "burned",
         )
-        self.show_info("Success", f"Video saved:\n{output_path}")
+        self.show_info(
+            self.subtitle_text("Success"),
+            self.subtitle_text("Video saved:\n{path}", path=output_path),
+        )
 
     def video_subtitle_job_cancelled(self):
-        self.video_status.setText("Cancelled.")
+        self.video_status.setText(self.subtitle_text("Cancelled."))
         self.append_video_log("Job cancelled.")
 
     def video_subtitle_job_failed(self, message):
-        self.video_status.setText("Error.")
+        self.video_status.setText(self.subtitle_text("Error."))
         self.append_video_log(f"ERROR: {message}")
-        self.show_error("Subtitles", message)
+        self.show_error(self.subtitle_text("Subtitles"), message)
 
     def finish_video_subtitle_job(self):
         self.is_video_running = False
@@ -634,10 +693,10 @@ class SubtitlesWorkflowMixin:
     def toggle_video_details(self):
         if self.video_log.isVisible():
             self.video_log.hide()
-            self.video_details_button.setText("Show details")
+            self.video_details_button.setText(self.subtitle_text("Show details"))
             return
         self.video_log.show()
-        self.video_details_button.setText("Hide details")
+        self.video_details_button.setText(self.subtitle_text("Hide details"))
 
     def build_video_subtitle_page(self):
         page, layout = self.page_container()
@@ -689,15 +748,14 @@ class SubtitlesWorkflowMixin:
         self.video_mode_note.setWordWrap(True)
         self.video_quality_label = QLabel("Burn-in quality")
         self.video_quality_combo = QComboBox()
-        self.video_quality_combo.addItems(BURN_QUALITY_LABELS)
-        self.video_quality_combo.setCurrentText(BURN_QUALITY_AUTO_LABEL)
-        self.video_quality_combo.currentTextChanged.connect(self.update_video_quality_description)
+        self.populate_video_subtitle_combo(self.video_quality_combo, BURN_QUALITY_LABELS)
+        self.video_quality_combo.currentIndexChanged.connect(lambda _index: self.update_video_quality_description())
         self.video_crf_note = QLabel(
             "CRF is constant quality: lower number means higher quality and a larger output file."
         )
         self.video_crf_note.setObjectName("Muted")
         self.video_crf_note.setWordWrap(True)
-        self.video_quality_description = QLabel(BURN_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL])
+        self.video_quality_description = QLabel(self.subtitle_text(BURN_QUALITY_DESCRIPTIONS[BURN_QUALITY_AUTO_LABEL]))
         self.video_quality_description.setObjectName("Muted")
         self.video_quality_description.setWordWrap(True)
         self.video_style_panel = Card("Burn-in font")
@@ -719,14 +777,14 @@ class SubtitlesWorkflowMixin:
         self.video_shadow_spin.setRange(0, 4)
         self.video_shadow_spin.setValue(0)
         self.video_position_combo = QComboBox()
-        self.video_position_combo.addItems(list(VIDEO_SUBTITLE_POSITION_LABELS))
+        self.populate_video_subtitle_combo(self.video_position_combo, tuple(VIDEO_SUBTITLE_POSITION_LABELS))
         self.video_text_color_combo = QComboBox()
-        self.video_text_color_combo.addItems(VIDEO_SUBTITLE_TEXT_COLOR_LABELS)
+        self.populate_video_subtitle_combo(self.video_text_color_combo, tuple(VIDEO_SUBTITLE_TEXT_COLOR_LABELS))
         self.video_outline_color_combo = QComboBox()
-        self.video_outline_color_combo.addItems(VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS)
+        self.populate_video_subtitle_combo(self.video_outline_color_combo, tuple(VIDEO_SUBTITLE_OUTLINE_COLOR_LABELS))
         self.video_background_box_check = QCheckBox("Background box")
         self.video_box_color_combo = QComboBox()
-        self.video_box_color_combo.addItems(VIDEO_SUBTITLE_BOX_COLOR_LABELS)
+        self.populate_video_subtitle_combo(self.video_box_color_combo, tuple(VIDEO_SUBTITLE_BOX_COLOR_LABELS))
         for spinbox in (
             self.video_font_size_spin,
             self.video_outline_spin,
@@ -744,11 +802,11 @@ class SubtitlesWorkflowMixin:
         self.video_outline_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_shadow_spin.valueChanged.connect(lambda _value: self.save_user_settings())
         self.video_margin_spin.valueChanged.connect(lambda _value: self.save_user_settings())
-        self.video_position_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
-        self.video_text_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
-        self.video_outline_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.video_position_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
+        self.video_text_color_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
+        self.video_outline_color_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
         self.video_background_box_check.toggled.connect(lambda _checked: self.update_video_subtitle_style_options())
-        self.video_box_color_combo.currentTextChanged.connect(lambda _text: self.save_user_settings())
+        self.video_box_color_combo.currentIndexChanged.connect(lambda _index: self.save_user_settings())
         layout_label = QLabel("Layout")
         layout_label.setObjectName("Muted")
         legibility_label = QLabel("Legibility")
@@ -837,4 +895,3 @@ class SubtitlesWorkflowMixin:
         self.update_video_subtitle_style_options()
         self.update_video_subtitle_button_state()
         return page
-

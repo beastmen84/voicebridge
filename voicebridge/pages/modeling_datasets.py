@@ -88,6 +88,13 @@ MODELING_RECORD_MAX_SECONDS = 60
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyShadowingNames
 class ModelingDatasetsWorkflowMixin:
+    def modeling_text(self, text: str, **kwargs) -> str:
+        if kwargs and hasattr(self, "format_static_ui_text"):
+            return self.format_static_ui_text(text, **kwargs)
+        if kwargs:
+            return text.format(**kwargs)
+        return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
+
     def load_modeling_dataset_store(self) -> None:
         self.modeling_datasets = load_modeling_datasets()
         recovered_interrupted_verifications = recover_interrupted_modeling_verifications(self.modeling_datasets)
@@ -165,14 +172,21 @@ class ModelingDatasetsWorkflowMixin:
                 if dataset["profile_id"] in modeling_profile_ids
             ]
             if not visible_datasets:
-                self.modeling_datasets_list.addItem("No modeling datasets yet.")
+                self.modeling_datasets_list.addItem(self.modeling_text("No modeling datasets yet."))
                 self.selected_modeling_dataset_id = ""
                 return
             if not any(dataset["id"] == self.selected_modeling_dataset_id for dataset in visible_datasets):
                 self.selected_modeling_dataset_id = visible_datasets[0]["id"]
             for dataset in sorted(visible_datasets, key=lambda dataset_item: dataset_item["name"].casefold()):
                 ready_count = sum(1 for clip in dataset["clips"] if clip["status"] == "ready")
-                item = QListWidgetItem(f"{dataset['name']} | {len(dataset['clips'])} clip(s), {ready_count} ready")
+                item = QListWidgetItem(
+                    self.modeling_text(
+                        "{name} | {clip_count} clip(s), {ready_count} ready",
+                        name=dataset["name"],
+                        clip_count=len(dataset["clips"]),
+                        ready_count=ready_count,
+                    )
+                )
                 item.setData(Qt.ItemDataRole.UserRole, dataset["id"])
                 self.modeling_datasets_list.addItem(item)
                 if dataset["id"] == self.selected_modeling_dataset_id:
@@ -195,7 +209,7 @@ class ModelingDatasetsWorkflowMixin:
             return None
         dataset = self.selected_modeling_dataset()
         if not dataset:
-            self.modeling_dataset_summary_box.setPlainText("Create or select a modeling dataset.")
+            self.modeling_dataset_summary_box.setPlainText(self.modeling_text("Create or select a modeling dataset."))
             self.update_modeling_prompt_usage_label()
             return None
         summary = modeling_dataset_summary(dataset)
@@ -212,13 +226,13 @@ class ModelingDatasetsWorkflowMixin:
         try:
             self.modeling_clips_list.clear()
             if not dataset:
-                self.modeling_clips_list.addItem("Select a modeling dataset.")
+                self.modeling_clips_list.addItem(self.modeling_text("Select a modeling dataset."))
                 self.modeling_clip_text_edit.clear()
                 self.modeling_clip_details.setPlainText("")
                 self.modeling_generated_prompt_text = ""
                 return
             if not dataset["clips"]:
-                self.modeling_clips_list.addItem("No clips yet.")
+                self.modeling_clips_list.addItem(self.modeling_text("No clips yet."))
                 self.selected_modeling_clip_id = ""
                 self.modeling_clip_text_edit.clear()
                 self.modeling_clip_details.setPlainText("")
@@ -274,13 +288,21 @@ class ModelingDatasetsWorkflowMixin:
         dataset = self.selected_modeling_dataset()
         clip = self.selected_modeling_clip()
         if not dataset:
-            self.modeling_dataset_status.setText("Create a Voice Profile with type Modeling dataset first.")
+            self.modeling_dataset_status.setText(
+                self.modeling_text("Create a Voice Profile with type Modeling dataset first.")
+            )
             self.modeling_clip_text_edit.clear()
             self.modeling_clip_details.setPlainText("")
             self.modeling_generated_prompt_text = ""
             return
         if not clip:
-            self.modeling_dataset_status.setText(f"Dataset: {dataset['name']} | {len(dataset['clips'])} clip(s).")
+            self.modeling_dataset_status.setText(
+                self.modeling_text(
+                    "Dataset: {name} | {clip_count} clip(s).",
+                    name=dataset["name"],
+                    clip_count=len(dataset["clips"]),
+                )
+            )
             self.modeling_clip_text_edit.clear()
             self.modeling_clip_details.setPlainText("")
             self.modeling_generated_prompt_text = ""

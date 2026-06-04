@@ -26,6 +26,18 @@ class WorkerProcessResult:
     recent_output: tuple[str, ...]
 
 
+def hidden_process_startupinfo() -> Any:
+    startupinfo_class = getattr(subprocess, "STARTUPINFO", None)
+    startf_use_show_window = getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+    sw_hide = getattr(subprocess, "SW_HIDE", 0)
+    if startupinfo_class is None or not startf_use_show_window:
+        return None
+    startupinfo = startupinfo_class()
+    startupinfo.dwFlags |= startf_use_show_window
+    startupinfo.wShowWindow = sw_hide
+    return startupinfo
+
+
 def parse_worker_process_output(line: str) -> WorkerProcessOutput:
     stripped_line = line.strip()
     is_status = stripped_line.startswith(STATUS_PREFIX)
@@ -70,6 +82,7 @@ def run_worker_process_job(
         encoding="utf-8",
         errors="replace",
         creationflags=creationflags,
+        startupinfo=hidden_process_startupinfo(),
     )
     if on_process_start is not None:
         on_process_start(process)

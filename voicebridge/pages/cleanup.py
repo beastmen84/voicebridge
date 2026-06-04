@@ -55,10 +55,15 @@ from voicebridge.media_tools import (
     video_cleanup_repair_commands,
     video_filmstrip_preview_command,
 )
-from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
+from voicebridge.process_jobs import WorkerProcessOutput, hidden_process_startupinfo, run_worker_process_job
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
-from voicebridge.video_anomalies import CUT_BOUNDARY_ANOMALY, SINGLE_FRAME_INTERRUPTION, FrameAnomaly
+from voicebridge.video_anomalies import (
+    CUT_BOUNDARY_ANOMALY,
+    ISOLATED_TRANSITION_FRAME,
+    SINGLE_FRAME_INTERRUPTION,
+    FrameAnomaly,
+)
 
 VIDEO_OUTPUT_MIN_FREE_BYTES = 512 * 1024 * 1024
 VIDEO_CLEANUP_FILMSTRIP_MAX_ITEMS = 30
@@ -1044,6 +1049,7 @@ class VideoCleanupWorkflowMixin:
             encoding="utf-8",
             errors="replace",
             creationflags=creationflags,
+            startupinfo=hidden_process_startupinfo(),
         )
         self.cleanup_process = process
         assert process.stdout is not None
@@ -1090,6 +1096,7 @@ class VideoCleanupWorkflowMixin:
             encoding="utf-8",
             errors="replace",
             creationflags=creationflags,
+            startupinfo=hidden_process_startupinfo(),
         )
         self.cleanup_process = process
         assert process.stdout is not None
@@ -1642,6 +1649,7 @@ class VideoCleanupWorkflowMixin:
                 encoding="utf-8",
                 errors="replace",
                 creationflags=creationflags,
+                startupinfo=hidden_process_startupinfo(),
             )
             self.cleanup_filmstrip_process = process
             try:
@@ -1929,6 +1937,8 @@ class VideoCleanupWorkflowMixin:
     def cleanup_suspicious_kind_label(kind: str) -> str:
         if kind == SINGLE_FRAME_INTERRUPTION:
             return "Single-frame anomaly"
+        if kind == ISOLATED_TRANSITION_FRAME:
+            return "Isolated transition frame"
         if kind == CUT_BOUNDARY_ANOMALY:
             return "Cut-boundary anomaly"
         return "Suspicious frame"

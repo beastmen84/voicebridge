@@ -44,6 +44,15 @@ class FakeVideoCleanupWorkflow(VideoCleanupWorkflowMixin):
         self.logs.append(message)
 
 
+def assert_hidden_startupinfo(startupinfo: Any) -> None:
+    if not hasattr(subprocess, "STARTUPINFO"):
+        assert startupinfo is None
+        return
+    assert startupinfo is not None
+    assert startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW
+    assert startupinfo.wShowWindow == subprocess.SW_HIDE
+
+
 def test_run_cleanup_ffmpeg_process_maps_staged_progress_and_filters_progress_lines(monkeypatch) -> None:
     process = FakeFfmpegProcess(
         [
@@ -77,19 +86,21 @@ def test_run_cleanup_ffmpeg_process_maps_staged_progress_and_filters_progress_li
     assert workflow.logs == ["encoder warning", "final warning"]
     assert workflow.cleanup_process is process
     assert process.waited is True
-    assert popen_calls == [
-        (
-            ["ffmpeg", "-progress", "pipe:1"],
-            {
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.STDOUT,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
-                "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            },
-        )
-    ]
+    assert len(popen_calls) == 1
+    command, kwargs = popen_calls[0]
+    startupinfo = kwargs.pop("startupinfo")
+    assert_hidden_startupinfo(startupinfo)
+    assert (command, kwargs) == (
+        ["ffmpeg", "-progress", "pipe:1"],
+        {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        },
+    )
 
 
 def test_run_cleanup_ffmpeg_process_preserves_cancel_termination(monkeypatch) -> None:

@@ -1,7 +1,9 @@
 from voicebridge.video_anomalies import (
     CUT_BOUNDARY_ANOMALY,
+    ISOLATED_TRANSITION_FRAME,
     SINGLE_FRAME_INTERRUPTION,
     classify_frame_anomaly,
+    classify_isolated_transition_frame,
 )
 
 
@@ -70,6 +72,53 @@ def test_classify_frame_anomaly_ignores_black_frames() -> None:
         diff_next=42.0,
         diff_skip=2.0,
         luma=3.0,
+    )
+
+    assert anomaly is None
+
+
+def test_classify_isolated_transition_frame_detects_intruder_between_stable_contexts() -> None:
+    anomaly = classify_isolated_transition_frame(
+        frame_number=3024,
+        time_seconds=100.901,
+        diff_left_context=3.0,
+        diff_right_context=4.0,
+        diff_prev=36.0,
+        diff_next=28.0,
+        diff_skip=42.0,
+        luma=65.0,
+    )
+
+    assert anomaly is not None
+    assert anomaly["frame"] == 3024
+    assert anomaly["kind"] == ISOLATED_TRANSITION_FRAME
+
+
+def test_classify_isolated_transition_frame_ignores_normal_cut() -> None:
+    anomaly = classify_isolated_transition_frame(
+        frame_number=3024,
+        time_seconds=100.901,
+        diff_left_context=3.0,
+        diff_right_context=4.0,
+        diff_prev=42.0,
+        diff_next=5.0,
+        diff_skip=44.0,
+        luma=65.0,
+    )
+
+    assert anomaly is None
+
+
+def test_classify_isolated_transition_frame_requires_stable_contexts() -> None:
+    anomaly = classify_isolated_transition_frame(
+        frame_number=3024,
+        time_seconds=100.901,
+        diff_left_context=18.0,
+        diff_right_context=4.0,
+        diff_prev=36.0,
+        diff_next=28.0,
+        diff_skip=42.0,
+        luma=65.0,
     )
 
     assert anomaly is None

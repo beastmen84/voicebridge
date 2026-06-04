@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from voicebridge.process_jobs import parse_worker_process_output, run_worker_process_job
+from voicebridge.process_jobs import hidden_process_startupinfo, parse_worker_process_output, run_worker_process_job
 
 
 class FakeProcess:
@@ -23,6 +23,19 @@ class FakeProcess:
     def wait(self) -> int:
         self.waited = True
         return self.return_code
+
+
+def assert_hidden_startupinfo(startupinfo: Any) -> None:
+    if not hasattr(subprocess, "STARTUPINFO"):
+        assert startupinfo is None
+        return
+    assert startupinfo is not None
+    assert startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW
+    assert startupinfo.wShowWindow == subprocess.SW_HIDE
+
+
+def test_hidden_process_startupinfo_hides_windows_console() -> None:
+    assert_hidden_startupinfo(hidden_process_startupinfo())
 
 
 def test_parse_worker_process_output_detects_status_and_progress() -> None:
@@ -86,21 +99,23 @@ def test_run_worker_process_job_reads_output_and_returns_recent_non_progress_lin
     assert events[1].progress_percent == 25.0
     assert events[3].is_progress is True
     assert events[3].progress_percent is None
-    assert popen_calls == [
-        (
-            ["python", "worker.py"],
-            {
-                "cwd": str(tmp_path),
-                "stdin": subprocess.DEVNULL,
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.STDOUT,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
-                "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            },
-        )
-    ]
+    assert len(popen_calls) == 1
+    command, kwargs = popen_calls[0]
+    startupinfo = kwargs.pop("startupinfo")
+    assert_hidden_startupinfo(startupinfo)
+    assert (command, kwargs) == (
+        ["python", "worker.py"],
+        {
+            "cwd": str(tmp_path),
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        },
+    )
 
 
 def test_run_worker_process_job_terminates_when_cancel_requested() -> None:

@@ -63,6 +63,10 @@ Per le modalita' SRT, se viene rilevata o selezionata una lingua con modello di 
 
 Per l'uso normale del pacchetto onefolder non serve installare Python.
 
+Schermo:
+
+- Risoluzione minima attuale consigliata: Full HD, `1920x1080`. Su display Windows `1920x1080` con scaling oltre 100%, l'app forza temporaneamente il layout Qt a 100% per mantenere usabile la UI.
+
 Connessione:
 
 - `Text to Speech` richiede internet solo usando Microsoft Edge TTS.

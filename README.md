@@ -56,6 +56,7 @@ La cartella `models` puo' essere distribuita manualmente oppure lasciata assente
 
 Per l'uso normale del pacchetto onefolder non serve installare Python.
 
+- Risoluzione minima attuale consigliata: Full HD, `1920x1080`. Su display Windows `1920x1080` con scaling oltre 100%, l'app forza temporaneamente il layout Qt a 100% per mantenere usabile la UI.
 - Edge TTS richiede connessione internet.
 - Local TTS, Transcription, Subtitles, Audio Cleanup e Video Cleanup funzionano offline dopo aver incluso runtime, modelli, ffmpeg e runtime ML con OpenCV per il detect dei frame sospetti.
 - Microsoft Word serve solo per leggere vecchi file `.doc`.

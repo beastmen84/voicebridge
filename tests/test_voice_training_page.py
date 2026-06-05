@@ -72,6 +72,68 @@ def test_voice_training_cancel_button_disables_after_cancel_requested() -> None:
     assert workflow.voice_training_cancel_button.enabled is False
 
 
+def test_voice_training_buttons_follow_job_status(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+
+    def set_status(status: str) -> None:
+        monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": status})
+        workflow.update_voice_training_buttons()
+
+    set_status("configured")
+    assert workflow.voice_training_prepare_button.enabled is True
+    assert workflow.voice_training_dry_run_button.enabled is False
+    assert workflow.voice_training_start_button.enabled is False
+
+    set_status("prepared")
+    assert workflow.voice_training_prepare_button.enabled is False
+    assert workflow.voice_training_dry_run_button.enabled is True
+    assert workflow.voice_training_start_button.enabled is False
+
+    set_status("dry_run_ok")
+    assert workflow.voice_training_prepare_button.enabled is False
+    assert workflow.voice_training_dry_run_button.enabled is False
+    assert workflow.voice_training_start_button.enabled is True
+
+    set_status("failed")
+    assert workflow.voice_training_prepare_button.enabled is True
+    assert workflow.voice_training_dry_run_button.enabled is False
+    assert workflow.voice_training_start_button.enabled is False
+
+
+def test_voice_training_start_methods_are_guarded_by_job_status(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+
+    monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": "configured"})
+    workflow.start_voice_training_dry_run()
+    workflow.start_voice_training_run()
+    assert workflow.retried_jobs == []
+
+    monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": "prepared"})
+    workflow.start_voice_training_dry_run()
+    assert workflow.retried_jobs == [("current-job.json", True)]
+
+    monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": "dry_run_ok"})
+    workflow.start_voice_training_run()
+    assert workflow.retried_jobs == [("current-job.json", True), ("current-job.json", False)]
+
+
+def test_voice_training_cancelled_marks_job_cancelled(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+    workflow.voice_training_running_config_path = "running-job.json"
+    updated_statuses = []
+    monkeypatch.setattr(
+        voice_training_page,
+        "update_voice_modeling_job_status",
+        lambda config_path, status: updated_statuses.append((config_path, status)),
+    )
+
+    workflow.voice_training_cancelled()
+
+    assert updated_statuses == [("running-job.json", "cancelled")]
+    assert workflow.refreshed_paths == ["running-job.json"]
+    assert workflow.local_voice_tab_updates == 1
+
+
 def test_voice_training_cuda_retry_uses_running_config_path(monkeypatch) -> None:
     workflow = FakeVoiceTrainingWorkflow()
     workflow.voice_training_job_combo.selected_path = "current-job.json"

@@ -22,6 +22,7 @@ from voicebridge.app_paths import (
 from voicebridge.file_checks import (
     available_disk_bytes,
     ensure_free_space,
+    existing_parent,
     format_bytes,
     partial_download_files,
     required_file_issue,
@@ -58,6 +59,7 @@ VOICE_MODELING_MIN_BATCH_SIZE = 1
 VOICE_MODELING_MAX_BATCH_SIZE = 16
 VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS = 1
 VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS = 11
+VOICE_MODELING_XTTS_MAX_TEXT_CHARS = 200
 XTTS_DVAE_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/dvae.pth?download=true"
 XTTS_DVAE_SHA256 = "b29bc227d410d4991e0a8c09b858f77415013eeb9fba9650258e96095557d97a"
 XTTS_MEL_STATS_DOWNLOAD_URL = "https://huggingface.co/coqui/XTTS-v2/resolve/main/mel_stats.pth?download=true"
@@ -439,7 +441,7 @@ def check_voice_modeling_preflight(
         add_check("Model output folder", not output_path.is_file(), output_path)
         add_check("Model output parent", output_parent_ready, output_parent)
         try:
-            validate_output_path(output_path / ".voicebridge-output-check", create_parent=True)
+            validate_voice_modeling_output_location(output_path)
         except ValueError as exc:
             add_check("Model output writable", False, str(exc))
         else:
@@ -566,7 +568,7 @@ def build_voice_modeling_job_config(
     resume_path = Path(resume_checkpoint).expanduser() if resume_checkpoint else None
     if resume_path and not resume_path.is_file():
         raise ValueError("Resume checkpoint must be an existing file.")
-    validate_output_path(output_path / ".voicebridge-output-check", create_parent=True)
+    validate_voice_modeling_output_location(output_path)
     ensure_free_space(output_path, VOICE_MODELING_MIN_FREE_BYTES, "voice model training output")
     timestamp = utc_timestamp()
     return {
@@ -583,6 +585,19 @@ def build_voice_modeling_job_config(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
+
+
+def validate_voice_modeling_output_location(output_dir: str | Path) -> Path:
+    output_path = Path(output_dir).expanduser()
+    if not str(output_path).strip():
+        raise ValueError("Choose a model output folder.")
+    if output_path.exists() and not output_path.is_dir():
+        raise ValueError(f"Model output path points to a file, not a folder: {output_path}")
+    write_test_dir = output_path if output_path.is_dir() else existing_parent(output_path)
+    if not write_test_dir.is_dir():
+        raise ValueError(f"The model output parent folder does not exist: {write_test_dir}")
+    validate_output_path(write_test_dir / ".voicebridge-output-check", create_parent=False)
+    return output_path
 
 
 def save_voice_modeling_job_config(config: VoiceModelingJobConfig) -> Path:
@@ -745,6 +760,23 @@ def split_voice_modeling_metadata_rows(
     return rows[:-eval_count], rows[-eval_count:]
 
 
+def validate_voice_modeling_training_rows(rows: list[tuple[str, str]]) -> None:
+    too_long_rows = [
+        (index, text)
+        for index, (_wav_path, text) in enumerate(rows, start=1)
+        if len(text) > VOICE_MODELING_XTTS_MAX_TEXT_CHARS
+    ]
+    if not too_long_rows:
+        return
+    first_index, first_text = too_long_rows[0]
+    preview = first_text[:120].rstrip()
+    raise ValueError(
+        "XTTS-v2 training requires shorter transcript rows. "
+        f"{len(too_long_rows)} metadata row(s) exceed {VOICE_MODELING_XTTS_MAX_TEXT_CHARS} characters. "
+        f"First long row: {first_index} ({len(first_text)} characters): {preview}..."
+    )
+
+
 def write_coqui_metadata(path: Path, rows: list[tuple[str, str]], *, speaker_name: str = "voicebridge") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["audio_file|text|speaker_name"]
@@ -778,6 +810,7 @@ def prepare_voice_modeling_training_job(config_path: str | Path) -> VoiceModelin
     config = load_voice_modeling_job_config(resolved_config_path)
     export_info = validate_voice_modeling_export(config["dataset_dir"])
     rows = parse_voice_modeling_metadata(Path(export_info["metadata_path"]), Path(export_info["dataset_dir"]))
+    validate_voice_modeling_training_rows(rows)
     train_rows, eval_rows = split_voice_modeling_metadata_rows(rows)
     if not train_rows:
         raise ValueError("Training requires at least one train metadata row.")

@@ -83,7 +83,7 @@ from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
-MODELING_GUIDED_TEXT_MAX_CHARS = 450
+MODELING_GUIDED_TEXT_MAX_CHARS = 200
 MODELING_RECORD_MAX_SECONDS = 60
 
 

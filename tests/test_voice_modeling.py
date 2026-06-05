@@ -17,6 +17,7 @@ from voicebridge.modeling_datasets import (
     export_modeling_dataset,
 )
 from voicebridge.voice_modeling import (
+    VOICE_MODELING_XTTS_MAX_TEXT_CHARS,
     VoiceModelingDownloadCancelled,
     build_voice_modeling_job_config,
     build_voice_modeling_training_command,
@@ -28,6 +29,7 @@ from voicebridge.voice_modeling import (
     prepare_voice_modeling_training_job,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
+    validate_voice_modeling_training_rows,
     voice_modeling_export_label,
     voice_modeling_export_summary_text,
     voice_modeling_job_label,
@@ -89,6 +91,13 @@ def test_validate_voice_modeling_export_rejects_bad_metadata(tmp_path: Path) -> 
         validate_voice_modeling_export(export_dir)
 
 
+def test_validate_voice_modeling_training_rows_rejects_long_transcripts() -> None:
+    long_text = "A" * (VOICE_MODELING_XTTS_MAX_TEXT_CHARS + 1)
+
+    with pytest.raises(ValueError, match="metadata row\\(s\\) exceed 200 characters"):
+        validate_voice_modeling_training_rows([("wavs/clip.wav", long_text)])
+
+
 def test_list_voice_modeling_exports_returns_valid_exports_first(tmp_path: Path) -> None:
     older_export = exported_dataset(tmp_path, name="Older Voice", timestamp="20260601-120000")
     newer_export = exported_dataset(tmp_path, name="Newer Voice", timestamp="20260601-130000")
@@ -120,6 +129,7 @@ def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: p
         max_epochs=80,
         batch_size=4,
     )
+    assert not default_output.exists()
     config_path = save_voice_modeling_job_config(config)
 
     saved = json.loads(config_path.read_text(encoding="utf-8"))

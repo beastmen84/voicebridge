@@ -5,10 +5,10 @@ from typing import TypedDict
 from voicebridge.languages import normalize_language_code
 from voicebridge.voice_profiles import VOICE_PROFILE_LANGUAGES
 
-MODELING_PROMPT_CORPUS_VERSION = "1.3"
+MODELING_PROMPT_CORPUS_VERSION = "1.4"
 MODELING_PROMPT_SOURCE_GENERATED = f"generated_prompt:{MODELING_PROMPT_CORPUS_VERSION}"
 MODELING_PROMPT_SOURCE_PROVIDED = "provided_text"
-MODELING_PROMPT_DEFAULT_MAX_CHARS = 450
+MODELING_PROMPT_DEFAULT_MAX_CHARS = 200
 NO_UNUSED_MODELING_PROMPTS_MESSAGE = (
     "No unused guided prompts are available for this dataset. "
     "Add custom text, upload a script, or reset guided prompt history."
@@ -2037,7 +2037,7 @@ def generate_modeling_prompt(
 def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_chars: int) -> str:
     selected: list[str] = []
     variant_index = prompt_variant_index(seed, corpus)
-    for slot_index, slot_name in enumerate(PROMPT_SLOT_ORDER):
+    for slot_index, slot_name in prompt_slot_order_for_seed(seed):
         slot = corpus[slot_name]
         sentence = slot[slot_sentence_index(variant_index, corpus, slot_index, len(slot))]
         candidate = normalize_prompt_text(" ".join((*selected, sentence)))
@@ -2050,15 +2050,24 @@ def build_prompt_from_corpus(corpus: ModelingPromptCorpus, *, seed: int, max_cha
     return normalize_prompt_text(fallback[:max_chars])
 
 
+def prompt_slot_order_for_seed(seed: int) -> tuple[tuple[int, str], ...]:
+    required_slot = (0, "short")
+    optional_slots = tuple(enumerate(PROMPT_SLOT_ORDER[1:], start=1))
+    if not optional_slots:
+        return (required_slot,)
+    rotation = seed % len(optional_slots)
+    return (required_slot, *optional_slots[rotation:], *optional_slots[:rotation])
+
+
 def prompt_variant_index(seed: int, corpus: ModelingPromptCorpus) -> int:
-    variant_count = modeling_prompt_variant_count(corpus)
+    variant_count = modeling_prompt_content_variant_count(corpus)
     if variant_count <= 1:
         return 0
     return (seed * prompt_variant_stride(corpus)) % variant_count
 
 
 def prompt_variant_stride(corpus: ModelingPromptCorpus) -> int:
-    variant_count = modeling_prompt_variant_count(corpus)
+    variant_count = modeling_prompt_content_variant_count(corpus)
     if variant_count <= 1:
         return 1
     stride = 0
@@ -2088,10 +2097,18 @@ def slot_sentence_index(variant_index: int, corpus: ModelingPromptCorpus, slot_i
 
 
 def modeling_prompt_variant_count(corpus: ModelingPromptCorpus) -> int:
+    return modeling_prompt_content_variant_count(corpus) * prompt_slot_order_variant_count()
+
+
+def modeling_prompt_content_variant_count(corpus: ModelingPromptCorpus) -> int:
     count = 1
     for slot_name in PROMPT_SLOT_ORDER:
         count *= max(1, len(corpus[slot_name]))
     return count
+
+
+def prompt_slot_order_variant_count() -> int:
+    return max(1, len(PROMPT_SLOT_ORDER) - 1)
 
 
 def modeling_prompt_available_count(language_code: str) -> int:

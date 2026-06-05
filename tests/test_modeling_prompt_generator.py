@@ -2,6 +2,7 @@ import pytest
 
 import voicebridge.modeling_prompt_generator as prompt_generator
 from voicebridge.modeling_prompt_generator import (
+    MODELING_PROMPT_DEFAULT_MAX_CHARS,
     MODELING_PROMPT_SOURCE_GENERATED,
     NO_UNUSED_MODELING_PROMPTS_MESSAGE,
     NoUnusedModelingPromptError,
@@ -21,14 +22,12 @@ def test_prompt_corpus_covers_voice_profile_languages() -> None:
 
         assert prompt.language_code == modeling_prompt_language_key(language_code)
         assert prompt.source == MODELING_PROMPT_SOURCE_GENERATED
-        assert len(prompt.text) <= 450
-        assert modeling_prompt_available_count(language_code) == 2_985_984
+        assert len(prompt.text) <= MODELING_PROMPT_DEFAULT_MAX_CHARS
+        assert modeling_prompt_available_count(language_code) == 14_929_920
         corpus = prompt_generator.MODELING_PROMPT_CORPUS[prompt.language_code]
         assert all(len(corpus[slot_name]) == 12 for slot_name in prompt_generator.PROMPT_SLOT_ORDER)
         for slot_name in prompt_generator.PROMPT_SLOT_ORDER:
             assert len(set(corpus[slot_name])) == len(corpus[slot_name]), (language_code, slot_name)
-        assert "?" in prompt.text or "؟" in prompt.text or "？" in prompt.text or "か" in prompt.text
-        assert any(character.isdigit() for character in prompt.text)
 
 
 def test_prompt_generation_avoids_recent_duplicates() -> None:
@@ -45,13 +44,14 @@ def test_prompt_generation_varies_all_slots_in_short_runs() -> None:
     corpus = prompt_generator.MODELING_PROMPT_CORPUS["it"]
     slot_values = {slot_name: set() for slot_name in prompt_generator.PROMPT_SLOT_ORDER}
 
-    for _index in range(10):
+    for _index in range(24):
         prompt = generate_modeling_prompt("it", used_texts=tuple(prompts))
+        assert len(prompt.text) <= MODELING_PROMPT_DEFAULT_MAX_CHARS
         prompts.append(prompt.text)
         for slot_name in prompt_generator.PROMPT_SLOT_ORDER:
             sentence = next((entry for entry in corpus[slot_name] if entry in prompt.text), None)
-            assert sentence is not None, slot_name
-            slot_values[slot_name].add(sentence)
+            if sentence is not None:
+                slot_values[slot_name].add(sentence)
 
     assert all(len(values) > 1 for values in slot_values.values())
 
@@ -125,7 +125,7 @@ def test_prompt_generation_falls_back_to_english() -> None:
     prompt = generate_modeling_prompt("unknown")
 
     assert prompt.language_code == "en"
-    assert len(prompt.text) <= 450
+    assert len(prompt.text) <= MODELING_PROMPT_DEFAULT_MAX_CHARS
 
 
 def test_generated_prompt_source_detection() -> None:

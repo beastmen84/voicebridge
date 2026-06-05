@@ -2,6 +2,7 @@ import argparse
 import gc
 import importlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -146,6 +147,8 @@ def require_training_assets():
 def import_training_dependencies():
     torch = load_optional_module("torch")
     trainer_module = load_optional_module("trainer")
+    trainer_impl_module = load_optional_module("trainer.trainer")
+    trainer_logging_module = load_optional_module("trainer.logging")
     shared_configs_module = load_optional_module("TTS.config.shared_configs")
     datasets_module = load_optional_module("TTS.tts.datasets")
     gpt_trainer_module = load_optional_module("TTS.tts.layers.xtts.trainer.gpt_trainer")
@@ -155,6 +158,8 @@ def import_training_dependencies():
         "torch": torch,
         "Trainer": trainer_module.Trainer,
         "TrainerArgs": trainer_module.TrainerArgs,
+        "DummyLogger": trainer_logging_module.DummyLogger,
+        "trainer_impl_module": trainer_impl_module,
         "BaseDatasetConfig": shared_configs_module.BaseDatasetConfig,
         "load_tts_samples": datasets_module.load_tts_samples,
         "GPTArgs": gpt_trainer_module.GPTArgs,
@@ -162,6 +167,48 @@ def import_training_dependencies():
         "GPTTrainerConfig": gpt_trainer_module.GPTTrainerConfig,
         "XttsAudioConfig": xtts_module.XttsAudioConfig,
     }
+
+
+def install_windows_safe_trainer_cleanup(trainer_impl_module):
+    original_remove = getattr(trainer_impl_module, "remove_experiment_folder", None)
+    if os.name != "nt" or original_remove is None:
+        return
+
+    def remove_experiment_folder_without_windows_lock(experiment_path):
+        print(
+            "WARNING: Preserving failed training run folder on Windows to avoid locked trainer log cleanup.",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    trainer_impl_module.remove_experiment_folder = remove_experiment_folder_without_windows_lock
+
+
+def close_trainer_file_handlers(output_path):
+    output_path = Path(output_path).expanduser().resolve()
+    trainer_logger = logging.getLogger("trainer")
+    for handler in list(trainer_logger.handlers):
+        base_filename = getattr(handler, "baseFilename", "")
+        if not base_filename:
+            continue
+        try:
+            handler_path = Path(base_filename).resolve()
+        except (OSError, ValueError):
+            continue
+        if not handler_path.is_relative_to(output_path):
+            continue
+        trainer_logger.removeHandler(handler)
+        with suppress(Exception):
+            handler.close()
+
+
+def run_trainer_fit(trainer):
+    try:
+        trainer.fit()
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else 1
+        if code:
+            raise RuntimeError(f"Trainer exited with code {code}. Check training.log for details.") from exc
 
 
 def latest_checkpoint(path):
@@ -227,6 +274,7 @@ def run_training(config_path):
     config = load_voice_modeling_job_config(config_path)
     configure_requested_device(config["device"])
     dependencies = import_training_dependencies()
+    install_windows_safe_trainer_cleanup(dependencies["trainer_impl_module"])
     torch_module = dependencies["torch"]
     device = resolve_runtime_device(config["device"])
     require_training_assets()
@@ -327,10 +375,14 @@ def run_training(config_path):
         model=model,
         train_samples=train_samples,
         eval_samples=eval_samples,
+        dashboard_logger=dependencies["DummyLogger"](),
     )
     status("Training started. This can take a long time.")
     progress(30)
-    trainer.fit()
+    try:
+        run_trainer_fit(trainer)
+    finally:
+        close_trainer_file_handlers(trainer.output_path)
     trainer_out_path = Path(trainer.output_path)
     status("Training finished. Preparing inference files...")
     progress(92)

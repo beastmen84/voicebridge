@@ -1,4 +1,5 @@
 import threading
+from contextlib import suppress
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -15,9 +16,14 @@ from voicebridge.voice_modeling import (
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
     save_voice_modeling_job_config,
+    update_voice_modeling_job_status,
     voice_modeling_job_label,
     voice_modeling_training_plan_text,
 )
+
+VOICE_TRAINING_PREPARE_STATUSES = {"", "configured", "failed", "cancelled", "completed"}
+VOICE_TRAINING_DRY_RUN_STATUSES = {"prepared"}
+VOICE_TRAINING_START_STATUSES = {"dry_run_ok"}
 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences
@@ -32,6 +38,17 @@ class VoiceTrainingWorkflowMixin:
     def selected_voice_training_job_path(self) -> str:
         config_path = self.voice_training_job_combo.currentData(Qt.ItemDataRole.UserRole)
         return config_path if isinstance(config_path, str) else ""
+
+    def selected_voice_training_job_status(self) -> str:
+        config_path = self.selected_voice_training_job_path()
+        if not config_path:
+            return ""
+        try:
+            config = load_voice_modeling_job_config(config_path)
+        except (OSError, ValueError):
+            return ""
+        status = config.get("status", "")
+        return status if isinstance(status, str) else ""
 
     def refresh_voice_training_jobs(self, selected_path: str = "") -> None:
         if not hasattr(self, "voice_training_job_combo"):
@@ -81,13 +98,20 @@ class VoiceTrainingWorkflowMixin:
         if not hasattr(self, "voice_training_open_folder_button"):
             return
         has_job = bool(self.selected_voice_training_job_path())
+        status = self.selected_voice_training_job_status() if has_job else ""
         running = getattr(self, "voice_training_running", False)
         cancel_requested = getattr(self, "voice_training_cancel_requested", False)
         self.voice_training_job_combo.setEnabled(not running)
         self.voice_training_open_folder_button.setEnabled(has_job and not running)
-        self.voice_training_prepare_button.setEnabled(has_job and not running)
-        self.voice_training_dry_run_button.setEnabled(has_job and not running)
-        self.voice_training_start_button.setEnabled(has_job and not running)
+        self.voice_training_prepare_button.setEnabled(
+            has_job and not running and status in VOICE_TRAINING_PREPARE_STATUSES
+        )
+        self.voice_training_dry_run_button.setEnabled(
+            has_job and not running and status in VOICE_TRAINING_DRY_RUN_STATUSES
+        )
+        self.voice_training_start_button.setEnabled(
+            has_job and not running and status in VOICE_TRAINING_START_STATUSES
+        )
         self.voice_training_cancel_button.setEnabled(running and not cancel_requested)
         self.voice_training_refresh_jobs_button.setEnabled(not running)
 
@@ -111,9 +135,13 @@ class VoiceTrainingWorkflowMixin:
         self.update_local_voice_tabs()
 
     def start_voice_training_dry_run(self) -> None:
+        if self.selected_voice_training_job_status() not in VOICE_TRAINING_DRY_RUN_STATUSES:
+            return
         self.start_voice_training_worker(dry_run=True)
 
     def start_voice_training_run(self) -> None:
+        if self.selected_voice_training_job_status() not in VOICE_TRAINING_START_STATUSES:
+            return
         if not self.ask_question(
             self.voice_training_text("Start voice training"),
             self.voice_training_text(
@@ -246,6 +274,12 @@ class VoiceTrainingWorkflowMixin:
 
     def voice_training_cancelled(self) -> None:
         self.append_voice_training_log(self.voice_training_text("Cancelled."))
+        config_path = getattr(self, "voice_training_running_config_path", "") or self.selected_voice_training_job_path()
+        if config_path:
+            with suppress(OSError, ValueError):
+                update_voice_modeling_job_status(config_path, "cancelled")
+            self.refresh_voice_training_jobs(config_path)
+            self.update_local_voice_tabs()
 
     def finish_voice_training_worker(self) -> None:
         self.voice_training_running = False

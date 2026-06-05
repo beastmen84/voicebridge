@@ -449,6 +449,39 @@ def test_confirm_destructive_modeling_profile_delete_removes_user_content(
     assert window.profile_status_label.text == "Deleted profile and linked modeling work."
 
 
+def test_destructive_modeling_profile_delete_removes_linked_empty_training_dirs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("voicebridge.voice_profiles.external_base_dir", lambda: tmp_path)
+    monkeypatch.setattr("voicebridge.modeling_datasets.external_base_dir", lambda: tmp_path)
+    monkeypatch.setattr("voicebridge.voice_modeling.external_base_dir", lambda: tmp_path)
+    profile = build_voice_profile(
+        name="Anayah",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    linked_empty_dir = tmp_path / "voice_models" / "anayah-20260605-180944"
+    unrelated_empty_dir = tmp_path / "voice_models" / "other-20260605-180944"
+    linked_empty_dir.mkdir(parents=True)
+    unrelated_empty_dir.mkdir(parents=True)
+    saved_profiles: list[list[VoiceProfile]] = []
+    saved_datasets: list[list[ModelingDataset]] = []
+    monkeypatch.setattr("voicebridge.pages.voice_profiles.save_voice_profiles", saved_profiles.append)
+    monkeypatch.setattr("voicebridge.pages.voice_profiles.save_modeling_datasets", saved_datasets.append)
+
+    window = DummyVoiceProfilesWindow([profile], [dataset])
+
+    window.delete_selected_voice_profile()
+
+    assert not linked_empty_dir.exists()
+    assert unrelated_empty_dir.exists()
+    assert "empty training output folder" in window.questions[0][1]
+
+
 def test_destructive_modeling_profile_delete_preserves_unmanaged_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

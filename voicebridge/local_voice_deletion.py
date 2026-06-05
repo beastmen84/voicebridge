@@ -21,6 +21,7 @@ from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
     delete_voice_profile_audio_files,
+    safe_voice_profile_audio_stem,
 )
 
 
@@ -98,6 +99,7 @@ def build_voice_profile_deletion_plan(
     )
     safe_assets.extend(training_safe_assets)
     unsafe_assets.extend(training_unsafe_assets)
+    safe_assets.extend(_linked_empty_training_output_dirs(profile, linked_datasets))
 
     safe_assets = _dedupe_assets(safe_assets)
     unsafe_assets = _dedupe_assets(unsafe_assets)
@@ -142,6 +144,15 @@ def voice_profile_deletion_confirmation_text(plan: VoiceProfileDeletionPlan) -> 
                 plan.trained_model_output_count,
                 "trained model / training output folder",
                 "trained model / training output folders",
+            )
+        )
+    empty_training_output_count = sum(1 for asset in plan.safe_assets if asset.kind == "empty_training_output_dir")
+    if empty_training_output_count:
+        lines.append(
+            _count_line(
+                empty_training_output_count,
+                "empty training output folder",
+                "empty training output folders",
             )
         )
     if any(asset.kind == "dataset_dir" for asset in plan.safe_assets):
@@ -276,6 +287,37 @@ def _linked_training_output_assets(
                 )
             )
     return safe_assets, unsafe_assets
+
+
+def _linked_empty_training_output_dirs(
+    profile: VoiceProfile,
+    linked_datasets: tuple[ModelingDataset, ...],
+) -> list[LinkedDeletionAsset]:
+    root = voice_modeling_outputs_root()
+    if not root.is_dir():
+        return []
+    stems = {
+        safe_voice_profile_audio_stem(name)
+        for name in (profile.get("name", ""), *(dataset.get("name", "") for dataset in linked_datasets))
+        if isinstance(name, str) and name.strip()
+    }
+    stems.discard("")
+    if not stems:
+        return []
+
+    assets: list[LinkedDeletionAsset] = []
+    for candidate in root.iterdir():
+        if not candidate.is_dir() or not _is_managed_path(candidate, root):
+            continue
+        if not any(candidate.name == stem or candidate.name.startswith(f"{stem}-") for stem in stems):
+            continue
+        try:
+            if any(candidate.iterdir()):
+                continue
+        except OSError:
+            continue
+        assets.append(LinkedDeletionAsset("empty_training_output_dir", "empty training output folder", candidate))
+    return assets
 
 
 def _unmanaged_linked_export_asset(

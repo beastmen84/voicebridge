@@ -566,7 +566,7 @@ def test_modeling_dataset_guided_prompt_history_counts_unique_used_prompts(tmp_p
     used_count, available_count = modeling_dataset_guided_prompt_usage(dataset)
 
     assert used_count == 2
-    assert available_count == 2_985_984
+    assert available_count == 14_929_920
     assert modeling_dataset_guided_prompt_texts(dataset) == ("Prompt one", "Prompt two")
     assert reset_modeling_dataset_guided_prompt_history(dataset) is True
     assert modeling_dataset_guided_prompt_texts(dataset) == ("Prompt two",)

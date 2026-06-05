@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from voicebridge.audio_recorder import AudioRecorderError, SoundDevicePcmRecorder, select_input_settings
+from voicebridge.recording_text import format_recording_text_for_display
 from voicebridge.wav_writer import (
     Pcm16ProcessingResult,
     prepare_voice_reference_pcm,
@@ -135,9 +136,7 @@ class ModelingClipRecordingDialog(QDialog):
         self.script_box.setWidgetResizable(True)
         self.script_box.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.script_box.setMinimumHeight(300)
-        display_text = self.prompt_text or (
-            f"Free recording. Speak naturally, then press Stop. Maximum length: {format_duration(self.max_seconds)}."
-        )
+        display_text = self.display_prompt_text(self.prompt_text, self.max_seconds)
         self.script_text = QLabel(display_text)
         self.script_text.setObjectName("RecordingScriptText")
         self.script_text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -201,6 +200,13 @@ class ModelingClipRecordingDialog(QDialog):
     @staticmethod
     def preview_recording_path(output_path: Path) -> Path:
         return output_path.with_name(f".{output_path.stem}.preview-{uuid4().hex}{output_path.suffix}")
+
+    @staticmethod
+    def display_prompt_text(prompt_text: str, max_seconds: int) -> str:
+        text = prompt_text.strip() or (
+            f"Free recording. Speak naturally, then press Stop. Maximum length: {format_duration(max_seconds)}."
+        )
+        return format_recording_text_for_display(text)
 
     def start_or_stop(self) -> None:
         if self._phase == "idle":

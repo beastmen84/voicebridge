@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $bundleDir = Join-Path $PSScriptRoot "dist\VoiceBridge"
 $preserveRoot = Join-Path $PSScriptRoot "dist\.preserve-stt-$PID"
-$preserveNames = @("python-ml", ".stt-bin")
+$preserveNames = @("python-ml", ".stt-bin", "voice_profiles", "modeling_exports", "voice_models")
 
 if ($Clean) {
     $buildDir = Join-Path $PSScriptRoot "build"
@@ -85,7 +85,25 @@ Copy-Item -Path (Join-Path $PSScriptRoot "video_anomaly_worker.py") -Destination
 $workerPackageDir = Join-Path $bundleDir "voicebridge"
 New-Item -ItemType Directory -Path $workerPackageDir -Force | Out-Null
 Copy-Item -Path (Join-Path $PSScriptRoot "voicebridge\__init__.py") -Destination $workerPackageDir -Force
-Copy-Item -Path (Join-Path $PSScriptRoot "voicebridge\video_anomalies.py") -Destination $workerPackageDir -Force
+$workerSupportModules = @(
+    "app_paths",
+    "app_settings",
+    "file_checks",
+    "json_schemas",
+    "languages",
+    "local_tts_presets",
+    "modeling_datasets",
+    "modeling_prompt_generator",
+    "stt_preflight",
+    "tts_text",
+    "tts_timeline",
+    "video_anomalies",
+    "voice_modeling",
+    "voice_profiles"
+)
+foreach ($moduleName in $workerSupportModules) {
+    Copy-Item -Path (Join-Path $PSScriptRoot "voicebridge\$moduleName.py") -Destination $workerPackageDir -Force
+}
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force

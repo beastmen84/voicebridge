@@ -22,6 +22,20 @@ def test_estimated_target_seconds_caps_to_maximum() -> None:
     assert ModelingClipRecordingDialog.estimated_target_seconds(long_text, 60) == 60
 
 
+def test_modeling_prompt_display_uses_reading_breaks() -> None:
+    display_text = ModelingClipRecordingDialog.display_prompt_text(
+        "Prima frase. Seconda frase? Terza frase; poi chiudo.",
+        60,
+    )
+
+    assert display_text.split("\n\n") == [
+        "Prima frase.",
+        "Seconda frase?",
+        "Terza frase;",
+        "poi chiudo.",
+    ]
+
+
 def test_modeling_recording_status_reports_auto_stop() -> None:
     recording = prepare_voice_reference_pcm(pcm16_bytes([5000] * 300), sample_rate=10, channel_count=1)
 

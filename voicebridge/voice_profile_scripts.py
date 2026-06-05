@@ -1,6 +1,7 @@
+from voicebridge.recording_text import RECORDING_TEXT_BREAK_MARKS, format_recording_text_for_display
 from voicebridge.voice_profiles import VOICE_PROFILE_LANGUAGES
 
-VOICE_PROFILE_RECORDING_BREAK_MARKS = ".!?;؟؛。！？।"
+VOICE_PROFILE_RECORDING_BREAK_MARKS = RECORDING_TEXT_BREAK_MARKS
 
 VOICE_PROFILE_RECORDING_SCRIPTS = {
     "it": (
@@ -120,21 +121,7 @@ def voice_profile_recording_script_for_display(language_code: str) -> str:
 
 
 def format_voice_profile_recording_script(script: str) -> str:
-    normalized_script = " ".join(script.split())
-    lines: list[str] = []
-    current: list[str] = []
-    for character in normalized_script:
-        current.append(character)
-        if character in VOICE_PROFILE_RECORDING_BREAK_MARKS:
-            line = "".join(current).strip()
-            if line:
-                lines.append(line)
-            current = []
-
-    remainder = "".join(current).strip()
-    if remainder:
-        lines.append(remainder)
-    return "\n\n".join(lines)
+    return format_recording_text_for_display(script)
 
 
 def voice_profile_recording_script_languages() -> set[str]:

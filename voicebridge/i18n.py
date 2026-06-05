@@ -549,6 +549,28 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Generate MP3": "Genera MP3",
     "Edge TTS": "Edge TTS",
     "Local TTS": "Local TTS",
+    "Checking Edge TTS voices": "Controllo voci Edge TTS",
+    "Checking Edge TTS voices...": "Controllo voci Edge TTS...",
+    "Loading complete voice list...": "Caricamento lista completa voci...",
+    "Retrying Edge TTS voice list...": "Riprovo caricamento lista voci Edge TTS...",
+    "{count} online voices loaded": "{count} voci online caricate",
+    "Loaded {count} voices. Select a file to filter by language.": (
+        "{count} voci caricate. Seleziona un file per filtrare per lingua."
+    ),
+    "Edge TTS offline; Local TTS may still work": "Edge TTS offline; Local TTS potrebbe funzionare",
+    (
+        "Edge TTS voice list unavailable. Edge TTS requires internet; "
+        "Local TTS remains available if configured. Retrying automatically."
+    ): (
+        "Lista voci Edge TTS non disponibile. Edge TTS richiede internet; "
+        "Local TTS resta disponibile se configurato. Riprovo automaticamente."
+    ),
+    "Edge TTS is unavailable. Check internet connection or use Local TTS.": (
+        "Edge TTS non è disponibile. Controlla la connessione internet o usa Local TTS."
+    ),
+    "Edge TTS voice list is unavailable. Check internet connection or use Local TTS.": (
+        "La lista voci Edge TTS non è disponibile. Controlla la connessione internet o usa Local TTS."
+    ),
     "Paragraphs": "Paragrafi",
     "Lines": "Righe",
     "Local multi-voice requires at least two ready local voices.": (

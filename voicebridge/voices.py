@@ -12,19 +12,6 @@ from voicebridge.languages import normalize_language_code
 Voice = dict[str, Any]
 VoiceMap = dict[str, str]
 
-FALLBACK_VOICES: list[Voice] = [
-    {"ShortName": "en-US-AriaNeural", "Locale": "en-US", "Gender": "Female"},
-    {"ShortName": "en-US-JennyNeural", "Locale": "en-US", "Gender": "Female"},
-    {"ShortName": "en-US-GuyNeural", "Locale": "en-US", "Gender": "Male"},
-    {"ShortName": "en-GB-SoniaNeural", "Locale": "en-GB", "Gender": "Female"},
-    {"ShortName": "en-GB-RyanNeural", "Locale": "en-GB", "Gender": "Male"},
-    {"ShortName": "en-AU-NatashaNeural", "Locale": "en-AU", "Gender": "Female"},
-    {"ShortName": "en-AU-WilliamNeural", "Locale": "en-AU", "Gender": "Male"},
-    {"ShortName": "it-IT-ElsaNeural", "Locale": "it-IT", "Gender": "Female"},
-    {"ShortName": "it-IT-IsabellaNeural", "Locale": "it-IT", "Gender": "Female"},
-    {"ShortName": "it-IT-DiegoNeural", "Locale": "it-IT", "Gender": "Male"},
-]
-
 MAX_RECOMMENDED_VOICES = 8
 RECOMMENDED_MIN_TOTAL_VOICES = 9
 RECOMMENDED_VOICE_LOCALES = 4

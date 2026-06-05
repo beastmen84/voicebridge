@@ -134,6 +134,155 @@ class FakeTtsWorkflow(TtsWorkflowMixin):
         self.events.append(("download_succeeded", ""))
 
 
+class FakeVoiceLoadWorkflow(TtsWorkflowMixin):
+    def __init__(self) -> None:
+        self.loaded_voices = None
+        self.loaded_error = None
+
+    def post(self, callback, *args):
+        callback(*args)
+
+    def voices_loaded(self, voices, error_message):
+        self.loaded_voices = voices
+        self.loaded_error = error_message
+
+
+class FakeButton:
+    def __init__(self) -> None:
+        self.enabled = None
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakeButtonStateWorkflow(TtsWorkflowMixin):
+    def __init__(self) -> None:
+        self.engine = "edge"
+        self.is_detecting_language = False
+        self.is_converting = False
+        self.is_stt_running = False
+        self.is_video_running = False
+        self.is_audio_cleanup_running = False
+        self.is_cleanup_running = False
+        self.input_file_error_message = ""
+        self.is_loading_voices = False
+        self.voice_load_error_message = ""
+        self.current_voice_map = {"it-IT | Elsa (Female)": "it-IT-ElsaNeural"}
+        self.tts_cancel_requested = False
+        self.tts_last_output_path = ""
+        self.tts_generate_button = FakeButton()
+        self.tts_cancel_button = FakeButton()
+        self.tts_open_output_button = FakeButton()
+        self.tts_open_folder_button = FakeButton()
+
+    def tts_engine_key(self):
+        return self.engine
+
+    def update_navigation_state(self) -> None:
+        return
+
+
+class FakeEngineSwitchWorkflow(TtsWorkflowMixin):
+    def __init__(self) -> None:
+        self.engine = "edge"
+        self.edge_tts_auto_switched_to_local = False
+        self.saved = False
+
+    def tts_engine_key(self):
+        return self.engine
+
+    def set_tts_engine_key_without_saving(self, engine: str) -> None:
+        self.engine = engine
+
+    def save_user_settings(self) -> None:
+        self.saved = True
+
+
+class FakeEdgeUnavailableWorkflow(FakeButtonStateWorkflow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.all_voices = [{"ShortName": "it-IT-ElsaNeural", "Locale": "it-IT"}]
+        self.voice_status = FakeTtsStatus()
+        self.edge_tts_auto_switched_to_local = False
+        self.retry_timer_updates = 0
+        self.home_refreshes = 0
+
+    def populate_voice_combo(self, voices, preferred_short_name=None):
+        self.current_voice_candidates = list(voices)
+        self.current_voice_map = {}
+
+    def set_tts_engine_key_without_saving(self, engine: str) -> None:
+        self.engine = engine
+
+    def update_edge_tts_retry_timer(self) -> None:
+        self.retry_timer_updates += 1
+
+    def refresh_home_diagnostics(self) -> None:
+        self.home_refreshes += 1
+
+    def tts_text(self, text: str, **kwargs) -> str:
+        return text.format(**kwargs) if kwargs else text
+
+    def selected_tts_voice_profile(self):
+        return None
+
+
+def test_edge_voice_load_failure_returns_no_fallback_voices(monkeypatch) -> None:
+    async def fail_voice_load():
+        raise OSError("offline")
+
+    monkeypatch.setattr(tts_page.edge_tts, "list_voices", fail_voice_load)
+
+    workflow = FakeVoiceLoadWorkflow()
+    workflow.load_voices_worker()
+
+    assert workflow.loaded_voices == []
+    assert workflow.loaded_error == "offline"
+
+
+def test_edge_tts_generate_button_is_disabled_when_voice_list_failed() -> None:
+    workflow = FakeButtonStateWorkflow()
+    workflow.voice_load_error_message = "offline"
+
+    workflow.update_tts_button_state()
+
+    assert workflow.tts_generate_button.enabled is False
+
+
+def test_edge_tts_generate_button_can_enable_when_real_voice_list_loaded() -> None:
+    workflow = FakeButtonStateWorkflow()
+
+    workflow.update_tts_button_state()
+
+    assert workflow.tts_generate_button.enabled is True
+
+
+def test_edge_voice_load_failure_switches_to_local_without_saving_settings() -> None:
+    workflow = FakeEngineSwitchWorkflow()
+
+    workflow.switch_to_local_tts_after_edge_failure()
+
+    assert workflow.engine == "local"
+    assert workflow.edge_tts_auto_switched_to_local is True
+    assert workflow.saved is False
+
+
+def test_edge_tts_runtime_failure_marks_edge_unavailable_and_switches_to_local() -> None:
+    workflow = FakeEdgeUnavailableWorkflow()
+
+    workflow.handle_edge_tts_unavailable("connection lost")
+
+    assert workflow.voice_load_error_message == "connection lost"
+    assert workflow.all_voices == []
+    assert workflow.current_voice_map == {}
+    assert workflow.engine == "local"
+    assert workflow.edge_tts_auto_switched_to_local is True
+    assert workflow.tts_generate_button.enabled is False
+    assert workflow.retry_timer_updates == 1
+    assert workflow.home_refreshes == 1
+    assert "requires internet" in workflow.voice_status.messages[-1]
+
+
 def test_run_local_tts_worker_command_uses_process_runner_for_worker_output(monkeypatch, tmp_path) -> None:
     calls = {}
 

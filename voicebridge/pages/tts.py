@@ -92,7 +92,6 @@ from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
-    FALLBACK_VOICES,
     build_voice_options,
     filter_voices_by_language,
     filter_voices_by_query,
@@ -102,6 +101,7 @@ from voicebridge.voices import (
 
 LOCAL_TTS_MODEL_MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
 TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
+EDGE_TTS_RETRY_INTERVAL_MS = 2 * 60 * 1000
 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
@@ -173,7 +173,16 @@ class TtsWorkflowMixin:
                 self.tts_engine_combo.setCurrentIndex(index)
                 return
 
+    def set_tts_engine_key_without_saving(self, engine: str) -> None:
+        self.tts_engine_combo.blockSignals(True)
+        try:
+            self.set_tts_engine_key(engine)
+        finally:
+            self.tts_engine_combo.blockSignals(False)
+        self.update_tts_engine_ui()
+
     def tts_engine_changed(self):
+        self.edge_tts_auto_switched_to_local = False
         self.update_tts_engine_ui()
         self.save_user_settings()
 
@@ -389,7 +398,14 @@ class TtsWorkflowMixin:
             else:
                 self.tts_status.setText(self.tts_text("Download XTTS-v2 before Local TTS generation."))
         elif hasattr(self, "tts_status"):
-            self.tts_status.setText(self.tts_text("Ready."))
+            if self.voice_load_error_message:
+                self.tts_status.setText(
+                    self.tts_text("Edge TTS is unavailable. Check internet connection or use Local TTS.")
+                )
+            elif self.is_loading_voices:
+                self.tts_status.setText(self.tts_text("Checking Edge TTS voices..."))
+            else:
+                self.tts_status.setText(self.tts_text("Ready."))
         self.update_tts_multi_mode_availability()
         self.update_block_settings_controls()
         self.refresh_block_voice_combo_for_engine()
@@ -397,9 +413,18 @@ class TtsWorkflowMixin:
         self.update_tts_button_state()
 
     def start_voice_loading(self):
+        if self.is_loading_voices:
+            return
+        self.ensure_edge_tts_retry_timer()
         self.is_loading_voices = True
         self.voice_combo.setEnabled(False)
+        self.voice_status.setText(
+            self.tts_text("Retrying Edge TTS voice list...")
+            if self.voice_load_error_message
+            else self.tts_text("Loading complete voice list...")
+        )
         self.update_tts_button_state()
+        self.refresh_home_diagnostics()
         threading.Thread(target=self.load_voices_worker, daemon=True).start()
 
     def load_voices_worker(self):
@@ -407,7 +432,7 @@ class TtsWorkflowMixin:
             voices = asyncio.run(edge_tts.list_voices())
             error_message = None
         except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError, ValueError) as exc:
-            voices = FALLBACK_VOICES
+            voices = []
             error_message = str(exc)
         self.post(self.voices_loaded, voices, error_message)
 
@@ -415,6 +440,9 @@ class TtsWorkflowMixin:
         self.all_voices = voices
         self.voice_load_error_message = error_message or ""
         self.is_loading_voices = False
+        if error_message:
+            self.handle_edge_tts_unavailable(error_message)
+            return
         if self.detected_language_code:
             self.apply_language_voice_filter(self.detected_language_code, self.detected_language_confidence)
         else:
@@ -422,11 +450,60 @@ class TtsWorkflowMixin:
                 self.all_voices,
                 preferred_short_name=self.saved_tts_voice_short_name or DEFAULT_VOICE_SHORT_NAME,
             )
-            self.voice_status.setText(f"Loaded {len(self.all_voices)} voices. Select a file to filter by language.")
-        if error_message:
-            self.voice_status.setText("Could not load the complete Edge TTS voice list. Showing fallback voices.")
+            self.voice_status.setText(
+                self.tts_text(
+                    "Loaded {count} voices. Select a file to filter by language.",
+                    count=len(self.all_voices),
+                )
+            )
+        self.edge_tts_auto_switched_to_local = False
+        self.update_edge_tts_retry_timer()
         self.update_tts_button_state()
         self.refresh_home_diagnostics()
+
+    def edge_tts_unavailable_message(self) -> str:
+        return self.tts_text(
+            "Edge TTS voice list unavailable. Edge TTS requires internet; "
+            "Local TTS remains available if configured. Retrying automatically."
+        )
+
+    def handle_edge_tts_unavailable(self, error_message: str) -> None:
+        self.voice_load_error_message = error_message
+        self.is_loading_voices = False
+        self.all_voices = []
+        self.populate_voice_combo([])
+        self.voice_status.setText(self.edge_tts_unavailable_message())
+        self.switch_to_local_tts_after_edge_failure()
+        self.update_edge_tts_retry_timer()
+        self.update_tts_button_state()
+        self.refresh_home_diagnostics()
+
+    def switch_to_local_tts_after_edge_failure(self) -> None:
+        if self.tts_engine_key() != "edge":
+            return
+        self.edge_tts_auto_switched_to_local = True
+        self.set_tts_engine_key_without_saving("local")
+
+    def ensure_edge_tts_retry_timer(self) -> None:
+        if getattr(self, "edge_tts_retry_timer", None) is not None:
+            return
+        self.edge_tts_retry_timer = QTimer(self)
+        self.edge_tts_retry_timer.setInterval(EDGE_TTS_RETRY_INTERVAL_MS)
+        self.edge_tts_retry_timer.timeout.connect(self.retry_edge_tts_voice_loading_if_needed)
+
+    def update_edge_tts_retry_timer(self) -> None:
+        timer = getattr(self, "edge_tts_retry_timer", None)
+        if timer is None:
+            return
+        should_retry = bool(self.voice_load_error_message) and not self.is_loading_voices
+        if should_retry and not timer.isActive():
+            timer.start()
+        elif not should_retry and timer.isActive():
+            timer.stop()
+
+    def retry_edge_tts_voice_loading_if_needed(self) -> None:
+        if self.voice_load_error_message and not self.is_loading_voices and not self.is_converting:
+            self.start_voice_loading()
 
     def populate_voice_combo(self, voices, preferred_short_name=None):
         previous_short_name = self.current_voice_map.get(self.voice_combo.currentText())
@@ -631,6 +708,8 @@ class TtsWorkflowMixin:
 
     def apply_language_voice_filter(self, language_code, confidence):
         if not self.all_voices:
+            if self.voice_load_error_message:
+                self.voice_status.setText(self.edge_tts_unavailable_message())
             return
         if language_code:
             matching = filter_voices_by_language(self.all_voices, language_code)
@@ -707,7 +786,12 @@ class TtsWorkflowMixin:
                 and (not local_voice_requires_base_xtts(selected_voice) or local_tts_model_ready())
             )
         else:
-            ready = common_ready and not self.is_loading_voices and bool(self.current_voice_map)
+            ready = (
+                common_ready
+                and not self.is_loading_voices
+                and not self.voice_load_error_message
+                and bool(self.current_voice_map)
+            )
         self.tts_generate_button.setEnabled(ready)
         if hasattr(self, "tts_download_model_button"):
             self.tts_download_model_button.setEnabled(
@@ -739,6 +823,10 @@ class TtsWorkflowMixin:
         return read_input_file(input_path)
 
     def selected_voice_assignment(self) -> tuple[str, str]:
+        if self.voice_load_error_message:
+            raise ValueError(
+                self.tts_text("Edge TTS voice list is unavailable. Check internet connection or use Local TTS.")
+            )
         voice_label = self.voice_combo.currentText()
         voice_short_name = self.current_voice_map.get(voice_label, "")
         if not voice_short_name:
@@ -1030,6 +1118,10 @@ class TtsWorkflowMixin:
         save_path = ensure_mp3_suffix(save_path)
         validate_output_path(save_path, source_path=source_path or None, expected_suffixes={".mp3"})
         ensure_free_space(save_path, TTS_OUTPUT_MIN_FREE_BYTES, "multi-voice TTS output")
+        if self.voice_load_error_message:
+            raise ValueError(
+                self.tts_text("Edge TTS voice list is unavailable. Check internet connection or use Local TTS.")
+            )
         if not self.tts_segments:
             self.split_tts_document_into_blocks()
         segments = []
@@ -1675,7 +1767,10 @@ class TtsWorkflowMixin:
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
-        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+            self.post(self.handle_edge_tts_unavailable, str(exc))
+            self.post(self.conversion_failed, str(exc))
+        except ValueError as exc:
             self.post(self.conversion_failed, str(exc))
         finally:
             self.post(self.finish_tts_conversion)
@@ -1751,7 +1846,10 @@ class TtsWorkflowMixin:
             self.post(self.conversion_succeeded, save_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
-        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+            self.post(self.handle_edge_tts_unavailable, str(exc))
+            self.post(self.conversion_failed, str(exc))
+        except ValueError as exc:
             self.post(self.conversion_failed, str(exc))
         finally:
             self.post(self.finish_tts_conversion)

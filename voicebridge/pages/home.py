@@ -242,11 +242,19 @@ class HomePageMixin:
             return
 
         if self.is_loading_voices:
-            self.set_status_tile("TTS", "info", "Checking Edge TTS voices")
+            self.set_status_tile("TTS", "info", self.static_ui_text("Checking Edge TTS voices"))
         elif self.voice_load_error_message:
-            self.set_status_tile("TTS", "warn", "Fallback voices loaded; internet may be unavailable")
+            self.set_status_tile(
+                "TTS",
+                "warn",
+                self.static_ui_text("Edge TTS offline; Local TTS may still work"),
+            )
         else:
-            self.set_status_tile("TTS", "ok", f"{len(self.all_voices)} online voices loaded")
+            self.set_status_tile(
+                "TTS",
+                "ok",
+                self.static_ui_text("{count} online voices loaded").format(count=len(self.all_voices)),
+            )
 
         local_state, local_detail = self.local_tts_diagnostic_detail()
         self.set_status_tile("LOCAL", local_state, local_detail, display_label="LOCAL")

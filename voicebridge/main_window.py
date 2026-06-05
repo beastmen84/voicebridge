@@ -452,7 +452,9 @@ class VoiceBridgeQt(
         self.input_file_error_message = ""
         self.detected_language_code = None
         self.detected_language_confidence = 0.0
-        self.is_loading_voices = True
+        self.is_loading_voices = False
+        self.edge_tts_auto_switched_to_local = False
+        self.edge_tts_retry_timer: QTimer | None = None
         self.is_detecting_language = False
         self.is_converting = False
         self.tts_cancel_requested = False

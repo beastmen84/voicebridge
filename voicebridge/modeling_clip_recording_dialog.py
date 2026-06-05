@@ -4,6 +4,7 @@ import math
 import time
 from contextlib import suppress
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PySide6.QtGui import QFont
@@ -197,6 +198,10 @@ class ModelingClipRecordingDialog(QDialog):
         word_count = max(1, len(text.split()))
         return min(max(1, int(max_seconds)), max(12, math.ceil(word_count / 2.2) + 5))
 
+    @staticmethod
+    def preview_recording_path(output_path: Path) -> Path:
+        return output_path.with_name(f".{output_path.stem}.preview-{uuid4().hex}{output_path.suffix}")
+
     def start_or_stop(self) -> None:
         if self._phase == "idle":
             self.start_countdown()
@@ -294,14 +299,13 @@ class ModelingClipRecordingDialog(QDialog):
             if recording.duration_seconds < 1:
                 reason = " ".join(recording.messages) or "Recording is too short."
                 raise ValueError(reason)
-            preview_path = self.output_path
+            preview_path = self.preview_recording_path(self.output_path)
             write_pcm16_wav(preview_path, recording.pcm_data, settings.sample_rate, settings.channel_count)
             self._preview_path = preview_path
         except (OSError, ValueError) as exc:
             self.show_recording_error(str(exc))
             return
 
-        self.recording_path = self._preview_path
         self.duration_seconds = recording.duration_seconds
         self.status_message = build_recording_status_message(recording, recorder_messages, auto_stopped=auto_stopped)
         self.quality_details = build_recording_quality_details(
@@ -352,8 +356,15 @@ class ModelingClipRecordingDialog(QDialog):
     def keep_recording(self) -> None:
         if not self._preview_path or not self._preview_path.is_file():
             return
+        try:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._preview_path.replace(self.output_path)
+        except OSError as exc:
+            self.show_recording_error(str(exc))
+            return
+        self._preview_path = self.output_path
+        self.recording_path = self.output_path
         self._kept_recording = True
-        self.recording_path = self._preview_path
         self.accept()
 
     def retry_recording(self) -> None:

@@ -86,6 +86,10 @@ py -3.13 -m venv .venv-ml
 .\.venv-ml\Scripts\python.exe -m pip install -r requirements-local-tts.txt
 ```
 
+Gli snapshot in `dev\venv-snapshots` sono solo freeze di audit/ripristino dell'ambiente ML usato in sviluppo.
+Non sono requirements ufficiali di installazione: i file di installazione restano `requirements-stt.txt` e
+`requirements-local-tts.txt`.
+
 Preparazione modelli STT:
 
 ```powershell

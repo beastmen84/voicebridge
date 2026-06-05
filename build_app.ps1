@@ -107,9 +107,15 @@ foreach ($moduleName in $workerSupportModules) {
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "CHANGELOG.md") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "CONTRIBUTING.md") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "SECURITY.md") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "Manual.html") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "Manual.md") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
+$bundleDocsImagesDir = Join-Path $bundleDir "docs\images"
+New-Item -ItemType Directory -Path $bundleDocsImagesDir -Force | Out-Null
+Copy-Item -Path (Join-Path $PSScriptRoot "docs\images\voicebridge-dashboard.png") -Destination $bundleDocsImagesDir -Force
 
 Write-Host "App bundle updated: $bundleDir"

@@ -251,11 +251,22 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_resume_picker.set_text("")
         self.mark_voice_modeling_preflight_stale()
 
+    def current_voice_modeling_preflight_snapshot(self) -> dict:
+        return {
+            "export_info": dict(self.voice_modeling_export_info) if self.voice_modeling_export_info else None,
+            "output_dir": self.voice_modeling_output_picker.text()
+            if hasattr(self, "voice_modeling_output_picker")
+            else "",
+            "resume_checkpoint": self.voice_modeling_resume_picker.text()
+            if hasattr(self, "voice_modeling_resume_picker")
+            else "",
+            "device": self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto",
+        }
+
     def mark_voice_modeling_preflight_stale(self) -> None:
         if not hasattr(self, "voice_modeling_preflight_label"):
             return
-        if getattr(self, "_voice_modeling_preflight_refreshing", False):
-            return
+        self._voice_modeling_preflight_stale = True
         self.voice_modeling_preflight_ok = False
         self.voice_modeling_preflight_label.setText(
             self.voice_modeling_text("Preflight needs refresh after configuration changes.")
@@ -269,25 +280,27 @@ class VoiceModelingWorkflowMixin:
             return
         if getattr(self, "_voice_modeling_preflight_refreshing", False):
             return
-        export_info = dict(self.voice_modeling_export_info) if self.voice_modeling_export_info else None
-        output_dir = self.voice_modeling_output_picker.text() if hasattr(self, "voice_modeling_output_picker") else ""
-        resume_checkpoint = (
-            self.voice_modeling_resume_picker.text() if hasattr(self, "voice_modeling_resume_picker") else ""
-        )
-        device = self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto"
+        snapshot = self.current_voice_modeling_preflight_snapshot()
+        export_info = snapshot["export_info"]
+        output_dir = snapshot["output_dir"]
+        resume_checkpoint = snapshot["resume_checkpoint"]
+        device = snapshot["device"]
         self._voice_modeling_preflight_refreshing = True
+        self._voice_modeling_preflight_stale = False
+        self._voice_modeling_preflight_snapshot = snapshot
         self.voice_modeling_preflight_refresh_button.setEnabled(False)
         self.voice_modeling_preflight_label.setText(
             self.voice_modeling_text("Checking Voice Modeling prerequisites...")
         )
         threading.Thread(
             target=self.refresh_voice_modeling_preflight_worker,
-            args=(export_info, output_dir, resume_checkpoint, device),
+            args=(snapshot, export_info, output_dir, resume_checkpoint, device),
             daemon=True,
         ).start()
 
     def refresh_voice_modeling_preflight_worker(
         self,
+        snapshot: dict,
         export_info,
         output_dir: str,
         resume_checkpoint: str,
@@ -299,10 +312,21 @@ class VoiceModelingWorkflowMixin:
             resume_checkpoint=resume_checkpoint,
             device=device,
         )
-        self.post(self.voice_modeling_preflight_finished, result)
+        self.post(self.voice_modeling_preflight_finished, snapshot, result)
 
-    def voice_modeling_preflight_finished(self, result) -> None:
+    def voice_modeling_preflight_finished(self, snapshot: dict, result) -> None:
         self._voice_modeling_preflight_refreshing = False
+        if (
+            getattr(self, "_voice_modeling_preflight_stale", False)
+            or snapshot != self.current_voice_modeling_preflight_snapshot()
+        ):
+            self._voice_modeling_preflight_snapshot = None
+            self.mark_voice_modeling_preflight_stale()
+            self.voice_modeling_preflight_refresh_button.setEnabled(True)
+            self.refresh_home_diagnostics()
+            self.update_voice_modeling_dvae_status()
+            return
+        self._voice_modeling_preflight_stale = False
         self.voice_modeling_preflight_ok = bool(result["ok"])
         self.voice_modeling_preflight_details = result["details"]
         self.voice_modeling_preflight_label.setText(result["summary"])

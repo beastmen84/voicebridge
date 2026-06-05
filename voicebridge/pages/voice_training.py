@@ -82,11 +82,13 @@ class VoiceTrainingWorkflowMixin:
             return
         has_job = bool(self.selected_voice_training_job_path())
         running = getattr(self, "voice_training_running", False)
+        cancel_requested = getattr(self, "voice_training_cancel_requested", False)
+        self.voice_training_job_combo.setEnabled(not running)
         self.voice_training_open_folder_button.setEnabled(has_job and not running)
         self.voice_training_prepare_button.setEnabled(has_job and not running)
         self.voice_training_dry_run_button.setEnabled(has_job and not running)
         self.voice_training_start_button.setEnabled(has_job and not running)
-        self.voice_training_cancel_button.setEnabled(running)
+        self.voice_training_cancel_button.setEnabled(running and not cancel_requested)
         self.voice_training_refresh_jobs_button.setEnabled(not running)
 
     def open_selected_voice_training_job_folder(self) -> None:
@@ -127,6 +129,9 @@ class VoiceTrainingWorkflowMixin:
         config_path = self.selected_voice_training_job_path()
         if not config_path:
             return
+        self.start_voice_training_worker_for_config(config_path, dry_run=dry_run)
+
+    def start_voice_training_worker_for_config(self, config_path: str, *, dry_run: bool) -> None:
         python_path = ml_python_path()
         worker_path = voice_modeling_worker_path()
         if not python_path.is_file():
@@ -143,6 +148,7 @@ class VoiceTrainingWorkflowMixin:
             return
         self.voice_training_running = True
         self.voice_training_cancel_requested = False
+        self.voice_training_running_config_path = config_path
         self.voice_training_progress.setValue(0)
         self.voice_training_progress.show()
         self.voice_training_job_status.clear()
@@ -203,12 +209,13 @@ class VoiceTrainingWorkflowMixin:
             if dry_run
             else self.voice_training_text("Training completed.")
         )
-        self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
+        self.refresh_voice_training_jobs(getattr(self, "voice_training_running_config_path", ""))
         self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
 
     def voice_training_failed(self, message: str) -> None:
         self.append_voice_training_log(f"ERROR: {message}")
+        config_path = getattr(self, "voice_training_running_config_path", "") or self.selected_voice_training_job_path()
         if (
             is_cuda_runtime_failure(message)
             and self.ask_question(
@@ -219,7 +226,6 @@ class VoiceTrainingWorkflowMixin:
                 default_yes=False,
             )
         ):
-            config_path = self.selected_voice_training_job_path()
             try:
                 config = load_voice_modeling_job_config(config_path)
                 config["device"] = "cpu"
@@ -232,10 +238,10 @@ class VoiceTrainingWorkflowMixin:
             else:
                 self.append_voice_training_log(self.voice_training_text("Job switched to CPU. Retrying..."))
                 self.refresh_voice_training_jobs(config_path)
-                QTimer.singleShot(250, lambda: self.start_voice_training_worker(dry_run=False))
+                QTimer.singleShot(250, lambda: self.start_voice_training_worker_for_config(config_path, dry_run=False))
                 return
         self.show_error(self.voice_training_text("Voice Training"), message)
-        self.refresh_voice_training_jobs(self.selected_voice_training_job_path())
+        self.refresh_voice_training_jobs(config_path)
         self.update_local_voice_tabs()
 
     def voice_training_cancelled(self) -> None:
@@ -243,6 +249,7 @@ class VoiceTrainingWorkflowMixin:
 
     def finish_voice_training_worker(self) -> None:
         self.voice_training_running = False
+        self.voice_training_running_config_path = ""
         self.voice_training_progress.hide()
         self.update_voice_training_buttons()
 

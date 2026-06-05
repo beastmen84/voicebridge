@@ -245,7 +245,7 @@ class SttWorkflowMixin:
                 and not busy_elsewhere
                 and not stt_whisper_model_ready()
             )
-        self.stt_cancel_button.setEnabled(self.is_stt_running)
+        self.stt_cancel_button.setEnabled(self.is_stt_running and not self.stt_cancel_requested)
         output_ready = bool(self.stt_last_output_path and Path(self.stt_last_output_path).is_file())
         self.stt_open_output_button.setEnabled(output_ready)
         self.stt_open_folder_button.setEnabled(output_ready)
@@ -339,6 +339,9 @@ class SttWorkflowMixin:
             self.stt_status.setText(self.stt_text("Error."))
             self.show_error(self.stt_text("Error"), str(exc))
             return
+        self.start_stt_job_with_options(media_path, output_path, text_path, mode, model, language, device)
+
+    def start_stt_job_with_options(self, media_path, output_path, text_path, mode, model, language, device):
         if not self.stt_preflight_ok:
             self.stt_status.setText(self.stt_text("STT offline package incomplete."))
             self.reset_stt_log()
@@ -379,6 +382,21 @@ class SttWorkflowMixin:
                 return
         self.stt_cancel_requested = False
         self.stt_process = None
+        self.stt_cpu_retry_callback = (
+            (
+                lambda: self.start_stt_job_with_options(
+                    media_path,
+                    output_path,
+                    text_path,
+                    mode,
+                    model,
+                    language,
+                    "cpu",
+                )
+            )
+            if device != "cpu"
+            else None
+        )
         self.stt_last_output_path = ""
         self.reset_stt_log()
         self.is_stt_running = True
@@ -558,6 +576,7 @@ class SttWorkflowMixin:
 
         self.stt_cancel_requested = False
         self.stt_process = None
+        self.stt_cpu_retry_callback = None
         self.is_stt_running = True
         self.show_percent_progress(self.stt_progress, 0)
         self.stt_status.setText(
@@ -602,6 +621,7 @@ class SttWorkflowMixin:
 
         self.stt_cancel_requested = False
         self.stt_process = None
+        self.stt_cpu_retry_callback = None
         self.is_stt_running = True
         self.show_percent_progress(self.stt_progress, 0)
         self.stt_status.setText(self.stt_text("Downloading Whisper large-v3 model..."))
@@ -753,6 +773,7 @@ class SttWorkflowMixin:
                 process.terminate()
             except OSError as exc:
                 self.append_stt_log(f"Could not terminate process cleanly: {exc}")
+        self.update_stt_button_state()
 
     def stt_job_succeeded(self, output_path, media_path=None):
         self.stt_last_output_path = output_path
@@ -772,8 +793,9 @@ class SttWorkflowMixin:
     def stt_job_failed(self, message):
         self.stt_status.setText(self.stt_text("Error."))
         self.append_stt_log(f"ERROR: {message}")
+        cpu_retry_callback = getattr(self, "stt_cpu_retry_callback", None)
         if (
-            self.stt_device_key() != "cpu"
+            cpu_retry_callback is not None
             and is_cuda_runtime_failure(message)
             and self.ask_question(
                 self.stt_text("STT CUDA failed"),
@@ -785,12 +807,13 @@ class SttWorkflowMixin:
             self.preferred_stt_device_key = "cpu"
             self.save_user_settings()
             self.stt_status.setText(self.stt_text("Retrying transcription on CPU..."))
-            QTimer.singleShot(250, self.start_stt_job)
+            QTimer.singleShot(250, cpu_retry_callback)
             return
         self.show_error(self.stt_text("STT Error"), message)
 
     def finish_stt_job(self):
         self.is_stt_running = False
+        self.stt_cpu_retry_callback = None
         self.stt_progress.hide()
         self.update_stt_model_status()
         self.update_stt_button_state()

@@ -85,7 +85,7 @@ from voicebridge.readers import (
     read_txt,
 )
 from voicebridge.runtime_errors import is_cuda_runtime_failure
-from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, generate_audio, suggested_output_path
+from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, suggested_output_path
 from voicebridge.tts_text import split_tts_text_for_tts
 from voicebridge.tts_timeline import load_local_tts_chunk_timeline, remove_tts_timeline, write_tts_timeline
 from voicebridge.ui.helpers import open_path, qt_file_filter
@@ -102,6 +102,10 @@ from voicebridge.voices import (
 LOCAL_TTS_MODEL_MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
 TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 EDGE_TTS_RETRY_INTERVAL_MS = 2 * 60 * 1000
+
+
+class EdgeTtsUnavailableError(Exception):
+    pass
 
 
 # noinspection PyAttributeOutsideInit,PyUnresolvedReferences,PyTypeChecker,PyMethodMayBeStatic
@@ -1285,6 +1289,8 @@ class TtsWorkflowMixin:
             return
         signature = file_signature(input_path)
         cached_text = self.cached_input_text if signature == self.cached_input_signature else None
+        self.tts_running_source_path = input_path
+        self.tts_cpu_retry_callback = None
         self.start_tts_busy("Reading file...")
         threading.Thread(
             target=self.conversion_worker,
@@ -1299,6 +1305,8 @@ class TtsWorkflowMixin:
             self.tts_status.setText(self.tts_text("Error."))
             self.show_error(self.tts_text("Error"), str(exc))
             return
+        self.tts_running_source_path = source_path
+        self.tts_cpu_retry_callback = None
         self.start_tts_busy(self.tts_text("Generating multi-voice audio..."), percent=True)
         threading.Thread(
             target=self.multi_voice_conversion_worker,
@@ -1329,6 +1337,42 @@ class TtsWorkflowMixin:
                 self.tts_text("Could not find:\n{path}", path=worker_path),
             )
             return
+        self.start_local_multi_tts_conversion_with_options(
+            python_path,
+            worker_path,
+            source_path,
+            save_path,
+            segments,
+            device,
+            preset,
+        )
+
+    def start_local_multi_tts_conversion_with_options(
+        self,
+        python_path,
+        worker_path,
+        source_path,
+        save_path,
+        segments,
+        device,
+        preset,
+    ):
+        self.tts_running_source_path = source_path
+        self.tts_cpu_retry_callback = (
+            (
+                lambda: self.start_local_multi_tts_conversion_with_options(
+                    python_path,
+                    worker_path,
+                    source_path,
+                    save_path,
+                    segments,
+                    "cpu",
+                    preset,
+                )
+            )
+            if device != "cpu"
+            else None
+        )
         self.start_tts_busy(self.tts_text("Starting local multi-voice TTS..."), percent=True)
         threading.Thread(
             target=self.local_multi_tts_conversion_worker,
@@ -1377,6 +1421,8 @@ class TtsWorkflowMixin:
         if not self.confirm_xtts_model_license():
             self.tts_status.setText(self.tts_text("XTTS-v2 download cancelled."))
             return
+        self.tts_running_source_path = ""
+        self.tts_cpu_retry_callback = None
         self.start_tts_busy(self.tts_text("Downloading XTTS-v2 model..."), percent=True)
         threading.Thread(
             target=self.local_tts_model_download_worker,
@@ -1461,6 +1507,45 @@ class TtsWorkflowMixin:
             return
         signature = file_signature(input_path)
         cached_text = self.cached_input_text if signature == self.cached_input_signature else None
+        self.start_local_tts_conversion_with_options(
+            python_path,
+            worker_path,
+            input_path,
+            save_path,
+            profile,
+            device,
+            preset,
+            cached_text,
+        )
+
+    def start_local_tts_conversion_with_options(
+        self,
+        python_path,
+        worker_path,
+        input_path,
+        save_path,
+        profile,
+        device,
+        preset,
+        cached_text,
+    ):
+        self.tts_running_source_path = input_path
+        self.tts_cpu_retry_callback = (
+            (
+                lambda: self.start_local_tts_conversion_with_options(
+                    python_path,
+                    worker_path,
+                    input_path,
+                    save_path,
+                    profile,
+                    "cpu",
+                    preset,
+                    cached_text,
+                )
+            )
+            if device != "cpu"
+            else None
+        )
         self.start_tts_busy("Starting local TTS...", percent=True)
         threading.Thread(
             target=self.local_tts_conversion_worker,
@@ -1605,7 +1690,7 @@ class TtsWorkflowMixin:
                     total_duration_seconds=audio_duration_seconds(save_path),
                 )
                 self.post(self.update_tts_progress_percent, 100)
-            self.post(self.conversion_succeeded, save_path)
+            self.post(self.conversion_succeeded, save_path, input_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
         except (OSError, RuntimeError, TimeoutError, ValueError, AssertionError) as exc:
@@ -1714,7 +1799,7 @@ class TtsWorkflowMixin:
                     total_duration_seconds=audio_duration_seconds(save_path),
                 )
                 self.post(self.update_tts_progress_percent, 100)
-            self.post(self.conversion_succeeded, save_path)
+            self.post(self.conversion_succeeded, save_path, source_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
         except (OSError, RuntimeError, TimeoutError, ValueError, AssertionError) as exc:
@@ -1738,6 +1823,32 @@ class TtsWorkflowMixin:
         self.update_audio_cleanup_button_state()
         self.update_video_cleanup_button_state()
 
+    async def generate_edge_audio_to_file(self, text, voice, save_path, rate):
+        try:
+            tts = edge_tts.Communicate(
+                text=text,
+                voice=voice,
+                rate=rate,
+            )
+        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+            raise EdgeTtsUnavailableError(str(exc)) from exc
+
+        with open(save_path, "wb") as audio_file:
+            stream = tts.stream()
+            while True:
+                try:
+                    chunk = await anext(stream)
+                except StopAsyncIteration:
+                    break
+                except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+                    raise EdgeTtsUnavailableError(str(exc)) from exc
+                if self.tts_cancel_requested:
+                    raise TtsCancelled()
+                if chunk.get("type") == "audio":
+                    audio_file.write(chunk.get("data", b""))
+            if self.tts_cancel_requested:
+                raise TtsCancelled()
+
     def conversion_worker(self, input_path, save_path, voice, rate, cached_text):
         try:
             remove_tts_timeline(save_path)
@@ -1752,25 +1863,17 @@ class TtsWorkflowMixin:
                 dir=Path(save_path).resolve().parent,
             ) as temp_dir:
                 temp_output = Path(temp_dir) / Path(save_path).name
-                asyncio.run(
-                    generate_audio(
-                        text,
-                        voice,
-                        str(temp_output),
-                        rate,
-                        should_cancel=lambda: self.tts_cancel_requested,
-                    )
-                )
+                asyncio.run(self.generate_edge_audio_to_file(text, voice, str(temp_output), rate))
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
                 os.replace(temp_output, save_path)
-            self.post(self.conversion_succeeded, save_path)
+            self.post(self.conversion_succeeded, save_path, input_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
-        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+        except EdgeTtsUnavailableError as exc:
             self.post(self.handle_edge_tts_unavailable, str(exc))
             self.post(self.conversion_failed, str(exc))
-        except ValueError as exc:
+        except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
             self.post(self.conversion_failed, str(exc))
         finally:
             self.post(self.finish_tts_conversion)
@@ -1797,12 +1900,11 @@ class TtsWorkflowMixin:
                     self.post(self.tts_status.setText, f"Generating chunk {index}/{len(generation_segments)}...")
                     self.post(self.update_tts_progress_percent, ((index - 1) / total) * 90)
                     asyncio.run(
-                        generate_audio(
+                        self.generate_edge_audio_to_file(
                             segment["text"],
                             segment["voice_short_name"],
                             str(part_path),
                             segment["rate"],
-                            should_cancel=lambda: self.tts_cancel_requested,
                         )
                     )
                     if self.tts_cancel_requested:
@@ -1843,28 +1945,28 @@ class TtsWorkflowMixin:
                     total_duration_seconds=audio_duration_seconds(save_path),
                 )
                 self.post(self.update_tts_progress_percent, 100)
-            self.post(self.conversion_succeeded, save_path)
+            self.post(self.conversion_succeeded, save_path, source_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)
-        except (aiohttp.ClientError, EdgeTTSException, OSError, RuntimeError, TimeoutError) as exc:
+        except EdgeTtsUnavailableError as exc:
             self.post(self.handle_edge_tts_unavailable, str(exc))
             self.post(self.conversion_failed, str(exc))
-        except ValueError as exc:
+        except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
             self.post(self.conversion_failed, str(exc))
         finally:
             self.post(self.finish_tts_conversion)
 
-    def conversion_succeeded(self, save_path):
+    def conversion_succeeded(self, save_path, source_path=None):
         self.tts_last_output_path = save_path
         self.tts_status.setText(self.tts_text("Done."))
-        self.record_job("TTS", "MP3 generated", self.tts_input_picker.text(), save_path)
+        self.record_job("TTS", "MP3 generated", source_path or self.tts_input_picker.text(), save_path)
         self.show_info(self.tts_text("Success"), self.tts_text("Audio saved:\n{path}", path=save_path))
 
     def conversion_failed(self, message):
         self.tts_status.setText(self.tts_text("Error."))
+        cpu_retry_callback = getattr(self, "tts_cpu_retry_callback", None)
         if (
-            self.tts_engine_key() == "local"
-            and self.tts_local_device_key() != "cpu"
+            cpu_retry_callback is not None
             and is_cuda_runtime_failure(message)
             and self.ask_question(
                 self.tts_text("Local TTS CUDA failed"),
@@ -1874,7 +1976,7 @@ class TtsWorkflowMixin:
         ):
             self.set_tts_local_device_key("cpu")
             self.tts_status.setText(self.tts_text("Retrying Local TTS on CPU..."))
-            QTimer.singleShot(250, self.start_tts_conversion)
+            QTimer.singleShot(250, cpu_retry_callback)
             return
         self.show_error(self.tts_text("Error"), message)
 
@@ -1883,6 +1985,8 @@ class TtsWorkflowMixin:
 
     def finish_tts_conversion(self):
         self.is_converting = False
+        self.tts_running_source_path = ""
+        self.tts_cpu_retry_callback = None
         self.tts_progress.hide()
         self.update_local_tts_model_status()
         self.refresh_home_diagnostics()

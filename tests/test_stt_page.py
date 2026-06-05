@@ -14,6 +14,14 @@ class FakeSttStatus:
         self.messages.append(message)
 
 
+class FakeButton:
+    def __init__(self) -> None:
+        self.enabled = None
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
 class FakeSttWorkflow(SttWorkflowMixin):
     def __init__(self) -> None:
         self.stt_cancel_requested = False
@@ -46,6 +54,67 @@ class FakeSttWorkflow(SttWorkflowMixin):
 
     def alignment_model_download_succeeded(self, language_code: str) -> None:
         self.events.append(("alignment_download_succeeded", language_code))
+
+    def update_navigation_state(self) -> None:
+        return
+
+
+class FakeSttRetryWorkflow(FakeSttWorkflow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.device_updates: list[str] = []
+        self.saved_settings = 0
+        self.errors: list[tuple[str, str]] = []
+
+    def ask_question(self, *_args, **_kwargs) -> bool:
+        return True
+
+    def set_stt_device_key(self, device: str) -> None:
+        self.device_updates.append(device)
+
+    def save_user_settings(self) -> None:
+        self.saved_settings += 1
+
+    def show_error(self, title: str, message: str) -> None:
+        self.errors.append((title, message))
+
+
+def test_stt_cancel_button_disables_after_cancel_requested(monkeypatch) -> None:
+    monkeypatch.setattr(stt_page, "stt_whisper_model_ready", lambda: True)
+
+    workflow = FakeSttWorkflow()
+    workflow.stt_generate_button = FakeButton()
+    workflow.stt_download_model_button = FakeButton()
+    workflow.stt_cancel_button = FakeButton()
+    workflow.stt_open_output_button = FakeButton()
+    workflow.stt_open_folder_button = FakeButton()
+    workflow.is_stt_running = True
+    workflow.stt_cancel_requested = True
+    workflow.stt_preflight_ok = True
+    workflow.is_converting = False
+    workflow.is_video_running = False
+    workflow.is_audio_cleanup_running = False
+    workflow.is_cleanup_running = False
+    workflow.stt_last_output_path = ""
+
+    workflow.update_stt_button_state()
+
+    assert workflow.stt_cancel_button.enabled is False
+
+
+def test_stt_cuda_retry_uses_captured_callback(monkeypatch) -> None:
+    workflow = FakeSttRetryWorkflow()
+    retry_calls = []
+    workflow.stt_cpu_retry_callback = lambda: retry_calls.append("captured")
+
+    monkeypatch.setattr(stt_page.QTimer, "singleShot", lambda _delay, callback: callback())
+
+    SttWorkflowMixin.stt_job_failed(workflow, "RuntimeError: CUDA out of memory")
+
+    assert workflow.device_updates == ["cpu"]
+    assert workflow.saved_settings == 1
+    assert retry_calls == ["captured"]
+    assert workflow.errors == []
 
 
 def test_stt_model_download_thread_uses_process_runner_for_worker_output(monkeypatch, tmp_path: Path) -> None:

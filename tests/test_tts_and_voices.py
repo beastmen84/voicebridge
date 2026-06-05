@@ -107,19 +107,37 @@ class FakeTtsStatus:
         self.messages.append(message)
 
 
+class FakeTextPicker:
+    def __init__(self, text: str = "") -> None:
+        self._text = text
+
+    def text(self) -> str:
+        return self._text
+
+
 class FakeTtsWorkflow(TtsWorkflowMixin):
     def __init__(self) -> None:
         self.tts_cancel_requested = False
         self.tts_process = None
         self.tts_status = FakeTtsStatus()
+        self.tts_input_picker = FakeTextPicker("current-input.txt")
         self.progress_values: list[float] = []
         self.events: list[tuple[str, str]] = []
+        self.edge_unavailable_messages: list[str] = []
+        self.jobs: list[tuple[str, str, str, str]] = []
+        self.info_messages: list[tuple[str, str]] = []
 
     def post(self, callback, *args):
         callback(*args)
 
+    def tts_text(self, text: str, **kwargs) -> str:
+        return text.format(**kwargs) if kwargs else text
+
     def update_tts_progress_percent(self, percent: float) -> None:
         self.progress_values.append(percent)
+
+    def handle_edge_tts_unavailable(self, message: str) -> None:
+        self.edge_unavailable_messages.append(message)
 
     def conversion_cancelled(self) -> None:
         self.events.append(("cancelled", ""))
@@ -132,6 +150,34 @@ class FakeTtsWorkflow(TtsWorkflowMixin):
 
     def local_tts_model_download_succeeded(self) -> None:
         self.events.append(("download_succeeded", ""))
+
+    def record_job(self, kind: str, label: str, source_path: str, output_path: str) -> None:
+        self.jobs.append((kind, label, source_path, output_path))
+
+    def show_info(self, title: str, message: str) -> None:
+        self.info_messages.append((title, message))
+
+
+class FakeEdgeConversionWorkflow(FakeTtsWorkflow):
+    async def generate_edge_audio_to_file(self, _text, _voice, save_path, _rate):
+        with open(save_path, "wb") as audio_file:
+            audio_file.write(b"mp3")
+
+
+class FakeTtsRetryWorkflow(FakeTtsWorkflow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.device_updates: list[str] = []
+        self.error_messages: list[tuple[str, str]] = []
+
+    def ask_question(self, *_args, **_kwargs) -> bool:
+        return True
+
+    def set_tts_local_device_key(self, device: str) -> None:
+        self.device_updates.append(device)
+
+    def show_error(self, title: str, message: str) -> None:
+        self.error_messages.append((title, message))
 
 
 class FakeVoiceLoadWorkflow(TtsWorkflowMixin):
@@ -281,6 +327,62 @@ def test_edge_tts_runtime_failure_marks_edge_unavailable_and_switches_to_local()
     assert workflow.retry_timer_updates == 1
     assert workflow.home_refreshes == 1
     assert "requires internet" in workflow.voice_status.messages[-1]
+
+
+def test_tts_success_records_captured_source_path() -> None:
+    workflow = FakeTtsWorkflow()
+    workflow.tts_input_picker = FakeTextPicker("changed-while-running.txt")
+
+    workflow.conversion_succeeded("output.mp3", "captured-input.txt")
+
+    assert workflow.jobs == [("TTS", "MP3 generated", "captured-input.txt", "output.mp3")]
+
+
+def test_edge_tts_local_output_error_does_not_mark_edge_unavailable(monkeypatch, tmp_path) -> None:
+    input_path = tmp_path / "input.txt"
+    output_path = tmp_path / "output.mp3"
+    input_path.write_text("hello", encoding="utf-8")
+
+    def fail_replace(_source, _target):
+        raise OSError("disk is full")
+
+    monkeypatch.setattr(tts_page.os, "replace", fail_replace)
+
+    workflow = FakeEdgeConversionWorkflow()
+    workflow.conversion_worker(str(input_path), str(output_path), "voice", "+0%", None)
+
+    assert workflow.edge_unavailable_messages == []
+    assert workflow.events == [("failed", "disk is full"), ("finished", "")]
+
+
+def test_edge_tts_generation_error_marks_edge_unavailable(tmp_path) -> None:
+    class OfflineWorkflow(FakeTtsWorkflow):
+        async def generate_edge_audio_to_file(self, _text, _voice, _save_path, _rate):
+            raise tts_page.EdgeTtsUnavailableError("offline")
+
+    input_path = tmp_path / "input.txt"
+    output_path = tmp_path / "output.mp3"
+    input_path.write_text("hello", encoding="utf-8")
+
+    workflow = OfflineWorkflow()
+    workflow.conversion_worker(str(input_path), str(output_path), "voice", "+0%", None)
+
+    assert workflow.edge_unavailable_messages == ["offline"]
+    assert workflow.events == [("failed", "offline"), ("finished", "")]
+
+
+def test_local_tts_cuda_retry_uses_captured_callback(monkeypatch) -> None:
+    workflow = FakeTtsRetryWorkflow()
+    retry_calls = []
+    workflow.tts_cpu_retry_callback = lambda: retry_calls.append("captured")
+
+    monkeypatch.setattr(tts_page.QTimer, "singleShot", lambda _delay, callback: callback())
+
+    TtsWorkflowMixin.conversion_failed(workflow, "RuntimeError: CUDA out of memory")
+
+    assert workflow.device_updates == ["cpu"]
+    assert retry_calls == ["captured"]
+    assert workflow.error_messages == []
 
 
 def test_run_local_tts_worker_command_uses_process_runner_for_worker_output(monkeypatch, tmp_path) -> None:

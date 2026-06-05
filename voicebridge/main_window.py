@@ -247,6 +247,7 @@ class VoiceBridgeQt(
     voice_training_job_status: QPlainTextEdit
     voice_training_running: bool
     voice_training_cancel_requested: bool
+    voice_training_running_config_path: str
     voice_training_process: Any
 
     stt_media_picker: FilePicker
@@ -534,12 +535,15 @@ class VoiceBridgeQt(
         self.cleanup_log_lines = []
         self._stt_preflight_refreshing = False
         self._voice_modeling_preflight_refreshing = False
+        self._voice_modeling_preflight_stale = False
+        self._voice_modeling_preflight_snapshot = None
         self.voice_modeling_preflight_ok = False
         self.voice_modeling_preflight_details = []
         self.voice_modeling_auto_preflight_enabled = False
         self.voice_modeling_dvae_download_running = False
         self.voice_training_running = False
         self.voice_training_cancel_requested = False
+        self.voice_training_running_config_path = ""
         self.voice_training_process = None
         self.warning_callback: Callable[[], None] = self.no_warning_action
 

@@ -1,5 +1,7 @@
 # VoiceBridge
 
+[![CI](https://github.com/beastmen84/voicebridge/actions/workflows/ci.yml/badge.svg)](https://github.com/beastmen84/voicebridge/actions/workflows/ci.yml)
+
 VoiceBridge e' un'app desktop Windows per trasformare documenti in audio, trascrivere audio/video, creare sottotitoli e fare piccoli interventi di cleanup su audio e video.
 
 La guida utente stampabile e' in [Manual.html](Manual.html). La versione testo semplice e' in [Manual.md](Manual.md).
@@ -7,7 +9,7 @@ La guida utente stampabile e' in [Manual.html](Manual.html). La versione testo s
 ## Funzioni principali
 
 - Text to Speech online con Microsoft Edge TTS.
-- Local TTS opzionale con profili vocali autorizzati e Coqui XTTS-v2.
+- Local TTS opzionale con profili vocali autorizzati e Coqui XTTS-v2, soggetto a limitazioni non commerciali.
 - TTS singola voce o multi-voce a blocchi, con output MP3 unico e timeline JSON dei blocchi.
 - Gestione profili vocali locali, dataset per voice modeling, setup e training XTTS-v2.
 - Generazione locale di testi guidati e sicuri per dataset vocali multilingua, con verifica Whisper in background.
@@ -16,6 +18,12 @@ La guida utente stampabile e' in [Manual.html](Manual.html). La versione testo s
 - Embed o burn-in di sottotitoli su video.
 - Audio Cleanup manuale con taglio, silenziamento e fade su range selezionati.
 - Video Cleanup con filmstrip manuale, detect opzionale dei frame neri, detect di frame sospetti via OpenCV e coda di modifiche Freeze/Remove.
+
+## Screenshot
+
+![VoiceBridge dashboard](docs/images/voicebridge-dashboard.png)
+
+Non aggiornare lo screenshot con file, nomi profilo o percorsi locali personali visibili.
 
 ## Pacchetto distribuito
 
@@ -61,6 +69,22 @@ Per l'uso normale del pacchetto onefolder non serve installare Python.
 - Local TTS, Transcription, Subtitles, Audio Cleanup e Video Cleanup funzionano offline dopo aver incluso runtime, modelli, ffmpeg e runtime ML con OpenCV per il detect dei frame sospetti.
 - Microsoft Word serve solo per leggere vecchi file `.doc`.
 - Tesseract OCR serve solo per OCR su PDF scansionati.
+
+## Privacy / dati locali
+
+VoiceBridge e' progettata come app desktop locale: documenti, audio, video, profili vocali, dataset, export e job restano sul disco dell'utente, salvo uso esplicito di servizi o download online.
+
+- Edge TTS usa il servizio online Microsoft Edge TTS: il testo da sintetizzare viene inviato al servizio remoto.
+- STT, Local TTS, Voice Modeling, Audio Cleanup e Video Cleanup lavorano localmente quando runtime, modelli e strumenti richiesti sono gia' disponibili.
+- Download di modelli e asset opzionali possono contattare sorgenti remote come Hugging Face, Coqui o repository dei rispettivi pacchetti.
+- I profili vocali, i dataset di modeling e gli output generati possono contenere dati personali o biometrici vocali. Non committarli e non pubblicarli.
+- La build locale preserva `voice_profiles`, `modeling_exports` e `voice_models` dentro `dist\VoiceBridge`, ma per distribuzioni pubbliche e' preferibile partire da una cartella pulita senza dati utente.
+
+## Licenze modello e uso commerciale
+
+Il codice di VoiceBridge usa licenza MPL-2.0. Le dipendenze, i runtime e i modelli di terze parti mantengono le rispettive licenze.
+
+Nota importante: XTTS-v2 usa la Coqui Public Model License. Modello, asset e output XTTS-v2 sono limitati a uso non commerciale. Verificare la licenza corrente prima di distribuire modelli, voci generate o workflow commerciali.
 
 ## Ambiente sviluppo
 
@@ -156,4 +180,4 @@ Il codice di VoiceBridge e' distribuito con licenza MPL-2.0. Vedere [LICENSE](LI
 
 Le librerie, i runtime e i modelli di terze parti inclusi o usati dall'app mantengono le rispettive licenze. Vedere [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
 
-Nota importante: XTTS-v2 usa la Coqui Public Model License, che limita modello e output a uso non commerciale.
+Per XTTS-v2 vedere anche la sezione "Licenze modello e uso commerciale".

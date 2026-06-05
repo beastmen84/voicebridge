@@ -43,8 +43,6 @@ class HomePageMixin:
             layout,
             "Convert, transcribe and subtitle",
             "Online text-to-speech, offline speech-to-text and practical video subtitle tools in one workspace.",
-            badge="DASHBOARD",
-            badge_name="BadgeBlue",
         )
 
         home_grid = QGridLayout()

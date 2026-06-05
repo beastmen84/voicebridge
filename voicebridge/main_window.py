@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from voicebridge.app_paths import resource_path, stt_alignment_model_ready
+from voicebridge.app_paths import external_base_dir, resource_path, source_base_dir, stt_alignment_model_ready
 from voicebridge.app_settings import cleanup_app_config_on_startup, load_app_settings, save_app_settings
 from voicebridge.constants import (
     APP_ATTRIBUTION,
@@ -73,6 +73,7 @@ from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.pages.voice_modeling import VoiceModelingWorkflowMixin
 from voicebridge.pages.voice_profiles import VoiceProfilesWorkflowMixin
 from voicebridge.pages.voice_training import VoiceTrainingWorkflowMixin
+from voicebridge.ui.helpers import open_path
 from voicebridge.ui.styles import apply_app_style
 from voicebridge.ui.waveform import AudioWaveformWidget
 from voicebridge.ui.widgets import FilePicker
@@ -633,6 +634,8 @@ class VoiceBridgeQt(
             return
         self.apply_static_ui_translations()
         self.app_subtitle_label.setText(self.ui_text("app.subtitle"))
+        self.manual_button.setText(self.ui_text("sidebar.manual"))
+        self.manual_button.setToolTip(self.ui_text("sidebar.manual.tooltip"))
         self.nav_home.setText(self.ui_text("nav.dashboard"))
         self.nav_tts.setText(self.ui_text("nav.tts"))
         self.nav_local_voices.setText(self.ui_text("nav.local_voices"))
@@ -654,6 +657,22 @@ class VoiceBridgeQt(
         self.retranslate_audio_cleanup_page()
         self.retranslate_video_cleanup_page()
 
+    def open_user_manual(self) -> None:
+        candidates = [
+            external_base_dir() / "Manual.html",
+            source_base_dir() / "Manual.html",
+            external_base_dir() / "Manual.md",
+            source_base_dir() / "Manual.md",
+        ]
+        for path in candidates:
+            if path.is_file():
+                open_path(path)
+                return
+        self.show_error(
+            self.ui_text("manual.missing.title"),
+            self.ui_text("manual.missing.message"),
+        )
+
     def build_ui(self):
         root = QWidget()
         root_layout = QHBoxLayout(root)
@@ -668,11 +687,20 @@ class VoiceBridgeQt(
         side_layout.setContentsMargins(18, 22, 18, 18)
         side_layout.setSpacing(10)
 
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
         title = QLabel(APP_NAME)
         title.setObjectName("AppTitle")
+        self.manual_button = QPushButton(self.ui_text("sidebar.manual"))
+        self.manual_button.setObjectName("SecondaryButton")
+        self.manual_button.setToolTip(self.ui_text("sidebar.manual.tooltip"))
+        self.manual_button.clicked.connect(self.open_user_manual)
+        title_row.addWidget(title, 1)
+        title_row.addWidget(self.manual_button)
         self.app_subtitle_label = QLabel(self.ui_text("app.subtitle"))
         self.app_subtitle_label.setObjectName("AppSubtitle")
-        side_layout.addWidget(title)
+        side_layout.addLayout(title_row)
         side_layout.addWidget(self.app_subtitle_label)
         side_layout.addSpacing(18)
 

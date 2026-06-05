@@ -89,6 +89,7 @@ Copy-Item -Path (Join-Path $PSScriptRoot "voicebridge\video_anomalies.py") -Dest
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "Manual.html") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "Manual.md") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force

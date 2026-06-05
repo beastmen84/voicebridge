@@ -2,7 +2,7 @@
 
 VoiceBridge e' un'app desktop Windows per trasformare documenti in audio, trascrivere audio/video, creare sottotitoli e fare piccoli interventi di cleanup su audio e video.
 
-La guida operativa completa e' in [Manual.md](Manual.md).
+La guida utente stampabile e' in [Manual.html](Manual.html). La versione testo semplice e' in [Manual.md](Manual.md).
 
 ## Funzioni principali
 
@@ -148,7 +148,7 @@ Build completo pulito:
 .\build_exe.ps1 -Clean
 ```
 
-Il README, `Manual.md`, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.
+Il README, `Manual.html`, `Manual.md`, la licenza e `THIRD_PARTY_LICENSES` vengono copiati nella cartella `dist\VoiceBridge` durante la build.
 
 ## Licenza
 

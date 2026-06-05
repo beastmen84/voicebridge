@@ -228,6 +228,7 @@ class VoiceBridgeQt(
     voice_modeling_preflight_details_box: QPlainTextEdit
     voice_modeling_preflight_refresh_button: QPushButton
     voice_modeling_download_dvae_button: QPushButton
+    voice_modeling_cancel_dvae_button: QPushButton
     voice_modeling_dvae_progress: QProgressBar
     voice_modeling_clear_resume_button: QPushButton
     voice_modeling_save_config_button: QPushButton
@@ -236,6 +237,7 @@ class VoiceBridgeQt(
     voice_modeling_preflight_details: list[str]
     voice_modeling_auto_preflight_enabled: bool
     voice_modeling_dvae_download_running: bool
+    voice_modeling_dvae_cancel_requested: bool
     voice_training_job_combo: QComboBox
     voice_training_refresh_jobs_button: QPushButton
     voice_training_prepare_button: QPushButton
@@ -541,6 +543,7 @@ class VoiceBridgeQt(
         self.voice_modeling_preflight_details = []
         self.voice_modeling_auto_preflight_enabled = False
         self.voice_modeling_dvae_download_running = False
+        self.voice_modeling_dvae_cancel_requested = False
         self.voice_training_running = False
         self.voice_training_cancel_requested = False
         self.voice_training_running_config_path = ""

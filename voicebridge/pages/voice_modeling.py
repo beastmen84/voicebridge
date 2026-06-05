@@ -28,6 +28,7 @@ from voicebridge.modeling_datasets import modeling_dataset_exports_root
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_modeling import (
+    VoiceModelingDownloadCancelled,
     VoiceModelingExportInfo,
     build_voice_modeling_job_config,
     check_voice_modeling_preflight,
@@ -343,8 +344,11 @@ class VoiceModelingWorkflowMixin:
             return
         ready = local_tts_dvae_ready() and local_tts_mel_stats_ready()
         running = getattr(self, "voice_modeling_dvae_download_running", False)
+        cancel_requested = getattr(self, "voice_modeling_dvae_cancel_requested", False)
         self.voice_modeling_download_dvae_button.setEnabled(not ready and not running)
         self.voice_modeling_download_dvae_button.setVisible(not ready)
+        self.voice_modeling_cancel_dvae_button.setEnabled(running and not cancel_requested)
+        self.voice_modeling_cancel_dvae_button.setVisible(running)
         if ready:
             self.voice_modeling_dvae_progress.hide()
         elif running:
@@ -380,6 +384,7 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_status.setText(self.voice_modeling_text("Training assets download cancelled."))
             return
         self.voice_modeling_dvae_download_running = True
+        self.voice_modeling_dvae_cancel_requested = False
         self.voice_modeling_dvae_progress.setRange(0, 100)
         self.voice_modeling_dvae_progress.setValue(0)
         self.voice_modeling_dvae_progress.setFormat("%p%")
@@ -393,8 +398,12 @@ class VoiceModelingWorkflowMixin:
     def xtts_dvae_download_worker(self) -> None:
         try:
             paths = download_xtts_training_assets(
-                progress_callback=lambda percent: self.post(self.update_voice_modeling_dvae_progress, percent)
+                progress_callback=lambda percent: self.post(self.update_voice_modeling_dvae_progress, percent),
+                should_cancel=lambda: self.voice_modeling_dvae_cancel_requested,
             )
+        except VoiceModelingDownloadCancelled:
+            self.post(self.xtts_dvae_download_cancelled)
+            return
         except (OSError, ValueError, TimeoutError) as exc:
             self.post(self.xtts_dvae_download_failed, str(exc))
             return
@@ -403,8 +412,29 @@ class VoiceModelingWorkflowMixin:
     def update_voice_modeling_dvae_progress(self, percent: float) -> None:
         self.show_percent_progress(self.voice_modeling_dvae_progress, percent)
 
+    def cancel_xtts_dvae_download(self) -> None:
+        if not getattr(self, "voice_modeling_dvae_download_running", False):
+            return
+        self.voice_modeling_dvae_cancel_requested = True
+        self.voice_modeling_status.setText(self.voice_modeling_text("Cancelling training assets download..."))
+        self.voice_modeling_preflight_label.setText(
+            self.voice_modeling_text("Cancelling training assets download...")
+        )
+        self.update_voice_modeling_dvae_status()
+
+    def xtts_dvae_download_cancelled(self) -> None:
+        self.voice_modeling_dvae_download_running = False
+        self.voice_modeling_dvae_cancel_requested = False
+        self.voice_modeling_status.setText(self.voice_modeling_text("Training assets download cancelled."))
+        self.voice_modeling_preflight_label.setText(
+            self.voice_modeling_text("Training assets download cancelled.")
+        )
+        self.update_voice_modeling_dvae_status()
+        self.refresh_home_diagnostics()
+
     def xtts_dvae_download_succeeded(self, path: str) -> None:
         self.voice_modeling_dvae_download_running = False
+        self.voice_modeling_dvae_cancel_requested = False
         self.voice_modeling_status.setText(self.voice_modeling_text("XTTS-v2 training assets ready."))
         self.update_voice_modeling_dvae_status()
         self.refresh_home_diagnostics()
@@ -416,6 +446,7 @@ class VoiceModelingWorkflowMixin:
 
     def xtts_dvae_download_failed(self, message: str) -> None:
         self.voice_modeling_dvae_download_running = False
+        self.voice_modeling_dvae_cancel_requested = False
         self.voice_modeling_status.setText(self.voice_modeling_text("Training assets download failed."))
         self.update_voice_modeling_dvae_status()
         self.show_error(self.voice_modeling_text("Voice Modeling"), message)
@@ -565,9 +596,12 @@ class VoiceModelingWorkflowMixin:
         preflight_actions.setContentsMargins(0, 0, 0, 0)
         self.voice_modeling_download_dvae_button = QPushButton("Download training assets")
         self.voice_modeling_download_dvae_button.clicked.connect(self.start_xtts_dvae_download)
+        self.voice_modeling_cancel_dvae_button = QPushButton("Cancel download")
+        self.voice_modeling_cancel_dvae_button.clicked.connect(self.cancel_xtts_dvae_download)
         self.voice_modeling_preflight_refresh_button = QPushButton("Refresh preflight")
         self.voice_modeling_preflight_refresh_button.clicked.connect(self.refresh_voice_modeling_preflight_async)
         preflight_actions.addWidget(self.voice_modeling_download_dvae_button)
+        preflight_actions.addWidget(self.voice_modeling_cancel_dvae_button)
         preflight_actions.addStretch(1)
         preflight_actions.addWidget(self.voice_modeling_preflight_refresh_button)
         self.voice_modeling_dvae_progress = QProgressBar()
@@ -609,6 +643,7 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_preflight_details = []
         self.voice_modeling_auto_preflight_enabled = False
         self.voice_modeling_dvae_download_running = False
+        self.voice_modeling_dvae_cancel_requested = False
         self.update_voice_modeling_device_options()
         self.refresh_voice_modeling_exports()
         self.voice_modeling_auto_preflight_enabled = True

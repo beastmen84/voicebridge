@@ -65,6 +65,10 @@ XTTS_TRAINING_ASSETS_MIN_FREE_BYTES = 512 * 1024 * 1024
 VOICE_MODELING_MIN_FREE_BYTES = 2 * 1024 * 1024 * 1024
 
 
+class VoiceModelingDownloadCancelled(Exception):
+    pass
+
+
 class VoiceModelingExportInfo(TypedDict):
     dataset_dir: str
     name: str
@@ -163,6 +167,7 @@ def download_file_to_path(
     *,
     expected_sha256: str = "",
     progress_callback=None,
+    should_cancel=None,
 ) -> Path:
     target = Path(target_path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -170,22 +175,32 @@ def download_file_to_path(
     request = urllib.request.Request(source_url, headers={"User-Agent": "VoiceBridge"})
     digest = sha256()
     downloaded_bytes = 0
-    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-        total_header = response.headers.get("Content-Length", "")
-        try:
-            total_bytes = int(total_header)
-        except ValueError:
-            total_bytes = 0
-        with temporary_target.open("wb") as output:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
-                digest.update(chunk)
-                downloaded_bytes += len(chunk)
-                if progress_callback and total_bytes:
-                    progress_callback(min(100.0, downloaded_bytes * 100.0 / total_bytes))
+    try:
+        if should_cancel and should_cancel():
+            raise VoiceModelingDownloadCancelled("Training assets download cancelled.")
+        with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+            total_header = response.headers.get("Content-Length", "")
+            try:
+                total_bytes = int(total_header)
+            except ValueError:
+                total_bytes = 0
+            with temporary_target.open("wb") as output:
+                while True:
+                    if should_cancel and should_cancel():
+                        raise VoiceModelingDownloadCancelled("Training assets download cancelled.")
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+                    digest.update(chunk)
+                    downloaded_bytes += len(chunk)
+                    if progress_callback and total_bytes:
+                        progress_callback(min(100.0, downloaded_bytes * 100.0 / total_bytes))
+        if should_cancel and should_cancel():
+            raise VoiceModelingDownloadCancelled("Training assets download cancelled.")
+    except VoiceModelingDownloadCancelled:
+        temporary_target.unlink(missing_ok=True)
+        raise
     actual_sha256 = digest.hexdigest()
     if expected_sha256 and actual_sha256.lower() != expected_sha256.lower():
         temporary_target.unlink(missing_ok=True)
@@ -198,16 +213,17 @@ def download_file_to_path(
     return target
 
 
-def download_xtts_dvae(progress_callback=None) -> Path:
+def download_xtts_dvae(progress_callback=None, should_cancel=None) -> Path:
     return download_file_to_path(
         XTTS_DVAE_DOWNLOAD_URL,
         local_tts_dvae_path(),
         expected_sha256=XTTS_DVAE_SHA256,
         progress_callback=progress_callback,
+        should_cancel=should_cancel,
     )
 
 
-def download_xtts_training_assets(progress_callback=None) -> list[Path]:
+def download_xtts_training_assets(progress_callback=None, should_cancel=None) -> list[Path]:
     downloads: list[tuple[str, Path, str]] = []
     if not local_tts_dvae_ready():
         downloads.append((XTTS_DVAE_DOWNLOAD_URL, local_tts_dvae_path(), XTTS_DVAE_SHA256))
@@ -215,6 +231,8 @@ def download_xtts_training_assets(progress_callback=None) -> list[Path]:
         downloads.append((XTTS_MEL_STATS_DOWNLOAD_URL, local_tts_mel_stats_path(), ""))
 
     if not downloads:
+        if should_cancel and should_cancel():
+            raise VoiceModelingDownloadCancelled("Training assets download cancelled.")
         if progress_callback:
             progress_callback(100.0)
         return [local_tts_dvae_path(), local_tts_mel_stats_path()]
@@ -228,6 +246,8 @@ def download_xtts_training_assets(progress_callback=None) -> list[Path]:
     completed: list[Path] = []
     total = len(downloads)
     for index, (source_url, target_path, expected_sha256) in enumerate(downloads):
+        if should_cancel and should_cancel():
+            raise VoiceModelingDownloadCancelled("Training assets download cancelled.")
         start = index * 100.0 / total
         end = (index + 1) * 100.0 / total
 
@@ -241,6 +261,7 @@ def download_xtts_training_assets(progress_callback=None) -> list[Path]:
                 target_path,
                 expected_sha256=expected_sha256,
                 progress_callback=mapped_progress,
+                should_cancel=should_cancel,
             )
         )
     if progress_callback:

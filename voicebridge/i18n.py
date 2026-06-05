@@ -818,6 +818,8 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     ),
     "Training assets download cancelled.": "Download asset training annullato.",
     "Downloading XTTS-v2 training assets...": "Download asset training XTTS-v2...",
+    "Cancel download": "Annulla download",
+    "Cancelling training assets download...": "Annullamento download asset training...",
     "XTTS-v2 training assets ready.": "Asset training XTTS-v2 pronti.",
     "XTTS-v2 training assets ready:\n{path}": "Asset training XTTS-v2 pronti:\n{path}",
     "Training assets download failed.": "Download asset training fallito.",

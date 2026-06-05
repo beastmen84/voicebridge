@@ -1,3 +1,4 @@
+import voicebridge.pages.voice_modeling as voice_modeling_page
 from voicebridge.pages.voice_modeling import VoiceModelingWorkflowMixin
 
 
@@ -24,9 +25,13 @@ class FakeBox:
 class FakeButton:
     def __init__(self) -> None:
         self.enabled = None
+        self.visible = None
 
     def setEnabled(self, enabled: bool) -> None:
         self.enabled = enabled
+
+    def setVisible(self, visible: bool) -> None:
+        self.visible = visible
 
 
 class FakeLabel:
@@ -43,6 +48,17 @@ class FakeTextBox:
 
     def setPlainText(self, text: str) -> None:
         self.value = text
+
+
+class FakeProgress:
+    def __init__(self) -> None:
+        self.visible = None
+
+    def show(self) -> None:
+        self.visible = True
+
+    def hide(self) -> None:
+        self.visible = False
 
 
 class FakePicker:
@@ -62,6 +78,7 @@ class FakeVoiceModelingWorkflow(VoiceModelingWorkflowMixin):
         self.voice_modeling_preflight_box = FakeBox()
         self.voice_modeling_preflight_details_box = FakeTextBox()
         self.voice_modeling_preflight_refresh_button = FakeButton()
+        self.voice_modeling_dvae_progress = FakeProgress()
         self.voice_modeling_preflight_ok = False
         self._voice_modeling_preflight_refreshing = True
         self._voice_modeling_preflight_stale = False
@@ -99,3 +116,36 @@ def test_voice_modeling_preflight_discards_stale_result() -> None:
     assert workflow.voice_modeling_preflight_box.object_name == "WarningBox"
     assert workflow.home_refreshes == 1
     assert workflow.dvae_refreshes == 1
+
+
+def test_voice_modeling_dvae_cancel_button_reflects_cancel_requested(monkeypatch) -> None:
+    monkeypatch.setattr(voice_modeling_page, "local_tts_dvae_ready", lambda: False)
+    monkeypatch.setattr(voice_modeling_page, "local_tts_mel_stats_ready", lambda: False)
+
+    workflow = FakeVoiceModelingWorkflow()
+    workflow.voice_modeling_download_dvae_button = FakeButton()
+    workflow.voice_modeling_cancel_dvae_button = FakeButton()
+    workflow.voice_modeling_dvae_download_running = True
+    workflow.voice_modeling_dvae_cancel_requested = True
+
+    VoiceModelingWorkflowMixin.update_voice_modeling_dvae_status(workflow)
+
+    assert workflow.voice_modeling_download_dvae_button.enabled is False
+    assert workflow.voice_modeling_download_dvae_button.visible is True
+    assert workflow.voice_modeling_cancel_dvae_button.enabled is False
+    assert workflow.voice_modeling_cancel_dvae_button.visible is True
+
+
+def test_cancel_xtts_dvae_download_marks_download_as_cancelling() -> None:
+    workflow = FakeVoiceModelingWorkflow()
+    workflow.voice_modeling_download_dvae_button = FakeButton()
+    workflow.voice_modeling_cancel_dvae_button = FakeButton()
+    workflow.voice_modeling_dvae_download_running = True
+    workflow.voice_modeling_dvae_cancel_requested = False
+    workflow.voice_modeling_status = FakeLabel()
+
+    workflow.cancel_xtts_dvae_download()
+
+    assert workflow.voice_modeling_dvae_cancel_requested is True
+    assert workflow.voice_modeling_status.text_value == "Cancelling training assets download..."
+    assert workflow.voice_modeling_preflight_label.text_value == "Cancelling training assets download..."

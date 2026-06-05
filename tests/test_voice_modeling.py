@@ -17,6 +17,7 @@ from voicebridge.modeling_datasets import (
     export_modeling_dataset,
 )
 from voicebridge.voice_modeling import (
+    VoiceModelingDownloadCancelled,
     build_voice_modeling_job_config,
     build_voice_modeling_training_command,
     check_voice_modeling_preflight,
@@ -262,3 +263,19 @@ def test_download_file_to_path_verifies_checksum(tmp_path: Path) -> None:
     assert result == target
     assert target.read_bytes() == content
     assert progress_values[-1] == 100.0
+
+
+def test_download_file_to_path_cleans_partial_file_when_cancelled(tmp_path: Path) -> None:
+    source = tmp_path / "source.bin"
+    target = tmp_path / "target.bin"
+    source.write_bytes(b"cancelled")
+
+    with pytest.raises(VoiceModelingDownloadCancelled):
+        download_file_to_path(
+            source.as_uri(),
+            target,
+            should_cancel=lambda: True,
+        )
+
+    assert not target.exists()
+    assert not target.with_suffix(".bin.part").exists()

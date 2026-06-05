@@ -9,6 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QGridLayout,
@@ -346,17 +347,57 @@ class ModelingDatasetsWorkflowMixin:
             sections.append("Export\nExportable.")
         return "\n\n".join(sections)
 
-    def selected_modeling_audio_device(self) -> int | None:
+    def refresh_modeling_microphones(self) -> None:
+        if not hasattr(self, "modeling_microphone_combo"):
+            return
+        current_device_index = self.current_modeling_audio_device_index()
+        self.modeling_microphone_combo.blockSignals(True)
         try:
-            devices = list_input_devices()
-        except AudioRecorderError as exc:
-            self.show_error("Modeling Datasets", str(exc))
+            self.modeling_microphone_combo.clear()
+            try:
+                devices = list_input_devices()
+            except AudioRecorderError as exc:
+                self.modeling_microphone_combo.addItem(self.modeling_text("Microphone unavailable"), None)
+                self.modeling_microphone_combo.setEnabled(False)
+                if hasattr(self, "modeling_dataset_status"):
+                    self.modeling_dataset_status.setText(str(exc))
+                return
+            if not devices:
+                self.modeling_microphone_combo.addItem(self.modeling_text("No microphone input was detected."), None)
+                self.modeling_microphone_combo.setEnabled(False)
+                if hasattr(self, "modeling_dataset_status"):
+                    self.modeling_dataset_status.setText(self.modeling_text("No microphone input was detected."))
+                return
+            selected_row = 0
+            default_row = 0
+            for row, device in enumerate(devices):
+                label = f"{device.name} | {device.host_api}"
+                if device.is_default:
+                    label += " | default"
+                    default_row = row
+                self.modeling_microphone_combo.addItem(label, device.index)
+                if device.index == current_device_index:
+                    selected_row = row
+            if current_device_index is None:
+                selected_row = default_row
+            self.modeling_microphone_combo.setCurrentIndex(selected_row)
+            self.modeling_microphone_combo.setEnabled(True)
+        finally:
+            self.modeling_microphone_combo.blockSignals(False)
+            self.update_modeling_dataset_buttons()
+
+    def current_modeling_audio_device_index(self) -> int | None:
+        if not hasattr(self, "modeling_microphone_combo"):
             return None
-        if not devices:
-            self.show_error("Modeling Datasets", "No microphone input was detected.")
+        device_index = self.modeling_microphone_combo.currentData(Qt.ItemDataRole.UserRole)
+        return device_index if isinstance(device_index, int) else None
+
+    def selected_modeling_audio_device(self) -> int | None:
+        device_index = self.current_modeling_audio_device_index()
+        if device_index is None:
+            self.show_error("Modeling Datasets", "Select a microphone input first.")
             return None
-        default_device = next((device for device in devices if device.is_default), devices[0])
-        return default_device.index
+        return device_index
 
     def load_modeling_clip_text_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -874,6 +915,7 @@ class ModelingDatasetsWorkflowMixin:
         dataset = self.selected_modeling_dataset()
         clip = self.selected_modeling_clip()
         has_dataset = dataset is not None
+        has_microphone = self.current_modeling_audio_device_index() is not None
         has_clip_audio = bool(clip and Path(clip["audio_path"]).is_file())
         dataset_summary = dataset_summary if dataset else None
         if dataset and dataset_summary is None:
@@ -889,21 +931,28 @@ class ModelingDatasetsWorkflowMixin:
             clip
             and clip.get("mode") == MODELING_CLIP_TEXT_GUIDED
             and clip.get("transcript_text", "").strip()
+            and has_microphone
         )
         text_length = len(self.modeling_clip_text_edit.toPlainText().strip())
-        can_record_from_text = has_dataset and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
+        can_record_from_text = has_dataset and has_microphone and 0 < text_length <= MODELING_GUIDED_TEXT_MAX_CHARS
         self.modeling_record_text_button.setEnabled(can_record_from_text)
         if can_record_from_text:
             self.modeling_record_text_button.setToolTip("Record the text currently shown in the clip text box.")
+        elif has_dataset and not has_microphone:
+            self.modeling_record_text_button.setToolTip("Select a microphone input first.")
         elif has_dataset:
             self.modeling_record_text_button.setToolTip(
                 f"Paste, load or generate text up to {MODELING_GUIDED_TEXT_MAX_CHARS} characters."
             )
         else:
             self.modeling_record_text_button.setToolTip("Select a modeling dataset first.")
-        self.modeling_record_free_button.setEnabled(has_dataset)
+        self.modeling_record_free_button.setEnabled(has_dataset and has_microphone)
         self.modeling_record_free_button.setToolTip(
-            "Record up to 60 seconds without prepared text." if has_dataset else "Select a modeling dataset first."
+            "Record up to 60 seconds without prepared text."
+            if has_dataset and has_microphone
+            else "Select a microphone input first."
+            if has_dataset
+            else "Select a modeling dataset first."
         )
         self.modeling_load_text_button.setEnabled(has_dataset)
         self.modeling_load_text_button.setToolTip(
@@ -951,6 +1000,8 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_retry_clip_button.setToolTip(
             "Record this guided clip again with the same text."
             if can_retry_clip
+            else "Select a microphone input first."
+            if clip and not has_microphone
             else "Retry recording is available for guided clips with transcript text."
         )
         self.modeling_verify_clip_button.setEnabled(can_verify_clip)
@@ -1085,6 +1136,18 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_clip_details.setReadOnly(True)
         self.modeling_clip_details.setMinimumHeight(120)
         self.modeling_clip_details.setPlaceholderText("Recording quality details appear here after a clip is saved.")
+        microphone_row = QHBoxLayout()
+        microphone_row.setContentsMargins(0, 0, 0, 0)
+        self.modeling_microphone_label = QLabel("Microphone")
+        self.modeling_microphone_combo = QComboBox()
+        self.modeling_microphone_combo.currentIndexChanged.connect(
+            lambda _index: self.update_modeling_dataset_buttons()
+        )
+        self.modeling_refresh_microphones_button = QPushButton("Refresh")
+        self.modeling_refresh_microphones_button.clicked.connect(self.refresh_modeling_microphones)
+        microphone_row.addWidget(self.modeling_microphone_label)
+        microphone_row.addWidget(self.modeling_microphone_combo, 1)
+        microphone_row.addWidget(self.modeling_refresh_microphones_button)
         text_actions = QHBoxLayout()
         text_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_generate_text_button = QPushButton("Generate guided text")
@@ -1112,6 +1175,7 @@ class ModelingDatasetsWorkflowMixin:
         editor_card.content_layout.addWidget(self.modeling_clip_text_edit)
         editor_card.content_layout.addWidget(self.modeling_clip_text_counter)
         editor_card.content_layout.addWidget(self.modeling_prompt_usage_label)
+        editor_card.content_layout.addLayout(microphone_row)
         editor_card.content_layout.addLayout(text_actions)
         editor_card.content_layout.addWidget(self.modeling_clip_details)
         editor_card.content_layout.addWidget(self.modeling_dataset_status)
@@ -1125,6 +1189,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_clip_audio_output = QAudioOutput(self)
         self.modeling_clip_media_player = QMediaPlayer(self)
         self.modeling_clip_media_player.setAudioOutput(self.modeling_clip_audio_output)
+        self.refresh_modeling_microphones()
         self.refresh_modeling_datasets_page()
         layout.addStretch(1)
         return page

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from voicebridge.audio_recorder import AudioInputDevice
 from voicebridge.json_schemas import (
     MODELING_DATASET_EXPORT_JSON_KIND,
     MODELING_DATASETS_JSON_KIND,
@@ -56,6 +57,47 @@ from voicebridge.modeling_datasets import (
     write_modeling_clip_transcript,
 )
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING, VOICE_PROFILE_REFERENCE, build_voice_profile
+
+
+class FakeComboBox:
+    def __init__(self, current_data: object = None) -> None:
+        self.items: list[tuple[str, object]] = []
+        self.current_index = -1
+        self.enabled = True
+        self.blocked = False
+        self.current_data = current_data
+
+    def blockSignals(self, blocked: bool) -> None:
+        self.blocked = blocked
+
+    def clear(self) -> None:
+        self.items.clear()
+        self.current_index = -1
+        self.current_data = None
+
+    def addItem(self, label: str, data: object = None) -> None:
+        self.items.append((label, data))
+        if self.current_index < 0:
+            self.current_index = 0
+            self.current_data = data
+
+    def setCurrentIndex(self, index: int) -> None:
+        self.current_index = index
+        self.current_data = self.items[index][1]
+
+    def currentData(self, _role: object = None) -> object:
+        return self.current_data
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakeLabel:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def setText(self, text: str) -> None:
+        self.text = text
 
 
 def test_ensure_modeling_dataset_for_modeling_profile_only(tmp_path: Path) -> None:
@@ -365,6 +407,47 @@ def test_startup_recovers_orphaned_modeling_verification_state(
     assert modeling_clip_verification_status(recovered_clip) == MODELING_VERIFICATION_UNVERIFIED
     assert recovered_clip["verification_details"] == MODELING_INTERRUPTED_VERIFICATION_DETAILS
     assert saved_datasets == [window.modeling_datasets]
+
+
+def test_selected_modeling_audio_device_uses_dataset_microphone_combo() -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    class DummyModelingWindow(ModelingDatasetsWorkflowMixin):
+        def show_error(self, title: str, message: str) -> None:
+            raise AssertionError((title, message))
+
+    window = DummyModelingWindow()
+    window.modeling_microphone_combo = FakeComboBox(7)
+
+    assert window.selected_modeling_audio_device() == 7
+
+
+def test_refresh_modeling_microphones_preserves_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    class DummyModelingWindow(ModelingDatasetsWorkflowMixin):
+        def update_modeling_dataset_buttons(self, dataset_summary=None) -> None:
+            self.buttons_updated = True
+
+        @staticmethod
+        def modeling_text(text: str, **_kwargs) -> str:
+            return text
+
+    devices = [
+        AudioInputDevice(1, "Built-in Mic", "Windows WASAPI", 1, 48_000, is_default=True),
+        AudioInputDevice(7, "USB Mic", "Windows WASAPI", 1, 48_000, is_default=False),
+    ]
+    monkeypatch.setattr("voicebridge.pages.modeling_datasets.list_input_devices", lambda: devices)
+    window = DummyModelingWindow()
+    window.modeling_microphone_combo = FakeComboBox(7)
+    window.modeling_dataset_status = FakeLabel()
+    window.buttons_updated = False
+
+    window.refresh_modeling_microphones()
+
+    assert window.current_modeling_audio_device_index() == 7
+    assert window.modeling_microphone_combo.enabled is True
+    assert window.buttons_updated is True
 
 
 def test_modeling_clip_export_block_reason_explains_guided_verification_state(tmp_path: Path) -> None:

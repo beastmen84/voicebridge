@@ -399,6 +399,7 @@
     <p><span class="badge warn">Needs review</span> testo da controllare.</p>
     <p><span class="badge danger">Check error</span> verifica non completata.</p>
     <div class="success">Export dataset è disponibile solo quando il dataset raggiunge la readiness minima. L'export copia solo clip pronte e non modifica il dataset di lavoro.</div>
+    <div class="note">I prompt guidati generati dall'app sono limitati a 200 caratteri per restare compatibili con il fine-tuning XTTS-v2. Se incolli o carichi testo personalizzato, tieni ogni clip entro lo stesso limite: gli export con transcript più lunghi vengono bloccati in fase di preparazione training per evitare errori del trainer.</div>
   </section>
 
   <section class="page section" id="setup-training">
@@ -429,6 +430,7 @@
       </div>
     </div>
     <div class="note">Il download degli asset training può essere annullato con <code>Cancel download</code>. Se CUDA fallisce, l'app può proporre di passare il job a CPU e ritentare.</div>
+    <div class="note">I pulsanti seguono lo stato del job: dopo <code>Save training config</code> è disponibile solo <code>Prepare</code>; dopo <code>Prepare</code> è disponibile solo <code>Dry run</code>; dopo <code>Dry run</code> completato correttamente è disponibile <code>Start training</code>. Se il job fallisce o viene annullato, riparti da <code>Prepare</code>.</div>
   </section>
 
   <section class="page section" id="transcription">

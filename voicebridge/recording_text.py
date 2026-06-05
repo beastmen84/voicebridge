@@ -1,4 +1,4 @@
-RECORDING_TEXT_BREAK_MARKS = ".!?;؟؛。！？।"
+RECORDING_TEXT_BREAK_MARKS = ".!?؟。！？।"
 
 
 def format_recording_text_for_display(text: str) -> str:

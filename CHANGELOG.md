@@ -6,7 +6,18 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 ## Unreleased
 
-- No unreleased changes yet.
+### Changed
+
+- Limited generated guided modeling prompts to 200 characters for XTTS-v2 training compatibility.
+- Enforced the Training tab sequence so jobs move through `Prepare`, `Dry run` and `Start training` in order.
+- Updated the recording reader so semicolons no longer force a new reading line.
+
+### Fixed
+
+- Preserved the real XTTS training error on Windows by avoiding locked trainer log cleanup.
+- Blocked training preparation for exported datasets with transcript rows longer than the XTTS-v2 text limit.
+- Avoided creating empty voice model output folders during preflight/config validation.
+- Removed safely identifiable empty training output folders when deleting linked modeling profiles.
 
 ## 0.9b - Public-ready beta
 

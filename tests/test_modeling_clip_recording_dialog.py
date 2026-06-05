@@ -31,8 +31,7 @@ def test_modeling_prompt_display_uses_reading_breaks() -> None:
     assert display_text.split("\n\n") == [
         "Prima frase.",
         "Seconda frase?",
-        "Terza frase;",
-        "poi chiudo.",
+        "Terza frase; poi chiudo.",
     ]
 
 

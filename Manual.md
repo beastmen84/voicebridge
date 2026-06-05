@@ -100,6 +100,8 @@ Stati importanti:
 
 `Export dataset` è disponibile solo quando il dataset raggiunge la readiness minima. L'export copia solo clip pronte e non modifica il dataset di lavoro.
 
+I prompt guidati generati dall'app sono limitati a 200 caratteri per restare compatibili con il fine-tuning XTTS-v2. Se incolli o carichi testo personalizzato, tieni ogni clip entro lo stesso limite: gli export con transcript più lunghi vengono bloccati in fase di preparazione training per evitare errori del trainer.
+
 ### Setup
 
 Usa `Setup` per preparare un job di training XTTS-v2.
@@ -126,6 +128,8 @@ Usa `Training` per eseguire job salvati.
 6. Usa `Open job folder` per controllare log, config e output.
 
 Quando un training produce un `training_result.json` completo, la voce addestrata compare tra le voci Local TTS.
+
+I pulsanti seguono lo stato del job: dopo `Save training config` è disponibile solo `Prepare`; dopo `Prepare` è disponibile solo `Dry run`; dopo `Dry run` completato correttamente è disponibile `Start training`. Se il job fallisce o viene annullato, riparti da `Prepare`.
 
 ## Transcription
 

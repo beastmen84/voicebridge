@@ -66,6 +66,19 @@ def test_prompt_generation_avoids_duplicates_across_languages() -> None:
         assert len(set(prompts)) == len(prompts), language_code
 
 
+def test_generated_prompts_stay_under_training_text_limit_across_languages() -> None:
+    for language_code in VOICE_PROFILE_LANGUAGES:
+        corpus = prompt_generator.MODELING_PROMPT_CORPUS[modeling_prompt_language_key(language_code)]
+        for _index in range(1000):
+            prompt = prompt_generator.build_prompt_from_corpus(
+                corpus,
+                seed=_index,
+                max_chars=MODELING_PROMPT_DEFAULT_MAX_CHARS,
+            )
+
+            assert len(prompt) <= MODELING_PROMPT_DEFAULT_MAX_CHARS, (language_code, prompt)
+
+
 def test_latin_prompt_corpus_uses_native_orthography() -> None:
     required_characters = {
         "it": "èù",

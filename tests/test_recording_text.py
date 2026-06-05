@@ -8,8 +8,7 @@ def test_format_recording_text_for_display_breaks_reading_sentences() -> None:
         [
             "Prima frase.",
             "Seconda domanda?",
-            "Terza frase;",
-            "poi chiudo.",
+            "Terza frase; poi chiudo.",
         ]
     )
 

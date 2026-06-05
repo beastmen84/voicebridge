@@ -356,6 +356,7 @@ class ModelingClipRecordingDialog(QDialog):
     def keep_recording(self) -> None:
         if not self._preview_path or not self._preview_path.is_file():
             return
+        ModelingClipRecordingDialog.release_preview_player(self)
         try:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
             self._preview_path.replace(self.output_path)
@@ -369,7 +370,7 @@ class ModelingClipRecordingDialog(QDialog):
 
     def retry_recording(self) -> None:
         self.stop_recording_if_needed()
-        self.media_player.stop()
+        ModelingClipRecordingDialog.release_preview_player(self)
         self.cleanup_preview_file()
         self.recording_path = None
         self.status_message = ""
@@ -391,13 +392,14 @@ class ModelingClipRecordingDialog(QDialog):
 
     def reject(self) -> None:
         self.stop_recording_if_needed()
-        self.media_player.stop()
+        ModelingClipRecordingDialog.release_preview_player(self)
         if not self._kept_recording:
             self.cleanup_preview_file()
         super().reject()
 
     def closeEvent(self, event) -> None:
         self.stop_recording_if_needed()
+        ModelingClipRecordingDialog.release_preview_player(self)
         if not self._kept_recording:
             self.cleanup_preview_file()
         super().closeEvent(event)
@@ -412,9 +414,17 @@ class ModelingClipRecordingDialog(QDialog):
         with suppress(AudioRecorderError):
             recorder.stop()
 
+    def release_preview_player(self) -> None:
+        media_player = getattr(self, "media_player", None)
+        if media_player is None:
+            return
+        media_player.stop()
+        media_player.setSource(QUrl())
+
     def cleanup_preview_file(self) -> None:
         if not self._preview_path or self._kept_recording:
             return
+        ModelingClipRecordingDialog.release_preview_player(self)
         with suppress(OSError):
             self._preview_path.unlink(missing_ok=True)
         self._preview_path = None

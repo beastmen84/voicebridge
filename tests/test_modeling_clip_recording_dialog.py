@@ -88,3 +88,52 @@ def test_modeling_keep_moves_preview_to_final_clip(tmp_path: Path) -> None:
     assert dialog._kept_recording is True
     assert accepted == [True]
     assert errors == []
+
+
+def test_modeling_keep_releases_preview_player_before_moving_clip() -> None:
+    events = []
+
+    class FakeMediaPlayer:
+        def stop(self) -> None:
+            events.append("stop")
+
+        def setSource(self, _source) -> None:
+            events.append("clear-source")
+
+    class FakeParent:
+        def mkdir(self, *, parents: bool, exist_ok: bool) -> None:
+            assert parents is True
+            assert exist_ok is True
+            events.append("mkdir")
+
+    class FakeOutputPath:
+        parent = FakeParent()
+
+    class FakePreviewPath:
+        def is_file(self) -> bool:
+            return True
+
+        def replace(self, _target) -> None:
+            events.append("replace")
+
+    accepted = []
+    errors = []
+    output_path = FakeOutputPath()
+    dialog = SimpleNamespace(
+        output_path=output_path,
+        _preview_path=FakePreviewPath(),
+        _kept_recording=False,
+        recording_path=None,
+        media_player=FakeMediaPlayer(),
+        accept=lambda: accepted.append(True),
+        show_recording_error=errors.append,
+    )
+
+    ModelingClipRecordingDialog.keep_recording(dialog)
+
+    assert events == ["stop", "clear-source", "mkdir", "replace"]
+    assert dialog.recording_path is output_path
+    assert dialog._preview_path is output_path
+    assert dialog._kept_recording is True
+    assert accepted == [True]
+    assert errors == []

@@ -593,6 +593,15 @@ class ModelingDatasetsWorkflowMixin:
         used_count, available_count = modeling_dataset_guided_prompt_usage(dataset)
         self.modeling_prompt_usage_label.setText(f"Guided prompts: {used_count} / {available_count} used")
 
+    def set_modeling_export_dataset_button_primary(self, is_primary: bool) -> None:
+        button = self.modeling_export_dataset_button
+        object_name = "PrimaryButton" if is_primary else ""
+        if button.objectName() == object_name:
+            return
+        button.setObjectName(object_name)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
     def delete_selected_modeling_clip(self) -> None:
         dataset = self.selected_modeling_dataset()
         clip = self.selected_modeling_clip()
@@ -1028,6 +1037,7 @@ class ModelingDatasetsWorkflowMixin:
             "Open the dataset folder." if has_dataset else "Select a modeling dataset first."
         )
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
+        self.set_modeling_export_dataset_button_primary(has_exportable_clips)
         if dataset_summary:
             exportable_count = dataset_summary["exportable_clips"]
             self.modeling_export_dataset_button.setToolTip(

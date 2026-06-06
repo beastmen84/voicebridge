@@ -275,6 +275,7 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_preflight_box.setObjectName("WarningBox")
         self.voice_modeling_preflight_box.style().unpolish(self.voice_modeling_preflight_box)
         self.voice_modeling_preflight_box.style().polish(self.voice_modeling_preflight_box)
+        self.update_voice_modeling_buttons()
 
     def refresh_voice_modeling_preflight_async(self) -> None:
         if not hasattr(self, "voice_modeling_preflight_label"):
@@ -323,7 +324,6 @@ class VoiceModelingWorkflowMixin:
         ):
             self._voice_modeling_preflight_snapshot = None
             self.mark_voice_modeling_preflight_stale()
-            self.voice_modeling_preflight_refresh_button.setEnabled(True)
             self.refresh_home_diagnostics()
             self.update_voice_modeling_dvae_status()
             return
@@ -332,10 +332,10 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_preflight_details = result["details"]
         self.voice_modeling_preflight_label.setText(result["summary"])
         self.voice_modeling_preflight_details_box.setPlainText("\n".join(result["details"]))
-        self.voice_modeling_preflight_refresh_button.setEnabled(True)
         self.voice_modeling_preflight_box.setObjectName("GoodBox" if result["ok"] else "WarningBox")
         self.voice_modeling_preflight_box.style().unpolish(self.voice_modeling_preflight_box)
         self.voice_modeling_preflight_box.style().polish(self.voice_modeling_preflight_box)
+        self.update_voice_modeling_buttons()
         self.refresh_home_diagnostics()
         self.update_voice_modeling_dvae_status()
 
@@ -496,8 +496,13 @@ class VoiceModelingWorkflowMixin:
             return
         has_dataset = self.voice_modeling_export_info is not None
         has_output = bool(self.voice_modeling_output_picker.text())
+        preflight_refreshing = getattr(self, "_voice_modeling_preflight_refreshing", False)
         self.voice_modeling_save_config_button.setEnabled(has_dataset and has_output)
         self.voice_modeling_open_output_button.setEnabled(has_output)
+        if hasattr(self, "voice_modeling_preflight_refresh_button"):
+            self.voice_modeling_preflight_refresh_button.setEnabled(
+                has_dataset and has_output and not preflight_refreshing
+            )
 
     def build_voice_modeling_page(self, include_header: bool = True):
         page, layout = self.page_container()

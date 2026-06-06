@@ -99,8 +99,10 @@ def test_xtts_terms_agreement_writes_marker(tmp_path: Path) -> None:
 def test_load_xtts_model_uses_trained_model_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     model_path = tmp_path / "model.pth"
     config_path = tmp_path / "config.json"
+    vocab_path = tmp_path / "vocab.json"
     model_path.write_text("model", encoding="utf-8")
     config_path.write_text("config", encoding="utf-8")
+    vocab_path.write_text("vocab", encoding="utf-8")
     calls = []
 
     class FakeTts:
@@ -127,7 +129,7 @@ def test_load_xtts_model_uses_trained_model_paths(tmp_path: Path, monkeypatch: p
         (
             (),
             {
-                "model_path": str(model_path.resolve()),
+                "model_path": str(model_path.parent.resolve()),
                 "config_path": str(config_path.resolve()),
                 "progress_bar": False,
             },

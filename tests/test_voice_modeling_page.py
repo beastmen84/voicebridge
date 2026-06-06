@@ -78,6 +78,8 @@ class FakeVoiceModelingWorkflow(VoiceModelingWorkflowMixin):
         self.voice_modeling_preflight_box = FakeBox()
         self.voice_modeling_preflight_details_box = FakeTextBox()
         self.voice_modeling_preflight_refresh_button = FakeButton()
+        self.voice_modeling_save_config_button = FakeButton()
+        self.voice_modeling_open_output_button = FakeButton()
         self.voice_modeling_dvae_progress = FakeProgress()
         self.voice_modeling_preflight_ok = False
         self._voice_modeling_preflight_refreshing = True
@@ -116,6 +118,19 @@ def test_voice_modeling_preflight_discards_stale_result() -> None:
     assert workflow.voice_modeling_preflight_box.object_name == "WarningBox"
     assert workflow.home_refreshes == 1
     assert workflow.dvae_refreshes == 1
+
+
+def test_voice_modeling_stale_preflight_enables_refresh_button() -> None:
+    workflow = FakeVoiceModelingWorkflow()
+    workflow._voice_modeling_preflight_refreshing = False
+    workflow.voice_modeling_preflight_ok = True
+
+    workflow.mark_voice_modeling_preflight_stale()
+
+    assert workflow.voice_modeling_preflight_ok is False
+    assert workflow.voice_modeling_preflight_refresh_button.enabled is True
+    assert workflow.voice_modeling_save_config_button.enabled is True
+    assert workflow.voice_modeling_open_output_button.enabled is True
 
 
 def test_voice_modeling_dvae_cancel_button_reflects_cancel_requested(monkeypatch) -> None:

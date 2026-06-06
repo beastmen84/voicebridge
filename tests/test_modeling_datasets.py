@@ -100,6 +100,30 @@ class FakeLabel:
         self.text = text
 
 
+class FakeActionButton:
+    def __init__(self) -> None:
+        self.enabled = None
+        self.tooltip = ""
+        self.text = ""
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    def setToolTip(self, tooltip: str) -> None:
+        self.tooltip = tooltip
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+
+class FakeTextEdit:
+    def __init__(self, text: str = "") -> None:
+        self.text = text
+
+    def toPlainText(self) -> str:
+        return self.text
+
+
 def test_ensure_modeling_dataset_for_modeling_profile_only(tmp_path: Path) -> None:
     modeling = build_voice_profile(
         name="Model Voice",
@@ -167,6 +191,59 @@ def test_open_modeling_dataset_for_profile_selects_single_profile_dataset(monkey
     assert window.selected_modeling_dataset_id == profile["id"]
     assert window.selected_modeling_clip_id == ""
     assert window.tab_shown == 1
+
+
+def test_update_modeling_dataset_buttons_keeps_metric_tiles_in_sync() -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    class DummyModelingButtonsWindow(ModelingDatasetsWorkflowMixin):
+        def __init__(self) -> None:
+            self.dataset = {"guided_prompt_history": []}
+            self.modeling_clip_text_edit = FakeTextEdit("Prompt")
+            self.metric_tile_summary = None
+            self.export_button_primary = None
+            for name in (
+                "modeling_record_text_button",
+                "modeling_record_free_button",
+                "modeling_load_text_button",
+                "modeling_generate_text_button",
+                "modeling_reset_prompt_history_button",
+                "modeling_save_text_button",
+                "modeling_delete_clip_button",
+                "modeling_play_clip_button",
+                "modeling_open_clip_button",
+                "modeling_transcribe_clip_button",
+                "modeling_retry_clip_button",
+                "modeling_verify_clip_button",
+                "modeling_toggle_export_clip_button",
+                "modeling_open_dataset_folder_button",
+                "modeling_export_dataset_button",
+            ):
+                setattr(self, name, FakeActionButton())
+
+        def selected_modeling_dataset(self):
+            return self.dataset
+
+        def selected_modeling_clip(self):
+            return None
+
+        def current_modeling_audio_device_index(self):
+            return 0
+
+        def update_modeling_dataset_metric_tiles(self, summary):
+            self.metric_tile_summary = summary
+
+        def set_modeling_export_dataset_button_primary(self, is_primary: bool) -> None:
+            self.export_button_primary = is_primary
+
+    window = DummyModelingButtonsWindow()
+    summary = {"readiness": MODELING_DATASET_USABLE, "exportable_clips": 3}
+
+    window.update_modeling_dataset_buttons(summary)
+
+    assert window.metric_tile_summary is summary
+    assert window.modeling_export_dataset_button.enabled is True
+    assert window.export_button_primary is True
 
 
 def test_modeling_dataset_profile_helpers_detect_linked_content(tmp_path: Path) -> None:

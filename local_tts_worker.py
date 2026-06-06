@@ -256,6 +256,13 @@ def load_tts_api():
     return tts_api_module.TTS
 
 
+def xtts_tts_api_model_path(model_path: Path) -> str:
+    """Work around Coqui's XTTS path loader expecting a directory for checkpoint_dir."""
+    if model_path.name == "model.pth" and (model_path.parent / "vocab.json").is_file():
+        return str(model_path.parent)
+    return str(model_path)
+
+
 def load_xtts_model(args, device):
     tts_api = load_tts_api()
     if args.model_path:
@@ -267,7 +274,11 @@ def load_xtts_model(args, device):
             raise ValueError(f"Trained local model file not found: {model_path}")
         if not config_path.is_file():
             raise ValueError(f"Trained local model config not found: {config_path}")
-        return tts_api(model_path=str(model_path), config_path=str(config_path), progress_bar=False).to(device)
+        return tts_api(
+            model_path=xtts_tts_api_model_path(model_path),
+            config_path=str(config_path),
+            progress_bar=False,
+        ).to(device)
 
     model_dir = Path(args.model_dir or (project_root() / "models" / "coqui")).resolve()
     if not xtts_model_ready(model_dir):

@@ -1057,6 +1057,7 @@ class ModelingDatasetsWorkflowMixin:
             if dataset_summary
             else "Select a modeling dataset first."
         )
+        self.update_modeling_dataset_metric_tiles(dataset_summary)
         has_exportable_clips = bool(dataset_summary and not export_disabled_reason)
         can_verify_clip = bool(clip and modeling_clip_can_verify_transcript(clip))
         can_retry_clip = bool(

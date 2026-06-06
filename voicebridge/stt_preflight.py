@@ -24,6 +24,7 @@ class SttRuntimeInfo(TypedDict):
     cuda_available: bool
     cuda_device_count: int
     cuda_device_name: str
+    cuda_total_memory_bytes: int
     detail: str
 
 
@@ -38,6 +39,7 @@ def inspect_stt_runtime(
         "cuda_available": False,
         "cuda_device_count": 0,
         "cuda_device_name": "",
+        "cuda_total_memory_bytes": 0,
         "detail": "Torch runtime was not inspected.",
     }
     if not python_path.is_file():
@@ -50,9 +52,16 @@ def inspect_stt_runtime(
         "print('torch_version=' + str(torch.__version__))\n"
         "print('cuda_build=' + str(torch.version.cuda or ''))\n"
         "available = torch.cuda.is_available()\n"
+        "total_memory = 0\n"
+        "if available:\n"
+        "    try:\n"
+        "        total_memory = int(torch.cuda.get_device_properties(0).total_memory)\n"
+        "    except Exception:\n"
+        "        total_memory = 0\n"
         "print('cuda_available=' + ('1' if available else '0'))\n"
         "print('cuda_device_count=' + str(torch.cuda.device_count()))\n"
         "print('cuda_device_name=' + (torch.cuda.get_device_name(0) if available else ''))\n"
+        "print('cuda_total_memory_bytes=' + str(total_memory))\n"
     )
 
     try:
@@ -86,6 +95,10 @@ def inspect_stt_runtime(
         cuda_device_count = int(values.get("cuda_device_count", "0"))
     except ValueError:
         cuda_device_count = 0
+    try:
+        cuda_total_memory_bytes = int(values.get("cuda_total_memory_bytes", "0"))
+    except ValueError:
+        cuda_total_memory_bytes = 0
 
     cuda_available = values.get("cuda_available") == "1"
     cuda_build = values.get("cuda_build", "")
@@ -105,6 +118,7 @@ def inspect_stt_runtime(
         "cuda_available": cuda_available,
         "cuda_device_count": cuda_device_count,
         "cuda_device_name": cuda_device_name,
+        "cuda_total_memory_bytes": max(0, cuda_total_memory_bytes),
         "detail": detail,
     }
 

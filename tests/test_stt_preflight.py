@@ -37,6 +37,7 @@ def test_stt_preflight_treats_alignment_models_as_optional(monkeypatch, tmp_path
             "cuda_available": False,
             "cuda_device_count": 0,
             "cuda_device_name": "",
+            "cuda_total_memory_bytes": 0,
             "detail": "Torch test runtime.",
         },
     )
@@ -82,6 +83,7 @@ def test_stt_preflight_retries_transient_torch_inspection_failure(monkeypatch, t
             "cuda_available": False,
             "cuda_device_count": 0,
             "cuda_device_name": "",
+            "cuda_total_memory_bytes": 0,
             "detail": "Torch test runtime." if len(attempts) > 1 else "timeout",
         }
 

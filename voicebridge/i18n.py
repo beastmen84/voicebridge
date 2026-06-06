@@ -821,6 +821,15 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Dataset not ready.": "Dataset non pronto.",
     "No dataset selected.": "Nessun dataset selezionato.",
     "Dataset export validated.": "Export dataset validato.",
+    "Dataset export validated. Suggested training: {epochs} max epochs, batch size {batch}.": (
+        "Export dataset validato. Training suggerito: {epochs} epoch massime, batch size {batch}."
+    ),
+    "Suggested from dataset size; lower values reduce overfitting risk.": (
+        "Suggerito in base alla dimensione del dataset; valori più bassi riducono il rischio di overfitting."
+    ),
+    "Batch size controls samples per training step; higher values use more VRAM.": (
+        "La batch size controlla i campioni per step di training; valori più alti usano più VRAM."
+    ),
     "Preflight not run yet. Use Refresh preflight.": "Preflight non ancora eseguito. Usa Aggiorna preflight.",
     "Select model output folder": "Seleziona cartella output modello",
     "Select resume checkpoint": "Seleziona checkpoint di ripresa",

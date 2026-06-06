@@ -22,6 +22,27 @@ class FakeButton:
         self.enabled = enabled
 
 
+class FakeStyledButton(FakeButton):
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "PrimaryButton"
+
+    def objectName(self) -> str:
+        return self.name
+
+    def setObjectName(self, name: str) -> None:
+        self.name = name
+
+    def style(self):
+        return self
+
+    def unpolish(self, _widget) -> None:
+        return
+
+    def polish(self, _widget) -> None:
+        return
+
+
 class FakeSttWorkflow(SttWorkflowMixin):
     def __init__(self) -> None:
         self.stt_cancel_requested = False
@@ -100,6 +121,36 @@ def test_stt_cancel_button_disables_after_cancel_requested(monkeypatch) -> None:
     workflow.update_stt_button_state()
 
     assert workflow.stt_cancel_button.enabled is False
+
+
+def test_stt_generate_button_is_primary_only_when_ready(monkeypatch) -> None:
+    monkeypatch.setattr(stt_page, "stt_whisper_model_ready", lambda: True)
+
+    workflow = FakeSttWorkflow()
+    workflow.stt_generate_button = FakeStyledButton()
+    workflow.stt_download_model_button = FakeButton()
+    workflow.stt_cancel_button = FakeButton()
+    workflow.stt_open_output_button = FakeButton()
+    workflow.stt_open_folder_button = FakeButton()
+    workflow.is_stt_running = False
+    workflow.stt_cancel_requested = False
+    workflow.stt_preflight_ok = False
+    workflow.is_converting = False
+    workflow.is_video_running = False
+    workflow.is_audio_cleanup_running = False
+    workflow.is_cleanup_running = False
+    workflow.stt_last_output_path = ""
+
+    workflow.update_stt_button_state()
+
+    assert workflow.stt_generate_button.enabled is False
+    assert workflow.stt_generate_button.objectName() == ""
+
+    workflow.stt_preflight_ok = True
+    workflow.update_stt_button_state()
+
+    assert workflow.stt_generate_button.enabled is True
+    assert workflow.stt_generate_button.objectName() == "PrimaryButton"
 
 
 def test_stt_cuda_retry_uses_captured_callback(monkeypatch) -> None:

@@ -483,6 +483,7 @@ class VoiceBridgeQt(
         self.stt_preflight_ok = False
         self.stt_preflight_details = []
         self.stt_cuda_available = False
+        self.stt_runtime_info = {}
         self.stt_runtime_detail = "Checking STT runtime."
         self.preferred_stt_device_key = self.setting_str(self.setting_section("stt").get("device"), "auto")
         self.stt_last_output_path = ""

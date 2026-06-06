@@ -59,6 +59,8 @@ VOICE_MODELING_MIN_EPOCHS = 1
 VOICE_MODELING_MAX_EPOCHS = 500
 VOICE_MODELING_MIN_BATCH_SIZE = 1
 VOICE_MODELING_MAX_BATCH_SIZE = 16
+VOICE_MODELING_DEFAULT_MAX_EPOCHS = 15
+VOICE_MODELING_DEFAULT_BATCH_SIZE = 2
 VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS = 1
 VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS = 11
 VOICE_MODELING_XTTS_MAX_TEXT_CHARS = 200
@@ -112,6 +114,11 @@ class VoiceModelingJobSummary(TypedDict):
     status: str
     created_at: str
     updated_at: str
+
+
+class VoiceModelingTrainingDefaults(TypedDict):
+    max_epochs: int
+    batch_size: int
 
 
 class VoiceModelingTrainingPlan(TypedDict):
@@ -573,17 +580,62 @@ def default_voice_modeling_output_dir(
     return voice_modeling_outputs_root() / f"{safe_name}-{timestamp or file_timestamp()}"
 
 
+def recommended_voice_modeling_training_defaults(
+    export_info: VoiceModelingExportInfo,
+    *,
+    cuda_total_memory_bytes: int | None = None,
+) -> VoiceModelingTrainingDefaults:
+    ready_duration = max(0.0, float(export_info.get("ready_duration_seconds", 0.0) or 0.0))
+    metadata_rows = max(0, int(export_info.get("metadata_rows", 0) or 0))
+    batch_size = recommended_voice_modeling_batch_size(cuda_total_memory_bytes)
+
+    if ready_duration < 5 * 60 or metadata_rows < 25:
+        max_epochs = 10
+    elif ready_duration < 15 * 60 or metadata_rows < 80:
+        max_epochs = 20
+    elif ready_duration < 30 * 60 or metadata_rows < 180:
+        max_epochs = 30
+    elif ready_duration < 60 * 60:
+        max_epochs = 40
+    elif ready_duration < 3 * 60 * 60:
+        max_epochs = 30
+    else:
+        max_epochs = 20
+
+    if batch_size <= 2 and max_epochs > 20:
+        max_epochs -= 5
+    return {"max_epochs": max_epochs, "batch_size": batch_size}
+
+
+def recommended_voice_modeling_batch_size(cuda_total_memory_bytes: int | None = None) -> int:
+    if not cuda_total_memory_bytes:
+        return 2
+    gib = cuda_total_memory_bytes / (1024**3)
+    if gib >= 24:
+        return 16
+    if gib >= 16:
+        return 8
+    if gib >= 12:
+        return 6
+    if gib >= 8:
+        return 4
+    return 2
+
+
 def build_voice_modeling_job_config(
     export_info: VoiceModelingExportInfo,
     *,
     output_dir: str | Path | None = None,
     resume_checkpoint: str | Path | None = None,
     device: str = "auto",
-    max_epochs: int = 50,
-    batch_size: int = 2,
+    max_epochs: int | None = None,
+    batch_size: int | None = None,
     job_id: str | None = None,
 ) -> VoiceModelingJobConfig:
     normalized_device = normalize_voice_modeling_device(device)
+    defaults = recommended_voice_modeling_training_defaults(export_info)
+    max_epochs = defaults["max_epochs"] if max_epochs is None else max_epochs
+    batch_size = defaults["batch_size"] if batch_size is None else batch_size
     normalized_epochs = min(max(int(max_epochs), VOICE_MODELING_MIN_EPOCHS), VOICE_MODELING_MAX_EPOCHS)
     normalized_batch_size = min(max(int(batch_size), VOICE_MODELING_MIN_BATCH_SIZE), VOICE_MODELING_MAX_BATCH_SIZE)
     output_path = Path(output_dir).expanduser() if output_dir else default_voice_modeling_output_dir(export_info)
@@ -666,6 +718,9 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
         "wavs_dir": _string_or_default(dataset.get("wavs_dir")),
         "metadata_rows": _int(dataset.get("metadata_rows")),
     }
+    defaults = recommended_voice_modeling_training_defaults(dataset_info)
+    configured_epochs = _int(data.get("max_epochs")) or defaults["max_epochs"]
+    configured_batch_size = _int(data.get("batch_size")) or defaults["batch_size"]
     job_config: VoiceModelingJobConfig = {
         "id": _string_or_default(data.get("id")),
         "status": _string_or_default(data.get("status"), "configured"),
@@ -674,8 +729,8 @@ def load_voice_modeling_job_config(config_path: str | Path) -> VoiceModelingJobC
         "output_dir": output_dir,
         "resume_checkpoint": _string_or_default(data.get("resume_checkpoint")),
         "device": normalize_voice_modeling_device(data.get("device")),
-        "max_epochs": _int(data.get("max_epochs")),
-        "batch_size": _int(data.get("batch_size")),
+        "max_epochs": min(max(configured_epochs, VOICE_MODELING_MIN_EPOCHS), VOICE_MODELING_MAX_EPOCHS),
+        "batch_size": min(max(configured_batch_size, VOICE_MODELING_MIN_BATCH_SIZE), VOICE_MODELING_MAX_BATCH_SIZE),
         "dataset": dataset_info,
         "created_at": _string_or_default(data.get("created_at")),
         "updated_at": _string_or_default(data.get("updated_at")),
@@ -786,6 +841,45 @@ def cleanup_incomplete_voice_modeling_job(
     }
 
 
+def cleanup_completed_voice_modeling_training_artifacts(
+    config_path: str | Path,
+    trainer_output_dir: str | Path,
+) -> dict[str, str]:
+    config = load_voice_modeling_job_config(config_path)
+    output_dir = Path(config["output_dir"]).expanduser().resolve()
+    managed_output_dir = managed_voice_modeling_output_dir(output_dir)
+    archive_dir = archive_voice_modeling_job_logs(config_path, reason="completed")
+    result = {
+        "archive_dir": str(archive_dir) if archive_dir else "",
+        "deleted_training_dir": "",
+    }
+    if not managed_output_dir:
+        return result
+
+    training_dir = Path(trainer_output_dir).expanduser().resolve()
+    run_dir = output_dir / "run"
+    try:
+        training_dir.relative_to(run_dir.resolve())
+    except ValueError:
+        return result
+    if not training_dir.exists() or training_dir == run_dir.resolve():
+        return result
+
+    try:
+        shutil.rmtree(training_dir)
+    except OSError:
+        return result
+    result["deleted_training_dir"] = str(training_dir)
+    prune_empty_voice_modeling_run_dirs(run_dir)
+    return result
+
+
+def prune_empty_voice_modeling_run_dirs(run_dir: Path) -> None:
+    for candidate in (run_dir / "training", run_dir):
+        with suppress(OSError):
+            candidate.rmdir()
+
+
 def prune_previous_voice_modeling_outputs(config_path: str | Path) -> list[Path]:
     current_config_path = Path(config_path).expanduser().resolve()
     current_config = load_voice_modeling_job_config(current_config_path)
@@ -864,6 +958,8 @@ def voice_modeling_log_sources(config_path: str | Path, output_dir: Path) -> lis
     if output_dir.is_dir():
         with suppress(OSError):
             candidates.extend(output_dir.rglob("*.log"))
+        with suppress(OSError):
+            candidates.extend(output_dir.rglob("trainer_*_log.txt"))
     unique: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:

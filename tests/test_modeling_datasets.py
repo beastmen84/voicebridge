@@ -95,9 +95,26 @@ class FakeComboBox:
 class FakeLabel:
     def __init__(self) -> None:
         self.text = ""
+        self.tooltip = ""
+        self.properties = {}
 
     def setText(self, text: str) -> None:
         self.text = text
+
+    def setToolTip(self, tooltip: str) -> None:
+        self.tooltip = tooltip
+
+    def setProperty(self, name: str, value: object) -> None:
+        self.properties[name] = value
+
+    def style(self):
+        return self
+
+    def unpolish(self, _widget) -> None:
+        return
+
+    def polish(self, _widget) -> None:
+        return
 
 
 class FakeActionButton:
@@ -244,6 +261,55 @@ def test_update_modeling_dataset_buttons_keeps_metric_tiles_in_sync() -> None:
     assert window.metric_tile_summary is summary
     assert window.modeling_export_dataset_button.enabled is True
     assert window.export_button_primary is True
+
+
+def test_modeling_dataset_metric_tiles_show_exportable_yes_for_exportable_dataset(tmp_path: Path) -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    profile = build_voice_profile(
+        name="Model Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"ready-{index}.wav"
+        audio_path.write_bytes(b"RIFF")
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"Ready clip {index}",
+                duration_seconds=12.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"ready-{index}",
+            )
+        )
+
+    class DummyModelingTilesWindow(ModelingDatasetsWorkflowMixin):
+        def __init__(self) -> None:
+            self.dataset = dataset
+            self.modeling_dataset_profile_label = FakeLabel()
+            self.modeling_ready_clips_tile = FakeLabel()
+            self.modeling_ready_duration_tile = FakeLabel()
+            self.modeling_tier_tile = FakeLabel()
+            self.modeling_exportable_tile = FakeLabel()
+
+        def selected_modeling_dataset(self):
+            return self.dataset
+
+        def modeling_text(self, text: str, **kwargs) -> str:
+            return text.format(**kwargs) if kwargs else text
+
+    window = DummyModelingTilesWindow()
+
+    window.update_modeling_dataset_metric_tiles(modeling_dataset_summary(dataset))
+
+    assert window.modeling_exportable_tile.text == "Exportable\nYes"
+    assert window.modeling_exportable_tile.properties["state"] == "ok"
 
 
 def test_modeling_dataset_profile_helpers_detect_linked_content(tmp_path: Path) -> None:
@@ -997,7 +1063,9 @@ def test_modeling_dataset_summary_reports_not_ready_without_clips() -> None:
     assert summary["readiness"] == MODELING_DATASET_NOT_READY
     assert summary["ready_clips"] == 0
     assert "Add at least one ready clip" in summary["issues"][0]
-    assert "Export readiness: Not ready" in modeling_dataset_summary_text(dataset)
+    summary_text = modeling_dataset_summary_text(dataset)
+    assert "Notes:" in summary_text
+    assert "Export readiness:" not in summary_text
 
 
 def test_modeling_dataset_summary_uses_ready_clip_subset(tmp_path: Path) -> None:
@@ -1170,9 +1238,9 @@ def test_modeling_dataset_summary_reports_target_dataset(tmp_path: Path) -> None
     assert summary["issues"] == []
     assert any("High-quality duration reached" in recommendation for recommendation in summary["recommendations"])
     assert "Target progress: 60/60 clips, 30m 00s/30m 00s" in summary_text
-    assert "Exportable clips: 60/60 ready clips" in summary_text
     assert "Recommended target: 60-120 ready clips, 30m 00s-60m 00s clean audio" in summary_text
-    assert "Dataset tier: High quality" in summary_text
+    assert "Exportable clips:" not in summary_text
+    assert "Dataset tier:" not in summary_text
 
 
 def test_save_and_load_modeling_datasets(tmp_path: Path) -> None:

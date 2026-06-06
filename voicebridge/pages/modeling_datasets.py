@@ -325,10 +325,10 @@ class ModelingDatasetsWorkflowMixin:
         )
         self.set_modeling_dataset_tile(
             self.modeling_exportable_tile,
-            "ok" if export_disabled_reason is None else "warn",
+            "ok" if not export_disabled_reason else "warn",
             self.modeling_text(
                 "Exportable\n{value}",
-                value=self.modeling_text("Yes") if export_disabled_reason is None else self.modeling_text("No"),
+                value=self.modeling_text("Yes") if not export_disabled_reason else self.modeling_text("No"),
             ),
             export_disabled_reason or self.modeling_text("Dataset can be exported."),
         )
@@ -1030,7 +1030,6 @@ class ModelingDatasetsWorkflowMixin:
                 f"Skipped clips: {skipped_clips}"
             ),
         )
-        open_path(export_dir)
 
     def send_modeling_clip_to_transcription(self) -> None:
         clip = self.selected_modeling_clip()

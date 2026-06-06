@@ -22,6 +22,7 @@ from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
     build_voice_modeling_training_command,
     check_voice_modeling_preflight,
+    cleanup_completed_voice_modeling_training_artifacts,
     cleanup_incomplete_voice_modeling_job,
     default_voice_modeling_output_dir,
     download_file_to_path,
@@ -29,6 +30,8 @@ from voicebridge.voice_modeling import (
     list_voice_modeling_job_configs,
     prepare_voice_modeling_training_job,
     prune_previous_voice_modeling_outputs,
+    recommended_voice_modeling_batch_size,
+    recommended_voice_modeling_training_defaults,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     validate_voice_modeling_training_rows,
@@ -148,6 +151,75 @@ def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: p
     assert saved["dataset"]["metadata_rows"] == 5
 
 
+def test_voice_modeling_training_defaults_follow_dataset_size() -> None:
+    tiny = {
+        "ready_duration_seconds": 120.0,
+        "metadata_rows": 12,
+    }
+    base = {
+        "ready_duration_seconds": 605.0,
+        "metadata_rows": 50,
+    }
+    recommended = {
+        "ready_duration_seconds": 20 * 60.0,
+        "metadata_rows": 120,
+    }
+    large = {
+        "ready_duration_seconds": 45 * 60.0,
+        "metadata_rows": 220,
+    }
+    multi_hour = {
+        "ready_duration_seconds": 2 * 60 * 60.0,
+        "metadata_rows": 600,
+    }
+    very_large = {
+        "ready_duration_seconds": 4 * 60 * 60.0,
+        "metadata_rows": 1200,
+    }
+
+    assert recommended_voice_modeling_training_defaults(tiny) == {"max_epochs": 10, "batch_size": 2}
+    assert recommended_voice_modeling_training_defaults(base, cuda_total_memory_bytes=8 * 1024**3) == {
+        "max_epochs": 20,
+        "batch_size": 4,
+    }
+    assert recommended_voice_modeling_training_defaults(recommended, cuda_total_memory_bytes=8 * 1024**3) == {
+        "max_epochs": 30,
+        "batch_size": 4,
+    }
+    assert recommended_voice_modeling_training_defaults(large, cuda_total_memory_bytes=8 * 1024**3) == {
+        "max_epochs": 40,
+        "batch_size": 4,
+    }
+    assert recommended_voice_modeling_training_defaults(multi_hour, cuda_total_memory_bytes=8 * 1024**3) == {
+        "max_epochs": 30,
+        "batch_size": 4,
+    }
+    assert recommended_voice_modeling_training_defaults(very_large, cuda_total_memory_bytes=8 * 1024**3) == {
+        "max_epochs": 20,
+        "batch_size": 4,
+    }
+    assert recommended_voice_modeling_training_defaults(large) == {"max_epochs": 35, "batch_size": 2}
+
+
+def test_voice_modeling_batch_size_follows_detected_vram() -> None:
+    assert recommended_voice_modeling_batch_size(None) == 2
+    assert recommended_voice_modeling_batch_size(6 * 1024**3) == 2
+    assert recommended_voice_modeling_batch_size(8 * 1024**3) == 4
+    assert recommended_voice_modeling_batch_size(12 * 1024**3) == 6
+    assert recommended_voice_modeling_batch_size(16 * 1024**3) == 8
+    assert recommended_voice_modeling_batch_size(24 * 1024**3) == 16
+
+
+def test_build_voice_modeling_job_config_uses_dataset_default_training_values(tmp_path: Path) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+
+    config = build_voice_modeling_job_config(export_info, output_dir=tmp_path / "voice-models" / "job-a")
+
+    assert config["max_epochs"] == 10
+    assert config["batch_size"] == 2
+
+
 def test_list_voice_modeling_job_configs_reads_saved_configs(tmp_path: Path) -> None:
     export_dir = exported_dataset(tmp_path)
     export_info = validate_voice_modeling_export(export_dir)
@@ -183,6 +255,36 @@ def test_cleanup_incomplete_voice_modeling_job_archives_logs_and_deletes_output(
     assert archive_dir.is_dir()
     assert (archive_dir / "training.log").read_text(encoding="utf-8") == "failure details\n"
     assert json.loads((archive_dir / "summary.json").read_text(encoding="utf-8"))["reason"] == "failed"
+
+
+def test_cleanup_completed_voice_modeling_training_artifacts_archives_logs_and_prunes_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    monkeypatch.setattr("voicebridge.voice_modeling.external_base_dir", lambda: tmp_path)
+    output_dir = tmp_path / "voice_models" / "job-a"
+    config = build_voice_modeling_job_config(export_info, output_dir=output_dir, job_id="job-a")
+    config_path = save_voice_modeling_job_config(config)
+    trainer_dir = output_dir / "run" / "training" / "GPT_XTTS_FT-test"
+    inference_dir = output_dir / "inference_model"
+    trainer_dir.mkdir(parents=True)
+    inference_dir.mkdir(parents=True)
+    (output_dir / "training.log").write_text("worker log\n", encoding="utf-8")
+    (trainer_dir / "trainer_0_log.txt").write_text("trainer log\n", encoding="utf-8")
+    (trainer_dir / "best_model.pth").write_bytes(b"checkpoint")
+    (inference_dir / "model.pth").write_bytes(b"inference")
+
+    result = cleanup_completed_voice_modeling_training_artifacts(config_path, trainer_dir)
+
+    archive_dir = Path(result["archive_dir"])
+    assert result["deleted_training_dir"] == str(trainer_dir.resolve())
+    assert not trainer_dir.exists()
+    assert not (output_dir / "run").exists()
+    assert (inference_dir / "model.pth").is_file()
+    assert (archive_dir / "training.log").read_text(encoding="utf-8") == "worker log\n"
+    assert (archive_dir / "trainer_0_log.txt").read_text(encoding="utf-8") == "trainer log\n"
 
 
 def test_prune_previous_voice_modeling_outputs_keeps_current_completed_model(

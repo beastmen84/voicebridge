@@ -22,6 +22,7 @@ from voicebridge.voice_modeling import (
     VOICE_MODELING_DEFAULT_GRAD_ACCUM_STEPS,
     VOICE_MODELING_DEFAULT_MAX_AUDIO_SECONDS,
     VOICE_MODELING_LOG,
+    cleanup_completed_voice_modeling_training_artifacts,
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
     update_voice_modeling_job_status,
@@ -212,10 +213,20 @@ def run_trainer_fit(trainer):
 
 
 def latest_checkpoint(path):
-    candidates = []
-    for pattern in ("best_model.pth", "checkpoint*.pth", "*.pth"):
-        candidates.extend(Path(path).glob(pattern))
-    candidates = [candidate for candidate in candidates if candidate.is_file()]
+    path = Path(path)
+    exact_best = path / "best_model.pth"
+    if exact_best.is_file():
+        return exact_best
+
+    best_candidates = [candidate for candidate in path.glob("best_model*.pth") if candidate.is_file()]
+    if best_candidates:
+        return max(best_candidates, key=lambda item: item.stat().st_mtime)
+
+    checkpoint_candidates = [candidate for candidate in path.glob("checkpoint*.pth") if candidate.is_file()]
+    if checkpoint_candidates:
+        return max(checkpoint_candidates, key=lambda item: item.stat().st_mtime)
+
+    candidates = [candidate for candidate in path.glob("*.pth") if candidate.is_file()]
     return max(candidates, key=lambda item: item.stat().st_mtime, default=None)
 
 
@@ -406,6 +417,8 @@ def run_training(config_path):
         "dataset_name": config["dataset"].get("name", ""),
         "language_code": config["dataset"].get("language_code", ""),
         "trainer_output_dir": str(trainer_out_path),
+        "checkpoint_path": str(checkpoint_path),
+        "checkpoint_name": checkpoint_path.name,
         "inference_dir": str(inference_dir),
         "model_path": str(inference_model_path),
         "config_path_for_inference": str(inference_dir / "config.json"),
@@ -424,6 +437,13 @@ def run_training(config_path):
             torch_module.cuda.empty_cache()
 
     update_voice_modeling_job_status(config_path, "completed")
+    write_voice_modeling_training_state(config_path, status="completed", message="Training completed.", extra=result)
+    cleanup_result = cleanup_completed_voice_modeling_training_artifacts(config_path, trainer_out_path)
+    result.update(cleanup_result)
+    (output_dir / "training_result.json").write_text(
+        json.dumps(with_schema_metadata(result, VOICE_MODELING_TRAINING_RESULT_JSON_KIND), indent=2) + "\n",
+        encoding="utf-8",
+    )
     write_voice_modeling_training_state(config_path, status="completed", message="Training completed.", extra=result)
     status(f"Training completed: {inference_dir}")
     progress(100)

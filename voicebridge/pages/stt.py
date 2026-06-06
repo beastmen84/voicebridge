@@ -219,6 +219,7 @@ class SttWorkflowMixin:
         self._stt_preflight_refreshing = False
         self.stt_preflight_ok = ok
         self.stt_preflight_details = details
+        self.stt_runtime_info = runtime_info
         self.stt_cuda_available = bool(runtime_info.get("cuda_available"))
         self.stt_runtime_detail = runtime_info.get("detail", "STT runtime inspected.")
         self.update_stt_device_options()
@@ -238,7 +239,9 @@ class SttWorkflowMixin:
             or self.is_audio_cleanup_running
             or self.is_cleanup_running
         )
-        self.stt_generate_button.setEnabled(not self.is_stt_running and not busy_elsewhere and self.stt_preflight_ok)
+        can_generate = not self.is_stt_running and not busy_elsewhere and self.stt_preflight_ok
+        self.stt_generate_button.setEnabled(can_generate)
+        self.set_stt_generate_button_primary(can_generate)
         if hasattr(self, "stt_download_model_button"):
             self.stt_download_model_button.setEnabled(
                 not self.is_stt_running
@@ -250,6 +253,18 @@ class SttWorkflowMixin:
         self.stt_open_output_button.setEnabled(output_ready)
         self.stt_open_folder_button.setEnabled(output_ready)
         self.update_navigation_state()
+
+    def set_stt_generate_button_primary(self, is_primary: bool) -> None:
+        if not hasattr(self, "stt_generate_button"):
+            return
+        if not hasattr(self.stt_generate_button, "objectName"):
+            return
+        object_name = "PrimaryButton" if is_primary else ""
+        if self.stt_generate_button.objectName() == object_name:
+            return
+        self.stt_generate_button.setObjectName(object_name)
+        self.stt_generate_button.style().unpolish(self.stt_generate_button)
+        self.stt_generate_button.style().polish(self.stt_generate_button)
 
     def update_stt_model_status(self):
         if not hasattr(self, "stt_download_model_button"):
@@ -897,7 +912,6 @@ class SttWorkflowMixin:
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         self.stt_generate_button = QPushButton("Generate")
-        self.stt_generate_button.setObjectName("PrimaryButton")
         self.stt_cancel_button = QPushButton("Cancel")
         self.stt_open_output_button = QPushButton("Open output")
         self.stt_open_folder_button = QPushButton("Open folder")

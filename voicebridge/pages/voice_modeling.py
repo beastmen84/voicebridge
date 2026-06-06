@@ -28,6 +28,8 @@ from voicebridge.modeling_datasets import modeling_dataset_exports_root
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_modeling import (
+    VOICE_MODELING_DEFAULT_BATCH_SIZE,
+    VOICE_MODELING_DEFAULT_MAX_EPOCHS,
     VoiceModelingDownloadCancelled,
     VoiceModelingExportInfo,
     build_voice_modeling_job_config,
@@ -35,6 +37,7 @@ from voicebridge.voice_modeling import (
     default_voice_modeling_output_dir,
     download_xtts_training_assets,
     list_voice_modeling_exports,
+    recommended_voice_modeling_training_defaults,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     voice_modeling_export_label,
@@ -221,7 +224,14 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_export_info = export_info
         self.voice_modeling_dataset_info.setPlainText(voice_modeling_export_summary_text(export_info))
         self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
-        self.voice_modeling_status.setText(self.voice_modeling_text("Dataset export validated."))
+        defaults = self.apply_voice_modeling_training_defaults(export_info)
+        self.voice_modeling_status.setText(
+            self.voice_modeling_text(
+                "Dataset export validated. Suggested training: {epochs} max epochs, batch size {batch}.",
+                epochs=defaults["max_epochs"],
+                batch=defaults["batch_size"],
+            )
+        )
         self.update_voice_modeling_buttons()
         if getattr(self, "voice_modeling_auto_preflight_enabled", False):
             self.refresh_voice_modeling_preflight_async()
@@ -229,6 +239,45 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_preflight_label.setText(
                 self.voice_modeling_text("Preflight not run yet. Use Refresh preflight.")
             )
+
+    def apply_voice_modeling_training_defaults(
+        self,
+        export_info: VoiceModelingExportInfo,
+    ) -> dict[str, int]:
+        defaults = recommended_voice_modeling_training_defaults(
+            export_info,
+            cuda_total_memory_bytes=self.voice_modeling_cuda_total_memory_bytes(),
+        )
+        if hasattr(self, "voice_modeling_epochs_spin"):
+            self.voice_modeling_epochs_spin.blockSignals(True)
+            try:
+                self.voice_modeling_epochs_spin.setValue(defaults["max_epochs"])
+            finally:
+                self.voice_modeling_epochs_spin.blockSignals(False)
+            self.voice_modeling_epochs_spin.setToolTip(
+                self.voice_modeling_text(
+                    "Suggested from dataset size; lower values reduce overfitting risk."
+                )
+            )
+        if hasattr(self, "voice_modeling_batch_spin"):
+            self.voice_modeling_batch_spin.blockSignals(True)
+            try:
+                self.voice_modeling_batch_spin.setValue(defaults["batch_size"])
+            finally:
+                self.voice_modeling_batch_spin.blockSignals(False)
+            self.voice_modeling_batch_spin.setToolTip(
+                self.voice_modeling_text(
+                    "Batch size controls samples per training step; higher values use more VRAM."
+                )
+            )
+        return defaults
+
+    def voice_modeling_cuda_total_memory_bytes(self) -> int:
+        runtime_info = getattr(self, "stt_runtime_info", {}) or {}
+        try:
+            return max(0, int(runtime_info.get("cuda_total_memory_bytes", 0)))
+        except (TypeError, ValueError):
+            return 0
 
     def select_voice_modeling_output_folder(self) -> None:
         initial = self.voice_modeling_output_picker.text() or str(Path.home())
@@ -483,7 +532,6 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_text("Voice Modeling"),
             self.voice_modeling_text("Training job config saved:\n{path}", path=config_path),
         )
-        open_path(config_path.parent)
 
     def open_voice_modeling_output_folder(self) -> None:
         output_path = self.voice_modeling_output_picker.text()
@@ -564,10 +612,10 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_device_combo.currentTextChanged.connect(lambda _text: self.voice_modeling_device_changed())
         self.voice_modeling_epochs_spin = QSpinBox()
         self.voice_modeling_epochs_spin.setRange(1, 500)
-        self.voice_modeling_epochs_spin.setValue(50)
+        self.voice_modeling_epochs_spin.setValue(VOICE_MODELING_DEFAULT_MAX_EPOCHS)
         self.voice_modeling_batch_spin = QSpinBox()
         self.voice_modeling_batch_spin.setRange(1, 16)
-        self.voice_modeling_batch_spin.setValue(2)
+        self.voice_modeling_batch_spin.setValue(VOICE_MODELING_DEFAULT_BATCH_SIZE)
         config_grid = QGridLayout()
         config_grid.setContentsMargins(0, 0, 0, 0)
         config_grid.setHorizontalSpacing(10)

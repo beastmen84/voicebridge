@@ -1,4 +1,5 @@
 import logging
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +18,28 @@ def test_run_trainer_fit_allows_zero_system_exit() -> None:
     trainer = SimpleNamespace(fit=lambda: (_ for _ in ()).throw(SystemExit(0)))
 
     voice_modeling_worker.run_trainer_fit(trainer)
+
+
+def test_latest_checkpoint_prefers_best_model_over_newer_checkpoint(tmp_path) -> None:
+    best_model = tmp_path / "best_model.pth"
+    checkpoint = tmp_path / "checkpoint_1000.pth"
+    best_model.write_text("best", encoding="utf-8")
+    checkpoint.write_text("latest", encoding="utf-8")
+    os.utime(best_model, (1_000_000, 1_000_000))
+    os.utime(checkpoint, (2_000_000, 2_000_000))
+
+    assert voice_modeling_worker.latest_checkpoint(tmp_path) == best_model
+
+
+def test_latest_checkpoint_falls_back_to_newest_checkpoint(tmp_path) -> None:
+    old_checkpoint = tmp_path / "checkpoint_500.pth"
+    new_checkpoint = tmp_path / "checkpoint_1000.pth"
+    old_checkpoint.write_text("old", encoding="utf-8")
+    new_checkpoint.write_text("new", encoding="utf-8")
+    os.utime(old_checkpoint, (1_000_000, 1_000_000))
+    os.utime(new_checkpoint, (2_000_000, 2_000_000))
+
+    assert voice_modeling_worker.latest_checkpoint(tmp_path) == new_checkpoint
 
 
 def test_windows_safe_trainer_cleanup_preserves_failed_run(

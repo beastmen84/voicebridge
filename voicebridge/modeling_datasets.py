@@ -452,12 +452,7 @@ def modeling_dataset_summary_text(
 ) -> str:
     summary = summary or modeling_dataset_summary(dataset)
     lines = [
-        f"Export readiness: {modeling_dataset_readiness_label(summary['readiness'])}",
-        f"Dataset tier: {modeling_dataset_tier_label(summary['dataset_tier'])}",
         f"Language: {dataset['language_code']}",
-        f"Ready clips: {summary['ready_clips']}/{summary['total_clips']}",
-        f"Exportable clips: {summary['exportable_clips']}/{summary['ready_clips']} ready clips",
-        f"Ready duration: {format_modeling_dataset_duration(summary['ready_duration_seconds'])}",
         f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
         f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
         (

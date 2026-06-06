@@ -127,6 +127,14 @@ def apply_app_style(widget, check_icon, chevron_icon):
         }
         #SegmentButton:hover { background: #edf3ff; border-color: #aeb9c8; }
         #SegmentButton:checked { background: #2f6fed; border-color: #2f6fed; color: #ffffff; }
+        #FlowSegmentButton {
+            background: #f8fafc;
+            border: 1px solid #cfd6e2;
+            padding: 8px 12px;
+            font-weight: 600;
+        }
+        #FlowSegmentButton:hover { background: #edf8f1; border-color: #91c9ad; }
+        #FlowSegmentButton:checked { background: #1f8a5b; border-color: #1f8a5b; color: #ffffff; }
         #NavButton { color: #d5dce8; background: transparent; border: 0; text-align: left; padding: 10px 12px; }
         #NavButton:hover { background: #1c2637; }
         #NavButton[active="true"] { background: #2f6fed; color: white; font-weight: 600; }

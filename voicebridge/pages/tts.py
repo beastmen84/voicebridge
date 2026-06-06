@@ -797,6 +797,7 @@ class TtsWorkflowMixin:
                 and bool(self.current_voice_map)
             )
         self.tts_generate_button.setEnabled(ready)
+        self.set_tts_generate_button_primary(ready)
         if hasattr(self, "tts_download_model_button"):
             self.tts_download_model_button.setEnabled(
                 common_ready
@@ -810,6 +811,18 @@ class TtsWorkflowMixin:
         if hasattr(self, "tts_audio_cleanup_button"):
             self.tts_audio_cleanup_button.setEnabled(output_ready and not self.is_converting)
         self.update_navigation_state()
+
+    def set_tts_generate_button_primary(self, is_primary: bool) -> None:
+        if not hasattr(self, "tts_generate_button"):
+            return
+        if not hasattr(self.tts_generate_button, "objectName"):
+            return
+        object_name = "PrimaryButton" if is_primary else ""
+        if self.tts_generate_button.objectName() == object_name:
+            return
+        self.tts_generate_button.setObjectName(object_name)
+        self.tts_generate_button.style().unpolish(self.tts_generate_button)
+        self.tts_generate_button.style().polish(self.tts_generate_button)
 
     def current_tts_input_text(self, preserve_text_layout=False):
         input_path = self.tts_input_picker.text()
@@ -2048,7 +2061,7 @@ class TtsWorkflowMixin:
         self.tts_single_mode_button = QPushButton("Single voice")
         self.tts_multi_mode_button = QPushButton("Multi-voice blocks")
         for button in (self.tts_single_mode_button, self.tts_multi_mode_button):
-            button.setObjectName("SegmentButton")
+            button.setObjectName("FlowSegmentButton")
             button.setCheckable(True)
             button.setMinimumHeight(36)
         self.tts_single_mode_button.clicked.connect(lambda _checked=False: self.set_tts_mode(0))
@@ -2197,7 +2210,6 @@ class TtsWorkflowMixin:
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(0, 0, 0, 0)
         self.tts_generate_button = QPushButton("Generate MP3")
-        self.tts_generate_button.setObjectName("PrimaryButton")
         self.tts_cancel_button = QPushButton("Cancel")
         self.tts_open_output_button = QPushButton("Open output")
         self.tts_open_folder_button = QPushButton("Open folder")

@@ -43,6 +43,14 @@ class FakeStyledButton(FakeButton):
         return
 
 
+class FakeTextPicker:
+    def __init__(self, text: str = "") -> None:
+        self._text = text
+
+    def text(self) -> str:
+        return self._text
+
+
 class FakeSttWorkflow(SttWorkflowMixin):
     def __init__(self) -> None:
         self.stt_cancel_requested = False
@@ -123,8 +131,10 @@ def test_stt_cancel_button_disables_after_cancel_requested(monkeypatch) -> None:
     assert workflow.stt_cancel_button.enabled is False
 
 
-def test_stt_generate_button_is_primary_only_when_ready(monkeypatch) -> None:
+def test_stt_generate_button_is_primary_only_when_ready(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(stt_page, "stt_whisper_model_ready", lambda: True)
+    media_path = tmp_path / "input.wav"
+    media_path.write_bytes(b"RIFF")
 
     workflow = FakeSttWorkflow()
     workflow.stt_generate_button = FakeStyledButton()
@@ -135,6 +145,7 @@ def test_stt_generate_button_is_primary_only_when_ready(monkeypatch) -> None:
     workflow.is_stt_running = False
     workflow.stt_cancel_requested = False
     workflow.stt_preflight_ok = False
+    workflow.stt_media_picker = FakeTextPicker("")
     workflow.is_converting = False
     workflow.is_video_running = False
     workflow.is_audio_cleanup_running = False
@@ -147,6 +158,12 @@ def test_stt_generate_button_is_primary_only_when_ready(monkeypatch) -> None:
     assert workflow.stt_generate_button.objectName() == ""
 
     workflow.stt_preflight_ok = True
+    workflow.update_stt_button_state()
+
+    assert workflow.stt_generate_button.enabled is False
+    assert workflow.stt_generate_button.objectName() == ""
+
+    workflow.stt_media_picker = FakeTextPicker(str(media_path))
     workflow.update_stt_button_state()
 
     assert workflow.stt_generate_button.enabled is True

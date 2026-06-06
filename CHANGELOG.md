@@ -11,6 +11,9 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 - Limited generated guided modeling prompts to 200 characters for XTTS-v2 training compatibility.
 - Enforced the Training tab sequence so jobs move through `Prepare`, `Dry run` and `Start training` in order.
 - Updated the recording reader so semicolons no longer force a new reading line.
+- Added permanent dataset recording guidance for natural, clear audiobook-style reads.
+- Suggested XTTS training defaults from dataset size and detected CUDA VRAM instead of using a fixed epoch/batch default.
+- Disabled primary action styling until TTS, STT and Subtitles have the required input files selected.
 
 ### Fixed
 
@@ -18,6 +21,8 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 - Blocked training preparation for exported datasets with transcript rows longer than the XTTS-v2 text limit.
 - Avoided creating empty voice model output folders during preflight/config validation.
 - Removed safely identifiable empty training output folders when deleting linked modeling profiles.
+- Archived logs and pruned completed XTTS training checkpoint folders after the inference model is exported.
+- Stopped automatically opening Explorer after dataset export and training config save.
 
 ## 0.9b - Public-ready beta
 

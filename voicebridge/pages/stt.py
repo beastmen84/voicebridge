@@ -239,7 +239,12 @@ class SttWorkflowMixin:
             or self.is_audio_cleanup_running
             or self.is_cleanup_running
         )
-        can_generate = not self.is_stt_running and not busy_elsewhere and self.stt_preflight_ok
+        can_generate = (
+            not self.is_stt_running
+            and not busy_elsewhere
+            and self.stt_preflight_ok
+            and self.stt_input_ready()
+        )
         self.stt_generate_button.setEnabled(can_generate)
         self.set_stt_generate_button_primary(can_generate)
         if hasattr(self, "stt_download_model_button"):
@@ -253,6 +258,18 @@ class SttWorkflowMixin:
         self.stt_open_output_button.setEnabled(output_ready)
         self.stt_open_folder_button.setEnabled(output_ready)
         self.update_navigation_state()
+
+    def stt_input_ready(self) -> bool:
+        if not hasattr(self, "stt_media_picker"):
+            return False
+        media_path = self.stt_media_picker.text()
+        if not media_path or not Path(media_path).is_file():
+            return False
+        mode = self.stt_mode_key() if hasattr(self, "stt_mode_combo") else "transcript"
+        if mode == "align_text":
+            text_path = self.stt_text_picker.text() if hasattr(self, "stt_text_picker") else ""
+            return bool(text_path and Path(text_path).is_file())
+        return True
 
     def set_stt_generate_button_primary(self, is_primary: bool) -> None:
         if not hasattr(self, "stt_generate_button"):
@@ -864,6 +881,9 @@ class SttWorkflowMixin:
         self.stt_media_picker.button.clicked.connect(self.select_stt_media_file)
         self.stt_text_picker.button.clicked.connect(self.select_stt_text_file)
         self.stt_output_picker.button.clicked.connect(self.select_stt_output_file)
+        self.stt_media_picker.edit.textChanged.connect(lambda _text: self.update_stt_output_for_mode_or_media())
+        self.stt_media_picker.edit.textChanged.connect(lambda _text: self.update_stt_button_state())
+        self.stt_text_picker.edit.textChanged.connect(lambda _text: self.update_stt_button_state())
         media_card.content_layout.addWidget(self.stt_media_picker)
         media_card.content_layout.addWidget(self.stt_text_picker)
         media_card.content_layout.addWidget(self.stt_output_picker)

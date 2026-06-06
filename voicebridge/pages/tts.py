@@ -773,6 +773,7 @@ class TtsWorkflowMixin:
         self.warning_callback()
 
     def update_tts_button_state(self):
+        input_ready = self.tts_input_ready()
         common_ready = (
             not self.is_detecting_language
             and not self.is_converting
@@ -781,6 +782,7 @@ class TtsWorkflowMixin:
             and not self.is_audio_cleanup_running
             and not self.is_cleanup_running
             and not self.input_file_error_message
+            and input_ready
         )
         if self.tts_engine_key() == "local":
             selected_voice = self.selected_tts_voice_profile()
@@ -811,6 +813,12 @@ class TtsWorkflowMixin:
         if hasattr(self, "tts_audio_cleanup_button"):
             self.tts_audio_cleanup_button.setEnabled(output_ready and not self.is_converting)
         self.update_navigation_state()
+
+    def tts_input_ready(self) -> bool:
+        if not hasattr(self, "tts_input_picker"):
+            return False
+        input_path = self.tts_input_picker.text()
+        return bool(input_path and Path(input_path).is_file())
 
     def set_tts_generate_button_primary(self, is_primary: bool) -> None:
         if not hasattr(self, "tts_generate_button"):
@@ -2054,6 +2062,7 @@ class TtsWorkflowMixin:
         self.tts_output_picker = FilePicker("Save MP3 as", "Save as...")
         self.tts_input_picker.button.clicked.connect(self.select_input_file)
         self.tts_output_picker.button.clicked.connect(self.select_save_path)
+        self.tts_input_picker.edit.textChanged.connect(lambda _text: self.update_tts_button_state())
         files_card.content_layout.addWidget(self.tts_input_picker)
         files_card.content_layout.addWidget(self.tts_output_picker)
         mode_label = QLabel("Voice mode")

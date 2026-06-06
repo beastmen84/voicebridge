@@ -386,6 +386,7 @@
       <li>Premi <code>Generate MP3</code>.</li>
       <li>A fine job usa <code>Open output</code>, <code>Open folder</code> o <code>Open in Audio Cleanup</code>.</li>
     </ol>
+    <div class="note"><code>Generate MP3</code> diventa disponibile solo quando il file input esiste e la voce scelta è pronta.</div>
     <h3>Edge TTS</h3>
     <p>Edge TTS usa le voci Microsoft online. Se internet non è disponibile, VoiceBridge disabilita Edge TTS, passa temporaneamente a Local TTS quando possibile e ritenta il controllo della lista voci in background.</p>
     <h3>Local TTS</h3>
@@ -424,13 +425,14 @@
       <li>Correggi eventuali transcript e usa <code>Verify text</code> se serve.</li>
       <li>Usa <code>Exclude export</code> per tenere una clip nel dataset ma non esportarla.</li>
     </ol>
+    <div class="note"><strong>Regola d'oro per la registrazione:</strong> leggi in modo naturale e chiaro, come un audiolibro rivolto a una sola persona. Parla leggermente più lentamente del parlato quotidiano, ma senza scandire artificialmente. Rispetta la punteggiatura con pause naturali: breve sulla virgola, più netta sul punto, lieve intonazione sulle domande. Evita enfasi teatrale, voce monotona, cambi di volume, cambi di distanza dal microfono e rumori di fondo.</div>
     <h3>Stati clip</h3>
     <p><span class="badge good">Ready</span> audio e transcript utilizzabili.</p>
     <p><span class="badge">Checking text</span> verifica in corso.</p>
     <p><span class="badge good">Match OK</span> audio e testo coerenti.</p>
     <p><span class="badge warn">Needs review</span> testo da controllare.</p>
     <p><span class="badge danger">Check error</span> verifica non completata.</p>
-    <div class="success">Export dataset è disponibile solo quando il dataset raggiunge la readiness minima. L'export copia solo clip pronte e non modifica il dataset di lavoro.</div>
+    <div class="success">Export dataset è disponibile solo quando il dataset raggiunge la readiness minima. L'export copia solo clip pronte e non modifica il dataset di lavoro. Se vuoi aprire la cartella, usa <code>Open folder</code>.</div>
     <div class="note">I prompt guidati generati dall'app sono limitati a 200 caratteri per restare compatibili con il fine-tuning XTTS-v2. Se incolli o carichi testo personalizzato, tieni ogni clip entro lo stesso limite: gli export con transcript più lunghi vengono bloccati in fase di preparazione training per evitare errori del trainer.</div>
   </section>
 
@@ -442,11 +444,11 @@
         <ol class="workflow">
           <li>Esporta prima un dataset.</li>
           <li>Scegli l'export dal dropdown.</li>
-          <li>Imposta output, device, epoch e batch size.</li>
+          <li>Imposta output, device, epoch e batch size. L'app propone valori iniziali in base alla durata del dataset e alla VRAM CUDA rilevata.</li>
           <li>Indica un checkpoint solo se riprendi un training.</li>
           <li>Scarica asset training se mancano.</li>
           <li>Esegui <code>Refresh preflight</code>.</li>
-          <li>Salva con <code>Save training config</code>.</li>
+          <li>Salva con <code>Save training config</code>. Se vuoi aprire la cartella del job, usa <code>Open output folder</code>.</li>
         </ol>
       </div>
       <div>
@@ -463,6 +465,7 @@
     </div>
     <div class="note">Il download degli asset training può essere annullato con <code>Cancel download</code>. Se CUDA fallisce, l'app può proporre di passare il job a CPU e ritentare.</div>
     <div class="note">I pulsanti seguono lo stato del job: dopo <code>Save training config</code> è disponibile solo <code>Prepare</code>; dopo <code>Prepare</code> è disponibile solo <code>Dry run</code>; dopo <code>Dry run</code> completato correttamente è disponibile <code>Start training</code>. Se il job fallisce o viene annullato, riparti da <code>Prepare</code>.</div>
+    <div class="note">A training completato l'app mantiene il modello in <code>inference_model</code>, archivia i log in <code>logs/voice_modeling</code> e rimuove i checkpoint intermedi della cartella <code>run/training</code> per evitare accumuli da molti GB.</div>
   </section>
 
   <section class="page section" id="transcription">
@@ -482,6 +485,7 @@
       <tr><td><code>Subtitles from provided text (.srt)</code></td><td>Hai già un testo e vuoi allinearlo ad audio/video.</td></tr>
     </table>
     <div class="note">Le modalità SRT richiedono il modello di allineamento della lingua parlata. Se manca, l'app chiede se scaricarlo.</div>
+    <div class="note"><code>Generate</code> diventa disponibile solo quando la preflight STT è completata e i file richiesti dalla modalità scelta esistono.</div>
   </section>
 
   <section class="page section" id="subtitles">
@@ -495,6 +499,7 @@
       <li>Nel burn-in regola posizione, dimensione, outline, ombra, colori e qualità.</li>
     </ol>
     <p>Il burn-in ricodifica il video. Le modalità CRF più basse aumentano qualità e dimensione file.</p>
+    <div class="note"><code>Create video</code> diventa disponibile solo dopo aver selezionato un video esistente e un file <code>.srt</code> valido.</div>
   </section>
 
   <section class="page section" id="audio-cleanup">

@@ -1281,6 +1281,15 @@ class ModelingDatasetsWorkflowMixin:
             f"0/{MODELING_GUIDED_TEXT_MAX_CHARS} characters for guided recording"
         )
         self.modeling_clip_text_counter.setObjectName("Muted")
+        self.modeling_recording_guidance_label = QLabel(
+            self.modeling_text(
+                "Read naturally and clearly, like an audiobook for one person. "
+                "Do not slow down artificially, act, or over-enunciate. "
+                "Keep volume, microphone distance, and rhythm steady."
+            )
+        )
+        self.modeling_recording_guidance_label.setObjectName("Muted")
+        self.modeling_recording_guidance_label.setWordWrap(True)
         self.modeling_prompt_usage_label = QLabel("Guided prompts: 0 / 0 used")
         self.modeling_prompt_usage_label.setObjectName("Muted")
         self.modeling_clip_details = QPlainTextEdit()
@@ -1326,6 +1335,7 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_status.setObjectName("StatusText")
         editor_card.content_layout.addWidget(self.modeling_clip_text_edit)
         editor_card.content_layout.addWidget(self.modeling_clip_text_counter)
+        editor_card.content_layout.addWidget(self.modeling_recording_guidance_label)
         editor_card.content_layout.addWidget(self.modeling_prompt_usage_label)
         editor_card.content_layout.addLayout(microphone_row)
         editor_card.content_layout.addLayout(text_actions)

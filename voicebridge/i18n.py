@@ -700,6 +700,15 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Record from text": "Registra da testo",
     "Free record": "Registrazione libera",
     "Save transcript": "Salva transcript",
+    (
+        "Read naturally and clearly, like an audiobook for one person. "
+        "Do not slow down artificially, act, or over-enunciate. "
+        "Keep volume, microphone distance, and rhythm steady."
+    ): (
+        "Leggi in modo naturale e chiaro, come un audiolibro rivolto a una sola persona. "
+        "Non rallentare artificialmente, non recitare e non scandire le parole. "
+        "Mantieni volume, distanza dal microfono e ritmo costanti."
+    ),
     "Clear checkpoint": "Cancella checkpoint",
     "Download training assets": "Scarica asset training",
     "Refresh preflight": "Aggiorna preflight",

@@ -78,6 +78,7 @@ VoiceBridge e' progettata come app desktop locale: documenti, audio, video, prof
 - STT, Local TTS, Voice Modeling, Audio Cleanup e Video Cleanup lavorano localmente quando runtime, modelli e strumenti richiesti sono gia' disponibili.
 - Download di modelli e asset opzionali possono contattare sorgenti remote come Hugging Face, Coqui o repository dei rispettivi pacchetti.
 - I profili vocali, i dataset di modeling e gli output generati possono contenere dati personali o biometrici vocali. Non committarli e non pubblicarli.
+- Dopo un training XTTS completato, VoiceBridge mantiene il modello utilizzabile in `inference_model`, archivia i log in `logs\voice_modeling` e rimuove i checkpoint intermedi in `run\training` per evitare accumuli da molti GB.
 - La build locale preserva `voice_profiles`, `modeling_exports` e `voice_models` dentro `dist\VoiceBridge`, ma per distribuzioni pubbliche e' preferibile partire da una cartella pulita senza dati utente.
 
 ## Licenze modello e uso commerciale

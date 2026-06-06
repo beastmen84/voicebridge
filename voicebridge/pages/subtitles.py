@@ -650,7 +650,9 @@ class SubtitlesWorkflowMixin:
             or self.is_cleanup_running
         )
         burn_mode = self.video_subtitle_mode_key() == "burn"
-        self.video_start_button.setEnabled(not self.is_video_running and not busy_elsewhere)
+        can_create = not self.is_video_running and not busy_elsewhere and self.video_subtitle_input_ready()
+        self.video_start_button.setEnabled(can_create)
+        self.set_video_subtitle_start_button_primary(can_create)
         self.video_preview_button.setEnabled(not self.is_video_running and not busy_elsewhere and burn_mode)
         self.video_cancel_button.setEnabled(self.is_video_running and not self.video_cancel_requested)
         output_ready = bool(self.video_last_output_path and Path(self.video_last_output_path).is_file())
@@ -678,6 +680,31 @@ class SubtitlesWorkflowMixin:
             not self.is_video_running and self.video_background_box_check.isChecked()
         )
         self.update_navigation_state()
+
+    def video_subtitle_input_ready(self) -> bool:
+        if not hasattr(self, "video_media_picker") or not hasattr(self, "video_srt_picker"):
+            return False
+        media_path = self.video_media_picker.text()
+        srt_path = self.video_srt_picker.text()
+        return bool(
+            media_path
+            and srt_path
+            and Path(media_path).is_file()
+            and Path(srt_path).is_file()
+            and Path(srt_path).suffix.lower() == ".srt"
+        )
+
+    def set_video_subtitle_start_button_primary(self, is_primary: bool) -> None:
+        if not hasattr(self, "video_start_button"):
+            return
+        if not hasattr(self.video_start_button, "objectName"):
+            return
+        object_name = "PrimaryButton" if is_primary else ""
+        if self.video_start_button.objectName() == object_name:
+            return
+        self.video_start_button.setObjectName(object_name)
+        self.video_start_button.style().unpolish(self.video_start_button)
+        self.video_start_button.style().polish(self.video_start_button)
 
     def append_video_log(self, line):
         self.video_log_lines.append(line)
@@ -718,7 +745,9 @@ class SubtitlesWorkflowMixin:
         self.video_media_picker.button.clicked.connect(self.select_video_subtitle_media_file)
         self.video_srt_picker.button.clicked.connect(self.select_video_subtitle_srt_file)
         self.video_output_picker.button.clicked.connect(self.select_video_subtitle_output_file)
-        self.video_media_picker.edit.textChanged.connect(lambda: self.update_video_subtitle_output(force=False))
+        self.video_media_picker.edit.textChanged.connect(lambda _text: self.update_video_subtitle_output(force=False))
+        self.video_media_picker.edit.textChanged.connect(lambda _text: self.update_video_subtitle_button_state())
+        self.video_srt_picker.edit.textChanged.connect(lambda _text: self.update_video_subtitle_button_state())
         files_card.content_layout.addWidget(self.video_media_picker)
         files_card.content_layout.addWidget(self.video_srt_picker)
         files_card.content_layout.addWidget(self.video_output_picker)
@@ -855,7 +884,6 @@ class SubtitlesWorkflowMixin:
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         self.video_start_button = QPushButton("Create video")
-        self.video_start_button.setObjectName("PrimaryButton")
         self.video_preview_button = QPushButton("Preview style")
         self.video_cancel_button = QPushButton("Cancel")
         self.video_open_output_button = QPushButton("Open output")

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import voicebridge.pages.tts as tts_page
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.process_jobs import WorkerProcessOutput, WorkerProcessResult
@@ -120,7 +122,7 @@ class FakeTtsWorkflow(TtsWorkflowMixin):
         self.tts_cancel_requested = False
         self.tts_process = None
         self.tts_status = FakeTtsStatus()
-        self.tts_input_picker = FakeTextPicker("current-input.txt")
+        self.tts_input_picker = FakeTextPicker(str(Path(__file__).resolve()))
         self.progress_values: list[float] = []
         self.events: list[tuple[str, str]] = []
         self.edge_unavailable_messages: list[str] = []
@@ -216,6 +218,7 @@ class FakeButtonStateWorkflow(TtsWorkflowMixin):
         self.current_voice_map = {"it-IT | Elsa (Female)": "it-IT-ElsaNeural"}
         self.tts_cancel_requested = False
         self.tts_last_output_path = ""
+        self.tts_input_picker = FakeTextPicker(str(Path(__file__).resolve()))
         self.tts_generate_button = FakeButton()
         self.tts_cancel_button = FakeButton()
         self.tts_open_output_button = FakeButton()
@@ -301,6 +304,15 @@ def test_edge_tts_generate_button_can_enable_when_real_voice_list_loaded() -> No
     workflow.update_tts_button_state()
 
     assert workflow.tts_generate_button.enabled is True
+
+
+def test_edge_tts_generate_button_is_disabled_without_input_file() -> None:
+    workflow = FakeButtonStateWorkflow()
+    workflow.tts_input_picker = FakeTextPicker("")
+
+    workflow.update_tts_button_state()
+
+    assert workflow.tts_generate_button.enabled is False
 
 
 def test_edge_voice_load_failure_switches_to_local_without_saving_settings() -> None:

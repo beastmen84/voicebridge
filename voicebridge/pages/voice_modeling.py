@@ -617,7 +617,7 @@ class VoiceModelingWorkflowMixin:
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
         self.voice_modeling_save_config_button = QPushButton("Save training config")
-        self.voice_modeling_save_config_button.setObjectName("PrimaryButton")
+        self.voice_modeling_save_config_button.setObjectName("FlowButton")
         self.voice_modeling_open_output_button = QPushButton("Open output folder")
         self.voice_modeling_save_config_button.clicked.connect(self.save_voice_modeling_config)
         self.voice_modeling_open_output_button.clicked.connect(self.open_voice_modeling_output_folder)

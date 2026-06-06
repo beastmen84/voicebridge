@@ -48,6 +48,7 @@ from voicebridge.modeling_datasets import (
     delete_modeling_clip_files,
     ensure_modeling_datasets_for_profiles,
     export_modeling_dataset,
+    format_modeling_dataset_duration,
     load_modeling_datasets,
     modeling_clip_audio_path,
     modeling_clip_can_verify_transcript,
@@ -61,6 +62,7 @@ from voicebridge.modeling_datasets import (
     modeling_dataset_guided_prompt_usage,
     modeling_dataset_summary,
     modeling_dataset_summary_text,
+    modeling_dataset_tier_label,
     recover_interrupted_modeling_verifications,
     reset_modeling_dataset_guided_prompt_history,
     save_modeling_datasets,
@@ -113,13 +115,54 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_datasets = datasets
         if changed and save:
             save_modeling_datasets(self.modeling_datasets)
-        if hasattr(self, "modeling_datasets_list"):
+        if hasattr(self, "modeling_dataset_summary_box"):
             self.refresh_modeling_datasets_page()
         self.update_local_voice_tabs()
 
+    def modeling_voice_profiles(self) -> list[dict]:
+        return [
+            profile for profile in self.voice_profiles
+            if profile.get("profile_type") == VOICE_PROFILE_MODELING
+        ]
+
+    def active_modeling_profile_id(self) -> str:
+        modeling_profiles = self.modeling_voice_profiles()
+        modeling_profile_ids = {profile["id"] for profile in modeling_profiles}
+        selected_profile_id = getattr(self, "selected_modeling_profile_id", "")
+        if selected_profile_id in modeling_profile_ids:
+            return selected_profile_id
+        selected_voice_profile_id = getattr(self, "selected_voice_profile_id", "")
+        if selected_voice_profile_id in modeling_profile_ids:
+            return selected_voice_profile_id
+        return modeling_profiles[0]["id"] if modeling_profiles else ""
+
+    def ensure_selected_modeling_dataset(self) -> ModelingDataset | None:
+        profile_id = self.active_modeling_profile_id()
+        if not profile_id:
+            self.selected_modeling_profile_id = ""
+            self.selected_modeling_dataset_id = ""
+            return None
+        self.selected_modeling_profile_id = profile_id
+        dataset = next((entry for entry in self.modeling_datasets if entry["profile_id"] == profile_id), None)
+        self.selected_modeling_dataset_id = dataset["id"] if dataset else ""
+        return dataset
+
     def selected_modeling_dataset(self) -> ModelingDataset | None:
         dataset_id = getattr(self, "selected_modeling_dataset_id", "")
-        return next((dataset for dataset in self.modeling_datasets if dataset["id"] == dataset_id), None)
+        dataset = next((dataset for dataset in self.modeling_datasets if dataset["id"] == dataset_id), None)
+        return dataset or self.ensure_selected_modeling_dataset()
+
+    def open_modeling_dataset_for_profile(self, profile_id: str) -> None:
+        if not any(profile["id"] == profile_id for profile in self.modeling_voice_profiles()):
+            return
+        self.selected_modeling_profile_id = profile_id
+        self.sync_modeling_datasets_with_profiles()
+        self.ensure_selected_modeling_dataset()
+        self.selected_modeling_clip_id = ""
+        self.refresh_modeling_datasets_page()
+        if hasattr(self, "show_local_voices_tab"):
+            self.local_voice_dataset_tab_open_allowed = True
+            self.show_local_voices_tab(1)
 
     def selected_modeling_clip(self) -> ModelingClip | None:
         dataset = self.selected_modeling_dataset()
@@ -159,6 +202,7 @@ class ModelingDatasetsWorkflowMixin:
 
     def refresh_modeling_datasets_list(self) -> None:
         if not hasattr(self, "modeling_datasets_list"):
+            self.ensure_selected_modeling_dataset()
             return
         self.modeling_datasets_list.blockSignals(True)
         self.modeling_datasets_list.setUpdatesEnabled(False)
@@ -211,12 +255,91 @@ class ModelingDatasetsWorkflowMixin:
         dataset = self.selected_modeling_dataset()
         if not dataset:
             self.modeling_dataset_summary_box.setPlainText(self.modeling_text("Create or select a modeling dataset."))
+            self.update_modeling_dataset_metric_tiles(None)
             self.update_modeling_prompt_usage_label()
             return None
         summary = modeling_dataset_summary(dataset)
+        self.update_modeling_dataset_metric_tiles(summary)
         self.modeling_dataset_summary_box.setPlainText(modeling_dataset_summary_text(dataset, summary))
         self.update_modeling_prompt_usage_label()
         return summary
+
+    def update_modeling_dataset_metric_tiles(self, summary: ModelingDatasetSummary | None) -> None:
+        if not hasattr(self, "modeling_ready_clips_tile"):
+            return
+        dataset = self.selected_modeling_dataset()
+        if not dataset or summary is None:
+            self.modeling_dataset_profile_label.setText(self.modeling_text("No modeling profile selected."))
+            self.set_modeling_dataset_tile(
+                self.modeling_ready_clips_tile,
+                "info",
+                self.modeling_text("Ready clips\n--"),
+                "",
+            )
+            self.set_modeling_dataset_tile(
+                self.modeling_ready_duration_tile,
+                "info",
+                self.modeling_text("Ready duration\n--"),
+                "",
+            )
+            self.set_modeling_dataset_tile(self.modeling_tier_tile, "info", self.modeling_text("Tier\n--"), "")
+            self.set_modeling_dataset_tile(
+                self.modeling_exportable_tile,
+                "info",
+                self.modeling_text("Exportable\n--"),
+                "",
+            )
+            return
+        export_disabled_reason = modeling_dataset_export_disabled_reason_from_summary(summary)
+        self.modeling_dataset_profile_label.setText(
+            self.modeling_text(
+                "Dataset for: {name} | {language}",
+                name=dataset["name"],
+                language=dataset["language_code"],
+            )
+        )
+        self.set_modeling_dataset_tile(
+            self.modeling_ready_clips_tile,
+            "ok" if summary["ready_clips"] else "warn",
+            self.modeling_text("Ready clips\n{count}", count=summary["ready_clips"]),
+            self.modeling_text(
+                "{count} of {total} clip(s) are ready.",
+                count=summary["ready_clips"],
+                total=summary["total_clips"],
+            ),
+        )
+        self.set_modeling_dataset_tile(
+            self.modeling_ready_duration_tile,
+            "ok" if summary["ready_duration_seconds"] else "warn",
+            self.modeling_text(
+                "Ready duration\n{duration}",
+                duration=format_modeling_dataset_duration(summary["ready_duration_seconds"]),
+            ),
+            self.modeling_text("Total duration of ready clips."),
+        )
+        self.set_modeling_dataset_tile(
+            self.modeling_tier_tile,
+            "ok" if summary["dataset_tier"] != "test" else "info",
+            self.modeling_text("Tier\n{tier}", tier=modeling_dataset_tier_label(summary["dataset_tier"])),
+            self.modeling_text("Dataset duration tier."),
+        )
+        self.set_modeling_dataset_tile(
+            self.modeling_exportable_tile,
+            "ok" if export_disabled_reason is None else "warn",
+            self.modeling_text(
+                "Exportable\n{value}",
+                value=self.modeling_text("Yes") if export_disabled_reason is None else self.modeling_text("No"),
+            ),
+            export_disabled_reason or self.modeling_text("Dataset can be exported."),
+        )
+
+    @staticmethod
+    def set_modeling_dataset_tile(tile: QLabel, state: str, text: str, tooltip: str) -> None:
+        tile.setText(text)
+        tile.setToolTip(tooltip)
+        tile.setProperty("state", state)
+        tile.style().unpolish(tile)
+        tile.style().polish(tile)
 
     def refresh_modeling_clips_list(self) -> None:
         if not hasattr(self, "modeling_clips_list"):
@@ -595,7 +718,7 @@ class ModelingDatasetsWorkflowMixin:
 
     def set_modeling_export_dataset_button_primary(self, is_primary: bool) -> None:
         button = self.modeling_export_dataset_button
-        object_name = "PrimaryButton" if is_primary else ""
+        object_name = "FlowButton" if is_primary else ""
         if button.objectName() == object_name:
             return
         button.setObjectName(object_name)
@@ -1062,15 +1185,33 @@ class ModelingDatasetsWorkflowMixin:
         grid.setSpacing(16)
         layout.addLayout(grid)
 
-        datasets_card = Card("Datasets")
+        datasets_card = Card("Dataset")
         datasets_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self.modeling_datasets_list = QListWidget()
-        self.modeling_datasets_list.setMinimumHeight(220)
-        self.modeling_datasets_list.currentRowChanged.connect(lambda _row: self.modeling_dataset_selection_changed())
+        self.modeling_dataset_profile_label = QLabel("No modeling profile selected.")
+        self.modeling_dataset_profile_label.setObjectName("Muted")
+        self.modeling_ready_clips_tile = QLabel("Ready clips\n--")
+        self.modeling_ready_duration_tile = QLabel("Ready duration\n--")
+        self.modeling_tier_tile = QLabel("Tier\n--")
+        self.modeling_exportable_tile = QLabel("Exportable\n--")
+        dataset_metric_grid = QGridLayout()
+        dataset_metric_grid.setContentsMargins(0, 0, 0, 0)
+        dataset_metric_grid.setSpacing(6)
+        for index, tile in enumerate(
+            (
+                self.modeling_ready_clips_tile,
+                self.modeling_ready_duration_tile,
+                self.modeling_tier_tile,
+                self.modeling_exportable_tile,
+            )
+        ):
+            tile.setObjectName("StatusTile")
+            tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            tile.setProperty("state", "info")
+            dataset_metric_grid.addWidget(tile, index // 2, index % 2)
         self.modeling_dataset_summary_box = QPlainTextEdit()
         self.modeling_dataset_summary_box.setObjectName("LogBox")
         self.modeling_dataset_summary_box.setReadOnly(True)
-        self.modeling_dataset_summary_box.setMinimumHeight(150)
+        self.modeling_dataset_summary_box.setMinimumHeight(240)
         self.modeling_dataset_summary_box.setPlaceholderText("Dataset readiness summary appears here.")
         dataset_actions = QHBoxLayout()
         dataset_actions.setContentsMargins(0, 0, 0, 0)
@@ -1083,7 +1224,8 @@ class ModelingDatasetsWorkflowMixin:
         dataset_actions.addWidget(self.modeling_refresh_button)
         dataset_actions.addWidget(self.modeling_export_dataset_button)
         dataset_actions.addWidget(self.modeling_open_dataset_folder_button)
-        datasets_card.content_layout.addWidget(self.modeling_datasets_list)
+        datasets_card.content_layout.addWidget(self.modeling_dataset_profile_label)
+        datasets_card.content_layout.addLayout(dataset_metric_grid)
         datasets_card.content_layout.addWidget(self.modeling_dataset_summary_box)
         datasets_card.content_layout.addLayout(dataset_actions)
 

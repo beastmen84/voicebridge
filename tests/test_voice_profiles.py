@@ -48,6 +48,72 @@ class FakeStatusLabel:
         self.text = text
 
 
+class FakeButton:
+    def __init__(self) -> None:
+        self.enabled = None
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakeLineEdit:
+    def __init__(self, text: str = "") -> None:
+        self._text = text
+        self.enabled = None
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str) -> None:
+        self._text = text
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakePlainTextEdit:
+    def __init__(self, text: str = "") -> None:
+        self._text = text
+
+    def toPlainText(self) -> str:
+        return self._text
+
+    def setPlainText(self, text: str) -> None:
+        self._text = text
+
+
+class FakePicker:
+    def __init__(self, text: str = "") -> None:
+        self._text = text
+        self.enabled = None
+
+    def text(self) -> str:
+        return self._text
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakeCombo:
+    def __init__(self, data: object = None) -> None:
+        self.data = data
+        self.enabled = None
+
+    def currentData(self, _role: object = None) -> object:
+        return self.data
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
+class FakeList:
+    def __init__(self) -> None:
+        self.enabled = None
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+
 class DummyVoiceProfilesWindow(VoiceProfilesWorkflowMixin):
     def __init__(
         self,
@@ -94,6 +160,36 @@ class DummyVoiceProfilesWindow(VoiceProfilesWorkflowMixin):
 
     def update_local_voice_tabs(self) -> None:
         self.local_voice_tabs_updated = True
+
+
+class DummyVoiceProfileButtonWindow(VoiceProfilesWorkflowMixin):
+    def __init__(self, profile: VoiceProfile) -> None:
+        self.voice_profiles = [profile]
+        self.selected_voice_profile_id = profile["id"]
+        self.voice_profiles_list = FakeList()
+        self.profile_name_edit = FakeLineEdit(profile["name"])
+        self.profile_language_combo = FakeCombo(profile["language_code"])
+        self.profile_type_combo = FakeCombo(profile["profile_type"])
+        self.profile_reference_picker = FakePicker(profile["reference_paths"][0] if profile["reference_paths"] else "")
+        self.profile_notes_edit = FakePlainTextEdit(profile["notes"])
+        self.profile_new_button = FakeButton()
+        self.profile_delete_button = FakeButton()
+        self.profile_save_button = FakeButton()
+        self.profile_open_dataset_button = FakeButton()
+        self.profile_open_reference_button = FakeButton()
+        self.profile_open_folder_button = FakeButton()
+        self.opened_dataset_profile_id = ""
+        self.synced_modeling_datasets = False
+        self.modeling_datasets: list[ModelingDataset] = []
+
+    def voice_profile_is_recording(self) -> bool:
+        return False
+
+    def sync_modeling_datasets_with_profiles(self, *, save: bool = True) -> None:
+        self.synced_modeling_datasets = True
+
+    def open_modeling_dataset_for_profile(self, profile_id: str) -> None:
+        self.opened_dataset_profile_id = profile_id
 
 
 def write_audio_marker(path: Path) -> None:
@@ -200,6 +296,53 @@ def test_ready_voice_profiles_only_returns_reference_profiles(tmp_path: Path) ->
 
     assert ready_voice_profiles([modeling, ready]) == [ready]
     assert voice_profile_display_label(ready) == "Ready (Italian)"
+
+
+def test_saved_voice_profile_save_button_requires_changes(tmp_path: Path) -> None:
+    reference = tmp_path / "voice.wav"
+    write_audio_marker(reference)
+    profile = build_voice_profile(
+        name="Reference Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_REFERENCE,
+        reference_paths=[str(reference)],
+        consent_confirmed=True,
+        notes="Original notes",
+    )
+    window = DummyVoiceProfileButtonWindow(profile)
+
+    window.update_voice_profile_buttons()
+
+    assert window.profile_save_button.enabled is False
+    assert window.profile_name_edit.enabled is False
+    assert window.profile_type_combo.enabled is False
+    assert window.profile_language_combo.enabled is False
+    assert window.profile_open_dataset_button.enabled is False
+
+    window.profile_notes_edit.setPlainText("Updated notes")
+    window.update_voice_profile_buttons()
+
+    assert window.profile_save_button.enabled is True
+
+
+def test_saved_modeling_profile_opens_linked_dataset() -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    window = DummyVoiceProfileButtonWindow(profile)
+
+    window.update_voice_profile_buttons()
+    window.open_selected_voice_profile_dataset()
+
+    assert window.profile_save_button.enabled is False
+    assert window.profile_open_dataset_button.enabled is True
+    assert window.profile_reference_picker.enabled is False
+    assert window.synced_modeling_datasets is True
+    assert window.opened_dataset_profile_id == profile["id"]
 
 
 def test_voice_profile_owned_audio_paths_only_returns_recorded_wavs(tmp_path: Path) -> None:

@@ -88,6 +88,9 @@ def apply_app_style(widget, check_icon, chevron_icon):
         QPushButton:disabled { color: #98a2b3; background: #eef1f5; }
         #PrimaryButton { color: white; background: #2f6fed; border-color: #2f6fed; font-weight: 600; }
         #PrimaryButton:hover { background: #265ecb; }
+        #FlowButton { color: white; background: #1f8a5b; border-color: #1f8a5b; font-weight: 700; }
+        #FlowButton:hover { background: #18734c; border-color: #18734c; }
+        #FlowButton:disabled { color: #98a2b3; background: #eef1f5; border-color: #cfd6e2; }
         #DangerButton { color: white; background: #b42318; border-color: #b42318; font-weight: 600; }
         #DangerButton:disabled { color: #98a2b3; background: #eef1f5; border-color: #cfd6e2; }
         #HeaderHelpButton {

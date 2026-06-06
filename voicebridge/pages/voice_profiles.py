@@ -46,6 +46,7 @@ from voicebridge.voice_profiles import (
     VoiceProfile,
     build_voice_profile,
     load_voice_profiles,
+    normalized_reference_paths,
     save_voice_profiles,
     validate_voice_profile,
     voice_profile_status,
@@ -175,6 +176,20 @@ class VoiceProfilesWorkflowMixin:
         self.profile_status_label.setText(_ui_text(self, "voice_profiles.status.new"))
         self.profile_record_status_label.setText(_ui_text(self, "voice_profiles.status.record_prompt"))
         self.update_voice_profile_buttons()
+
+    def voice_profile_form_dirty(self) -> bool:
+        profile = self.selected_voice_profile()
+        if not profile:
+            return True
+        return any(
+            (
+                self.profile_name_edit.text().strip() != profile["name"],
+                self.voice_profile_language_code() != profile["language_code"],
+                self.voice_profile_type() != profile["profile_type"],
+                normalized_reference_paths([self.profile_reference_picker.text()]) != profile["reference_paths"],
+                self.profile_notes_edit.toPlainText().strip() != profile["notes"],
+            )
+        )
 
     def voice_profile_type_changed(self) -> None:
         if self.voice_profile_type() == VOICE_PROFILE_MODELING:
@@ -310,6 +325,7 @@ class VoiceProfilesWorkflowMixin:
             _ui_text(self, "voice_profiles.status.saved", name=profile["name"], status=translated_status)
         )
         self.update_local_voice_tabs()
+        self.update_voice_profile_buttons()
 
     def linked_modeling_datasets_for_voice_profile(self, profile: VoiceProfile) -> list[ModelingDataset]:
         if profile.get("profile_type") != VOICE_PROFILE_MODELING:
@@ -364,6 +380,16 @@ class VoiceProfilesWorkflowMixin:
         if path and Path(path).is_file():
             open_path(Path(path).parent)
 
+    def open_selected_voice_profile_dataset(self) -> None:
+        profile = self.selected_voice_profile()
+        if not profile or profile.get("profile_type") != VOICE_PROFILE_MODELING:
+            return
+        if not isinstance(getattr(self, "modeling_datasets", None), list):
+            self.modeling_datasets = load_modeling_datasets()
+        self.sync_modeling_datasets_with_profiles()
+        if hasattr(self, "open_modeling_dataset_for_profile"):
+            self.open_modeling_dataset_for_profile(profile["id"])
+
     def update_voice_profile_buttons(self) -> None:
         if not hasattr(self, "profile_save_button"):
             return
@@ -372,14 +398,19 @@ class VoiceProfilesWorkflowMixin:
         has_selection = bool(self.selected_voice_profile())
         is_recording = self.voice_profile_is_recording()
         is_modeling_profile = self.voice_profile_type() == VOICE_PROFILE_MODELING
+        is_dirty = self.voice_profile_form_dirty()
         self.voice_profiles_list.setEnabled(not is_recording)
+        self.profile_name_edit.setEnabled(not has_selection and not is_recording)
         self.profile_type_combo.setEnabled(not has_selection and not is_recording)
+        self.profile_language_combo.setEnabled(not has_selection and not is_recording)
         self.profile_new_button.setEnabled(not is_recording)
         self.profile_delete_button.setEnabled(has_selection and not is_recording)
-        self.profile_save_button.setEnabled(not is_recording)
+        self.profile_save_button.setEnabled(not is_recording and (not has_selection or is_dirty))
         self.profile_reference_picker.setEnabled(not is_recording and not is_modeling_profile)
         self.profile_open_reference_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
         self.profile_open_folder_button.setEnabled(has_reference and not is_recording and not is_modeling_profile)
+        if hasattr(self, "profile_open_dataset_button"):
+            self.profile_open_dataset_button.setEnabled(has_selection and is_modeling_profile and not is_recording)
         if hasattr(self, "profile_record_button"):
             self.profile_microphone_combo.setEnabled(not is_recording and not is_modeling_profile)
             self.profile_record_button.setEnabled(
@@ -425,12 +456,14 @@ class VoiceProfilesWorkflowMixin:
         editor_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.profile_name_edit = QLineEdit()
         self.profile_name_edit.setMinimumHeight(34)
+        self.profile_name_edit.textChanged.connect(lambda _text: self.update_voice_profile_buttons())
         self.profile_type_combo = QComboBox()
         self.populate_voice_profile_type_combo(VOICE_PROFILE_REFERENCE)
         self.profile_type_combo.currentIndexChanged.connect(lambda _index: self.voice_profile_type_changed())
         self.profile_language_combo = QComboBox()
         for language_code in VOICE_PROFILE_LANGUAGES:
             self.profile_language_combo.addItem(language_name(language_code), language_code)
+        self.profile_language_combo.currentIndexChanged.connect(lambda _index: self.update_voice_profile_buttons())
         self.profile_reference_picker = FilePicker(_ui_text(self, "voice_profiles.file.reference_audio"))
         self.profile_reference_picker.button.clicked.connect(self.select_voice_profile_reference)
         self.profile_reference_picker.edit.textChanged.connect(lambda _text: self.update_voice_profile_buttons())
@@ -448,6 +481,7 @@ class VoiceProfilesWorkflowMixin:
         self.profile_notes_edit = QPlainTextEdit()
         self.profile_notes_edit.setMinimumHeight(90)
         self.profile_notes_edit.setPlaceholderText(_ui_text(self, "voice_profiles.notes.placeholder"))
+        self.profile_notes_edit.textChanged.connect(self.update_voice_profile_buttons)
         self.profile_status_label = QLabel(_ui_text(self, "voice_profiles.status.new"))
         self.profile_status_label.setObjectName("StatusText")
 
@@ -481,10 +515,14 @@ class VoiceProfilesWorkflowMixin:
         self.profile_save_button.setObjectName("PrimaryButton")
         self.profile_open_reference_button = QPushButton(_ui_text(self, "voice_profiles.button.open_audio"))
         self.profile_open_folder_button = QPushButton(_ui_text(self, "voice_profiles.button.open_folder"))
+        self.profile_open_dataset_button = QPushButton(_ui_text(self, "voice_profiles.button.open_dataset"))
+        self.profile_open_dataset_button.setObjectName("FlowButton")
         self.profile_save_button.clicked.connect(self.save_voice_profile_from_form)
         self.profile_open_reference_button.clicked.connect(self.open_voice_profile_reference)
         self.profile_open_folder_button.clicked.connect(self.open_voice_profile_reference_folder)
+        self.profile_open_dataset_button.clicked.connect(self.open_selected_voice_profile_dataset)
         editor_actions.addWidget(self.profile_save_button)
+        editor_actions.addWidget(self.profile_open_dataset_button)
         editor_actions.addStretch(1)
         editor_actions.addWidget(self.profile_open_reference_button)
         editor_actions.addWidget(self.profile_open_folder_button)
@@ -514,6 +552,7 @@ class VoiceProfilesWorkflowMixin:
         self.profile_record_button.setText(_ui_text(self, "voice_profiles.button.record"))
         self.profile_play_button.setText(_ui_text(self, "voice_profiles.button.play"))
         self.profile_save_button.setText(_ui_text(self, "voice_profiles.button.save"))
+        self.profile_open_dataset_button.setText(_ui_text(self, "voice_profiles.button.open_dataset"))
         self.profile_open_reference_button.setText(_ui_text(self, "voice_profiles.button.open_audio"))
         self.profile_open_folder_button.setText(_ui_text(self, "voice_profiles.button.open_folder"))
         self.profile_name_label.setText(_ui_text(self, "voice_profiles.label.name"))

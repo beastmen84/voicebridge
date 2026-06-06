@@ -2482,6 +2482,8 @@ class VideoCleanupWorkflowMixin:
         frame_actions.setContentsMargins(0, 0, 0, 0)
         self.cleanup_start_button = QPushButton("Detect black frames")
         self.cleanup_anomaly_start_button = QPushButton("Detect frame glitches")
+        self.cleanup_start_button.setObjectName("FlowButton")
+        self.cleanup_anomaly_start_button.setObjectName("FlowButton")
         self.cleanup_mark_frame_button = QPushButton("Mark selected")
         self.cleanup_unmark_frame_button = QPushButton("Unmark selected")
         self.cleanup_clear_marks_button = QPushButton("Clear marks")

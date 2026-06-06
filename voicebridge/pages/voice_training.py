@@ -355,6 +355,8 @@ class VoiceTrainingWorkflowMixin:
         self.voice_training_prepare_button = QPushButton("Prepare")
         self.voice_training_dry_run_button = QPushButton("Dry run")
         self.voice_training_start_button = QPushButton("Start training")
+        self.voice_training_prepare_button.setObjectName("FlowButton")
+        self.voice_training_dry_run_button.setObjectName("FlowButton")
         self.voice_training_start_button.setObjectName("PrimaryButton")
         self.voice_training_cancel_button = QPushButton("Cancel")
         self.voice_training_open_folder_button = QPushButton("Open job folder")

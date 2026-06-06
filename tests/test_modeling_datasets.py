@@ -124,6 +124,51 @@ def test_ensure_modeling_dataset_for_modeling_profile_only(tmp_path: Path) -> No
     assert datasets[0]["name"] == "Model Voice"
 
 
+def test_open_modeling_dataset_for_profile_selects_single_profile_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    monkeypatch.setattr("voicebridge.pages.modeling_datasets.save_modeling_datasets", lambda _datasets: None)
+
+    profile = build_voice_profile(
+        name="Model Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+
+    class DummyModelingWindow(ModelingDatasetsWorkflowMixin):
+        def __init__(self) -> None:
+            self.voice_profiles = [profile]
+            self.modeling_datasets = []
+            self.selected_modeling_profile_id = ""
+            self.selected_modeling_dataset_id = ""
+            self.selected_modeling_clip_id = ""
+            self.tab_shown = None
+            self.local_voice_tab_updates = 0
+            self.refreshes = 0
+
+        def update_local_voice_tabs(self) -> None:
+            self.local_voice_tab_updates += 1
+
+        def refresh_modeling_datasets_page(self) -> None:
+            self.refreshes += 1
+
+        def show_local_voices_tab(self, tab_index: int) -> None:
+            self.tab_shown = tab_index
+
+    window = DummyModelingWindow()
+
+    window.open_modeling_dataset_for_profile(profile["id"])
+
+    assert len(window.modeling_datasets) == 1
+    assert window.modeling_datasets[0]["profile_id"] == profile["id"]
+    assert window.selected_modeling_profile_id == profile["id"]
+    assert window.selected_modeling_dataset_id == profile["id"]
+    assert window.selected_modeling_clip_id == ""
+    assert window.tab_shown == 1
+
+
 def test_modeling_dataset_profile_helpers_detect_linked_content(tmp_path: Path) -> None:
     modeling = build_voice_profile(
         name="Model Voice",

@@ -639,6 +639,38 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
         assert (export_dir / export_audio_path).read_bytes() == f"RIFF ready {index}".encode()
 
 
+def test_export_modeling_dataset_replaces_previous_export_for_same_dataset(tmp_path: Path) -> None:
+    profile = build_voice_profile(
+        name="Dataset Voice",
+        language_code="en",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    dataset = build_modeling_dataset_for_profile(profile)
+    for index in range(5):
+        audio_path = tmp_path / f"ready-{index}.wav"
+        audio_path.write_bytes(f"RIFF ready {index}".encode())
+        dataset["clips"].append(
+            build_modeling_clip(
+                dataset,
+                mode=MODELING_CLIP_FREE_RECORDING,
+                audio_path=audio_path,
+                transcript_text=f"Ready clip {index}",
+                duration_seconds=12.0,
+                quality_details="RMS level: 8%\nInput clipping: 0.00%",
+                clip_id=f"ready-{index}",
+            )
+        )
+
+    first = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-120000")
+    first_dir = Path(first["export_dir"])
+    second = export_modeling_dataset(dataset, export_root=tmp_path / "exports", timestamp="20260601-130000")
+
+    assert not first_dir.exists()
+    assert Path(second["export_dir"]).is_dir()
+
+
 def test_export_modeling_dataset_skips_guided_clips_that_need_review(tmp_path: Path) -> None:
     profile = build_voice_profile(
         name="Dataset Voice",

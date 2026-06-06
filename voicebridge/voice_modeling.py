@@ -1,6 +1,8 @@
 import json
+import shutil
 import subprocess
 import urllib.request
+from contextlib import suppress
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -73,6 +75,8 @@ class VoiceModelingDownloadCancelled(Exception):
 
 class VoiceModelingExportInfo(TypedDict):
     dataset_dir: str
+    dataset_id: str
+    profile_id: str
     name: str
     language_code: str
     readiness: str
@@ -161,6 +165,20 @@ def file_timestamp() -> str:
 
 def voice_modeling_outputs_root() -> Path:
     return external_base_dir() / VOICE_MODELING_OUTPUTS_DIR
+
+
+def voice_modeling_logs_root() -> Path:
+    return external_base_dir() / "logs" / "voice_modeling"
+
+
+def managed_voice_modeling_output_dir(path: str | Path) -> Path | None:
+    output_path = Path(path).expanduser().resolve()
+    root = voice_modeling_outputs_root().resolve()
+    try:
+        output_path.relative_to(root)
+    except ValueError:
+        return None
+    return output_path if output_path != root else None
 
 
 def download_file_to_path(
@@ -309,8 +327,12 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
 
     name = dataset_data.get("name")
     language_code = dataset_data.get("language_code")
+    dataset_id = dataset_data.get("dataset_id")
+    profile_id = dataset_data.get("profile_id")
     return {
         "dataset_dir": str(export_dir.resolve()),
+        "dataset_id": dataset_id if isinstance(dataset_id, str) else "",
+        "profile_id": profile_id if isinstance(profile_id, str) else "",
         "name": name if isinstance(name, str) and name else export_dir.name,
         "language_code": language_code if isinstance(language_code, str) and language_code else "unknown",
         "readiness": readiness_text,
@@ -748,6 +770,193 @@ def voice_modeling_job_label(job: VoiceModelingJobSummary) -> str:
     timestamp = job["updated_at"] or job["created_at"] or Path(job["output_dir"]).name
     status = job["status"].replace("_", " ").title() if job["status"] else "Configured"
     return f"{job['dataset_name']} | {status} | {timestamp}"
+
+
+def cleanup_incomplete_voice_modeling_job(
+    config_path: str | Path,
+    *,
+    reason: str,
+) -> dict[str, str]:
+    config = load_voice_modeling_job_config(config_path)
+    archive_dir = archive_voice_modeling_job_logs(config_path, reason=reason)
+    deleted_output_dir = delete_managed_voice_modeling_output_dir(config["output_dir"])
+    return {
+        "archive_dir": str(archive_dir) if archive_dir else "",
+        "deleted_output_dir": str(deleted_output_dir) if deleted_output_dir else "",
+    }
+
+
+def prune_previous_voice_modeling_outputs(config_path: str | Path) -> list[Path]:
+    current_config_path = Path(config_path).expanduser().resolve()
+    current_config = load_voice_modeling_job_config(current_config_path)
+    current_output_dir = Path(current_config["output_dir"]).expanduser().resolve()
+    current_identity = voice_modeling_config_identity(current_config)
+    if not current_identity:
+        return []
+
+    root = voice_modeling_outputs_root()
+    if not root.is_dir():
+        return []
+
+    deleted: list[Path] = []
+    for candidate_config_path in list(root.rglob(VOICE_MODELING_JOB_CONFIG)):
+        other_config_path = candidate_config_path.resolve()
+        if other_config_path == current_config_path:
+            continue
+        try:
+            other_config = load_voice_modeling_job_config(other_config_path)
+        except (OSError, ValueError):
+            continue
+        if other_config.get("status") == "running":
+            continue
+        other_output_dir = Path(other_config.get("output_dir") or other_config_path.parent).expanduser().resolve()
+        if other_output_dir == current_output_dir:
+            continue
+        if not voice_modeling_config_matches_identity(other_config, current_identity):
+            continue
+        archive_voice_modeling_job_logs(other_config_path, reason="replaced")
+        deleted_output_dir = delete_managed_voice_modeling_output_dir(other_output_dir)
+        if deleted_output_dir:
+            deleted.append(deleted_output_dir)
+    return deleted
+
+
+def archive_voice_modeling_job_logs(config_path: str | Path, *, reason: str) -> Path | None:
+    try:
+        config = load_voice_modeling_job_config(config_path)
+    except (OSError, ValueError):
+        return None
+    output_dir = Path(config["output_dir"]).expanduser()
+    dataset = config.get("dataset", {})
+    dataset_name = dataset.get("name") if isinstance(dataset, dict) else ""
+    base_name = safe_voice_profile_audio_stem(dataset_name if isinstance(dataset_name, str) else "")
+    if not base_name:
+        base_name = safe_voice_profile_audio_stem(output_dir.name) or "voice-modeling"
+    reason_name = safe_voice_profile_audio_stem(reason) or "job"
+    archive_dir = unique_voice_modeling_log_dir(
+        voice_modeling_logs_root() / f"{base_name}-{file_timestamp()}-{reason_name}"
+    )
+    archive_dir.mkdir(parents=True, exist_ok=False)
+    summary = {
+        "reason": reason,
+        "archived_at": utc_timestamp(),
+        "config_path": str(Path(config_path).expanduser().resolve()),
+        "output_dir": str(output_dir.expanduser().resolve()),
+        "status": config.get("status", ""),
+        "dataset": config.get("dataset", {}),
+    }
+    (archive_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    for source_path in voice_modeling_log_sources(config_path, output_dir):
+        copy_voice_modeling_log_file(source_path, archive_dir)
+    return archive_dir
+
+
+def voice_modeling_log_sources(config_path: str | Path, output_dir: Path) -> list[Path]:
+    candidates = [
+        Path(config_path).expanduser(),
+        output_dir / VOICE_MODELING_TRAINING_STATE,
+        output_dir / VOICE_MODELING_COMMAND,
+        output_dir / VOICE_MODELING_LOG,
+    ]
+    if output_dir.is_dir():
+        with suppress(OSError):
+            candidates.extend(output_dir.rglob("*.log"))
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        unique.append(resolved)
+    return unique
+
+
+def copy_voice_modeling_log_file(source_path: Path, archive_dir: Path) -> None:
+    try:
+        if source_path.stat().st_size > 25 * 1024 * 1024:
+            return
+        target_name = source_path.name
+        target_path = archive_dir / target_name
+        if target_path.exists():
+            target_path = archive_dir / f"{source_path.parent.name}-{target_name}"
+        shutil.copy2(source_path, target_path)
+    except OSError:
+        return
+
+
+def delete_managed_voice_modeling_output_dir(output_dir: str | Path) -> Path | None:
+    managed_output_dir = managed_voice_modeling_output_dir(output_dir)
+    if not managed_output_dir or not managed_output_dir.exists():
+        return None
+    try:
+        shutil.rmtree(managed_output_dir)
+    except OSError:
+        return None
+    return managed_output_dir
+
+
+def unique_voice_modeling_log_dir(path: Path) -> Path:
+    if not path.exists():
+        return path
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{path.name}-{index}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"Could not create a unique log directory for {path}.")
+
+
+def voice_modeling_config_identity(config: dict[str, Any]) -> dict[str, str]:
+    dataset = config.get("dataset", {})
+    dataset = dataset if isinstance(dataset, dict) else {}
+    dataset_json = read_voice_modeling_dataset_json(dataset, config)
+    return {
+        "dataset_id": _string_or_default(dataset.get("dataset_id") or dataset_json.get("dataset_id")),
+        "profile_id": _string_or_default(dataset.get("profile_id") or dataset_json.get("profile_id")),
+        "name": _string_or_default(dataset.get("name") or dataset_json.get("name")),
+        "language_code": _string_or_default(dataset.get("language_code") or dataset_json.get("language_code")),
+    }
+
+
+def read_voice_modeling_dataset_json(dataset: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    candidate_values = [
+        dataset.get("dataset_json_path"),
+        Path(_string_or_default(config.get("dataset_dir"))) / "dataset.json"
+        if _string_or_default(config.get("dataset_dir"))
+        else "",
+    ]
+    for value in candidate_values:
+        path = Path(value).expanduser() if isinstance(value, str | Path) and value else None
+        if path is None or not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and app_json_version_supported(data, kind=MODELING_DATASET_EXPORT_JSON_KIND):
+            return data
+    return {}
+
+
+def voice_modeling_config_matches_identity(config: dict[str, Any], identity: dict[str, str]) -> bool:
+    other = voice_modeling_config_identity(config)
+    if identity.get("profile_id") and other.get("profile_id"):
+        return identity["profile_id"] == other["profile_id"]
+    if identity.get("dataset_id") and other.get("dataset_id"):
+        return identity["dataset_id"] == other["dataset_id"]
+    return bool(
+        identity.get("name")
+        and other.get("name")
+        and identity["name"] == other["name"]
+        and identity.get("language_code")
+        and identity["language_code"] == other.get("language_code")
+    )
 
 
 def split_voice_modeling_metadata_rows(

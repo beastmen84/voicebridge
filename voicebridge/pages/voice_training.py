@@ -12,16 +12,18 @@ from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
 from voicebridge.voice_modeling import (
     build_voice_modeling_training_command,
+    cleanup_incomplete_voice_modeling_job,
     list_voice_modeling_job_configs,
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
+    prune_previous_voice_modeling_outputs,
     save_voice_modeling_job_config,
     update_voice_modeling_job_status,
     voice_modeling_job_label,
     voice_modeling_training_plan_text,
 )
 
-VOICE_TRAINING_PREPARE_STATUSES = {"", "configured", "failed", "cancelled", "completed"}
+VOICE_TRAINING_PREPARE_STATUSES = {"", "configured", "failed", "cancelled"}
 VOICE_TRAINING_DRY_RUN_STATUSES = {"prepared"}
 VOICE_TRAINING_START_STATUSES = {"dry_run_ok"}
 
@@ -83,6 +85,14 @@ class VoiceTrainingWorkflowMixin:
             self.voice_training_job_combo.blockSignals(False)
         self.voice_training_job_changed()
 
+    def refresh_voice_training_jobs_preserving_status(self, selected_path: str = "") -> None:
+        status_text = ""
+        if hasattr(self, "voice_training_job_status"):
+            status_text = self.voice_training_job_status.toPlainText()
+        self.refresh_voice_training_jobs(selected_path)
+        if status_text and hasattr(self, "voice_training_job_status"):
+            self.voice_training_job_status.setPlainText(status_text)
+
     def voice_training_job_changed(self) -> None:
         config_path = self.selected_voice_training_job_path()
         if not config_path:
@@ -130,8 +140,8 @@ class VoiceTrainingWorkflowMixin:
             self.voice_training_job_status.setPlainText(str(exc))
             self.show_error(self.voice_training_text("Voice Training"), str(exc))
             return
-        self.voice_training_job_status.setPlainText(voice_modeling_training_plan_text(plan))
         self.refresh_voice_training_jobs(config_path)
+        self.voice_training_job_status.setPlainText(voice_modeling_training_plan_text(plan))
         self.update_local_voice_tabs()
 
     def start_voice_training_dry_run(self) -> None:
@@ -177,6 +187,7 @@ class VoiceTrainingWorkflowMixin:
         self.voice_training_running = True
         self.voice_training_cancel_requested = False
         self.voice_training_running_config_path = config_path
+        self.voice_training_running_dry_run = dry_run
         self.voice_training_progress.setValue(0)
         self.voice_training_progress.show()
         self.voice_training_job_status.clear()
@@ -237,7 +248,18 @@ class VoiceTrainingWorkflowMixin:
             if dry_run
             else self.voice_training_text("Training completed.")
         )
-        self.refresh_voice_training_jobs(getattr(self, "voice_training_running_config_path", ""))
+        config_path = getattr(self, "voice_training_running_config_path", "")
+        if not dry_run and config_path:
+            with suppress(OSError, ValueError):
+                deleted_outputs = prune_previous_voice_modeling_outputs(config_path)
+                if deleted_outputs:
+                    self.append_voice_training_log(
+                        self.voice_training_text(
+                            "Removed {count} previous trained model output(s) for this profile.",
+                            count=len(deleted_outputs),
+                        )
+                    )
+        self.refresh_voice_training_jobs_preserving_status(config_path)
         self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
 
@@ -265,11 +287,18 @@ class VoiceTrainingWorkflowMixin:
                 )
             else:
                 self.append_voice_training_log(self.voice_training_text("Job switched to CPU. Retrying..."))
-                self.refresh_voice_training_jobs(config_path)
+                self.refresh_voice_training_jobs_preserving_status(config_path)
                 QTimer.singleShot(250, lambda: self.start_voice_training_worker_for_config(config_path, dry_run=False))
                 return
+        if config_path and not getattr(self, "voice_training_running_dry_run", False):
+            with suppress(OSError, ValueError):
+                cleanup = cleanup_incomplete_voice_modeling_job(config_path, reason="failed")
+                if cleanup["archive_dir"]:
+                    self.append_voice_training_log(
+                        self.voice_training_text("Training log archived: {path}", path=cleanup["archive_dir"])
+                    )
         self.show_error(self.voice_training_text("Voice Training"), message)
-        self.refresh_voice_training_jobs(config_path)
+        self.refresh_voice_training_jobs_preserving_status(config_path)
         self.update_local_voice_tabs()
 
     def voice_training_cancelled(self) -> None:
@@ -278,12 +307,20 @@ class VoiceTrainingWorkflowMixin:
         if config_path:
             with suppress(OSError, ValueError):
                 update_voice_modeling_job_status(config_path, "cancelled")
-            self.refresh_voice_training_jobs(config_path)
+            if not getattr(self, "voice_training_running_dry_run", False):
+                with suppress(OSError, ValueError):
+                    cleanup = cleanup_incomplete_voice_modeling_job(config_path, reason="cancelled")
+                    if cleanup["archive_dir"]:
+                        self.append_voice_training_log(
+                            self.voice_training_text("Training log archived: {path}", path=cleanup["archive_dir"])
+                        )
+            self.refresh_voice_training_jobs_preserving_status(config_path)
             self.update_local_voice_tabs()
 
     def finish_voice_training_worker(self) -> None:
         self.voice_training_running = False
         self.voice_training_running_config_path = ""
+        self.voice_training_running_dry_run = False
         self.voice_training_progress.hide()
         self.update_voice_training_buttons()
 

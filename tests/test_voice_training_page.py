@@ -22,9 +22,27 @@ class FakeCombo:
         self.enabled = enabled
 
 
+class FakePlainText:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def appendPlainText(self, message: str) -> None:
+        self.text = f"{self.text}\n{message}" if self.text else message
+
+    def clear(self) -> None:
+        self.text = ""
+
+    def setPlainText(self, text: str) -> None:
+        self.text = text
+
+    def toPlainText(self) -> str:
+        return self.text
+
+
 class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
     def __init__(self) -> None:
         self.voice_training_job_combo = FakeCombo()
+        self.voice_training_job_status = FakePlainText()
         self.voice_training_open_folder_button = FakeButton()
         self.voice_training_prepare_button = FakeButton()
         self.voice_training_dry_run_button = FakeButton()
@@ -33,6 +51,7 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
         self.voice_training_refresh_jobs_button = FakeButton()
         self.voice_training_running = False
         self.voice_training_cancel_requested = False
+        self.voice_training_running_dry_run = False
         self.logs: list[str] = []
         self.refreshed_paths: list[str] = []
         self.retried_jobs: list[tuple[str, bool]] = []
@@ -47,9 +66,13 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
 
     def append_voice_training_log(self, message: str) -> None:
         self.logs.append(message)
+        VoiceTrainingWorkflowMixin.append_voice_training_log(self, message)
 
     def refresh_voice_training_jobs(self, selected_path: str = "") -> None:
         self.refreshed_paths.append(selected_path)
+        self.voice_training_job_status.setPlainText(
+            f"Selected job config:\n{selected_path}" if selected_path else "No training job selected."
+        )
 
     def start_voice_training_worker_for_config(self, config_path: str, *, dry_run: bool) -> None:
         self.retried_jobs.append((config_path, dry_run))
@@ -59,6 +82,9 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
 
     def update_local_voice_tabs(self) -> None:
         self.local_voice_tab_updates += 1
+
+    def refresh_local_voice_profile_combo(self) -> None:
+        pass
 
 
 def test_voice_training_cancel_button_disables_after_cancel_requested() -> None:
@@ -99,6 +125,11 @@ def test_voice_training_buttons_follow_job_status(monkeypatch) -> None:
     assert workflow.voice_training_dry_run_button.enabled is False
     assert workflow.voice_training_start_button.enabled is False
 
+    set_status("completed")
+    assert workflow.voice_training_prepare_button.enabled is False
+    assert workflow.voice_training_dry_run_button.enabled is False
+    assert workflow.voice_training_start_button.enabled is False
+
 
 def test_voice_training_start_methods_are_guarded_by_job_status(monkeypatch) -> None:
     workflow = FakeVoiceTrainingWorkflow()
@@ -121,17 +152,57 @@ def test_voice_training_cancelled_marks_job_cancelled(monkeypatch) -> None:
     workflow = FakeVoiceTrainingWorkflow()
     workflow.voice_training_running_config_path = "running-job.json"
     updated_statuses = []
+    cleanups = []
     monkeypatch.setattr(
         voice_training_page,
         "update_voice_modeling_job_status",
         lambda config_path, status: updated_statuses.append((config_path, status)),
     )
+    monkeypatch.setattr(
+        voice_training_page,
+        "cleanup_incomplete_voice_modeling_job",
+        lambda config_path, *, reason: cleanups.append((config_path, reason))
+        or {"archive_dir": "logs/job", "deleted_output_dir": "voice_models/job"},
+    )
 
     workflow.voice_training_cancelled()
 
     assert updated_statuses == [("running-job.json", "cancelled")]
+    assert cleanups == [("running-job.json", "cancelled")]
     assert workflow.refreshed_paths == ["running-job.json"]
     assert workflow.local_voice_tab_updates == 1
+
+
+def test_voice_training_failed_cleans_real_training_job(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+    workflow.voice_training_running_config_path = "running-job.json"
+    cleanups = []
+    monkeypatch.setattr(
+        voice_training_page,
+        "cleanup_incomplete_voice_modeling_job",
+        lambda config_path, *, reason: cleanups.append((config_path, reason))
+        or {"archive_dir": "logs/job", "deleted_output_dir": "voice_models/job"},
+    )
+
+    workflow.voice_training_failed("Trainer failed.")
+
+    assert cleanups == [("running-job.json", "failed")]
+    assert workflow.refreshed_paths == ["running-job.json"]
+    assert workflow.errors == [("Voice Training", "Trainer failed.")]
+
+
+def test_voice_training_dry_run_success_preserves_worker_output_after_refresh() -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+    workflow.voice_training_running_config_path = "running-job.json"
+    workflow.voice_training_job_status.setPlainText("Starting dry run...\nSTATUS: Dry run OK.")
+
+    workflow.voice_training_succeeded(dry_run=True)
+
+    status_text = workflow.voice_training_job_status.toPlainText()
+    assert "STATUS: Dry run OK." in status_text
+    assert "Dry run completed." in status_text
+    assert "Selected job config" not in status_text
+    assert workflow.refreshed_paths == ["running-job.json"]
 
 
 def test_voice_training_cuda_retry_uses_running_config_path(monkeypatch) -> None:

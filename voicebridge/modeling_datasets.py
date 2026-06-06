@@ -583,6 +583,7 @@ def export_modeling_dataset(
     if not ready_clips:
         raise ValueError("No exportable ready clips are available.")
 
+    remove_existing_modeling_dataset_exports(dataset, export_root=export_root)
     export_dir = unique_export_dir(modeling_dataset_export_dir(dataset, timestamp=timestamp, export_root=export_root))
     wavs_dir = export_dir / "wavs"
     metadata_path = export_dir / "metadata.csv"
@@ -642,6 +643,38 @@ def export_modeling_dataset(
         "exported_clips": len(exported_clips),
         "skipped_clips": len(dataset["clips"]) - len(exported_clips),
     }
+
+
+def remove_existing_modeling_dataset_exports(
+    dataset: ModelingDataset,
+    *,
+    export_root: Path | None = None,
+) -> list[Path]:
+    root = export_root or modeling_dataset_exports_root()
+    if not root.is_dir():
+        return []
+    removed: list[Path] = []
+    for dataset_json_path in list(root.rglob("dataset.json")):
+        try:
+            data = json.loads(dataset_json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or not app_json_version_supported(
+            data,
+            kind=MODELING_DATASET_EXPORT_JSON_KIND,
+        ):
+            continue
+        if data.get("dataset_id") != dataset["id"] and data.get("profile_id") != dataset["profile_id"]:
+            continue
+        export_dir = dataset_json_path.parent
+        try:
+            export_dir.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+        with suppress(OSError):
+            shutil.rmtree(export_dir)
+            removed.append(export_dir)
+    return removed
 
 
 def unique_export_dir(path: Path) -> Path:

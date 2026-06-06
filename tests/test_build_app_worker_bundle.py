@@ -21,7 +21,7 @@ def test_build_app_copies_worker_voicebridge_dependencies() -> None:
 def test_build_app_preserves_runtime_data_directories() -> None:
     preserve_names = build_app_preserve_names()
 
-    assert {"voice_profiles", "modeling_exports", "voice_models"} <= preserve_names
+    assert {"voice_profiles", "modeling_exports", "voice_models", "logs"} <= preserve_names
 
 
 def worker_voicebridge_module_dependencies(worker_paths: tuple[Path, ...]) -> set[str]:

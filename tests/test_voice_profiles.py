@@ -424,6 +424,22 @@ def test_confirm_destructive_modeling_profile_delete_removes_user_content(
         ),
         encoding="utf-8",
     )
+    archived_log_dir = tmp_path / "logs" / "voice_modeling" / "anayah-it-20260605-failed"
+    archived_log_dir.mkdir(parents=True)
+    (archived_log_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "reason": "failed",
+                "dataset": {
+                    "dataset_id": dataset["id"],
+                    "profile_id": profile["id"],
+                    "name": dataset["name"],
+                    "language_code": dataset["language_code"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     saved_profiles: list[list[VoiceProfile]] = []
     saved_datasets: list[list[ModelingDataset]] = []
     monkeypatch.setattr("voicebridge.pages.voice_profiles.save_voice_profiles", saved_profiles.append)
@@ -440,11 +456,13 @@ def test_confirm_destructive_modeling_profile_delete_removes_user_content(
     assert not modeling_dataset_dir(dataset).exists()
     assert not export_dir.exists()
     assert not training_output_dir.exists()
+    assert not archived_log_dir.exists()
     confirmation = window.questions[0][1]
     assert "recorded clips" in confirmation
     assert "guided prompt history entry" in confirmation
     assert "exported dataset folder" in confirmation
     assert "trained model / training output folder" in confirmation
+    assert "archived training log folder" in confirmation
     assert "other generated artifacts" in confirmation
     assert window.profile_status_label.text == "Deleted profile and linked modeling work."
 

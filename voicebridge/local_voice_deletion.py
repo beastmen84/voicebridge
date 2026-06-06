@@ -16,7 +16,7 @@ from voicebridge.modeling_datasets import (
     modeling_datasets_for_profile_id,
     modeling_datasets_root,
 )
-from voicebridge.voice_modeling import VOICE_MODELING_JOB_CONFIG, voice_modeling_outputs_root
+from voicebridge.voice_modeling import VOICE_MODELING_JOB_CONFIG, voice_modeling_logs_root, voice_modeling_outputs_root
 from voicebridge.voice_profiles import (
     VOICE_PROFILE_MODELING,
     VoiceProfile,
@@ -43,6 +43,7 @@ class VoiceProfileDeletionPlan:
     guided_prompt_history_count: int
     exported_dataset_count: int
     trained_model_output_count: int
+    training_log_count: int
 
     @property
     def has_linked_modeling_work(self) -> bool:
@@ -100,6 +101,7 @@ def build_voice_profile_deletion_plan(
     safe_assets.extend(training_safe_assets)
     unsafe_assets.extend(training_unsafe_assets)
     safe_assets.extend(_linked_empty_training_output_dirs(profile, linked_datasets))
+    safe_assets.extend(_linked_training_log_assets(profile["id"], dataset_ids))
 
     safe_assets = _dedupe_assets(safe_assets)
     unsafe_assets = _dedupe_assets(unsafe_assets)
@@ -113,6 +115,7 @@ def build_voice_profile_deletion_plan(
         guided_prompt_history_count=guided_prompt_history_count,
         exported_dataset_count=sum(1 for asset in safe_assets if asset.kind == "export_dir"),
         trained_model_output_count=sum(1 for asset in safe_assets if asset.kind == "training_output_dir"),
+        training_log_count=sum(1 for asset in safe_assets if asset.kind == "training_log_dir"),
     )
 
 
@@ -146,6 +149,14 @@ def voice_profile_deletion_confirmation_text(plan: VoiceProfileDeletionPlan) -> 
                 "trained model / training output folders",
             )
         )
+    if plan.training_log_count:
+        lines.append(
+            _count_line(
+                plan.training_log_count,
+                "archived training log folder",
+                "archived training log folders",
+            )
+        )
     empty_training_output_count = sum(1 for asset in plan.safe_assets if asset.kind == "empty_training_output_dir")
     if empty_training_output_count:
         lines.append(
@@ -159,6 +170,8 @@ def voice_profile_deletion_confirmation_text(plan: VoiceProfileDeletionPlan) -> 
         lines.append("- other generated artifacts inside managed modeling dataset folders")
     if any(asset.kind == "training_output_dir" for asset in plan.safe_assets):
         lines.append("- other generated artifacts inside linked training output folders")
+    if any(asset.kind == "training_log_dir" for asset in plan.safe_assets):
+        lines.append("- archived voice modeling logs linked to the profile")
     if plan.unsafe_assets:
         lines.extend(
             [
@@ -317,6 +330,26 @@ def _linked_empty_training_output_dirs(
         except OSError:
             continue
         assets.append(LinkedDeletionAsset("empty_training_output_dir", "empty training output folder", candidate))
+    return assets
+
+
+def _linked_training_log_assets(profile_id: str, dataset_ids: set[str]) -> list[LinkedDeletionAsset]:
+    root = voice_modeling_logs_root()
+    if not root.is_dir():
+        return []
+    assets: list[LinkedDeletionAsset] = []
+    for summary_path in root.rglob("summary.json"):
+        data = _read_json_object(summary_path)
+        if not data:
+            continue
+        dataset = data.get("dataset")
+        if not isinstance(dataset, dict):
+            continue
+        if dataset.get("profile_id") != profile_id and dataset.get("dataset_id") not in dataset_ids:
+            continue
+        log_dir = summary_path.parent
+        if _is_managed_path(log_dir, root):
+            assets.append(LinkedDeletionAsset("training_log_dir", "archived voice modeling log folder", log_dir))
     return assets
 
 

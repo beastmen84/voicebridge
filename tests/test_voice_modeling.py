@@ -22,11 +22,13 @@ from voicebridge.voice_modeling import (
     build_voice_modeling_job_config,
     build_voice_modeling_training_command,
     check_voice_modeling_preflight,
+    cleanup_incomplete_voice_modeling_job,
     default_voice_modeling_output_dir,
     download_file_to_path,
     list_voice_modeling_exports,
     list_voice_modeling_job_configs,
     prepare_voice_modeling_training_job,
+    prune_previous_voice_modeling_outputs,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     validate_voice_modeling_training_rows,
@@ -76,6 +78,8 @@ def test_validate_voice_modeling_export_reads_exported_dataset(tmp_path: Path) -
     export_info = validate_voice_modeling_export(export_dir)
 
     assert export_info["name"] == "Dataset Voice"
+    assert export_info["dataset_id"]
+    assert export_info["profile_id"]
     assert export_info["language_code"] == "en"
     assert export_info["readiness"] == "usable"
     assert export_info["ready_clips"] == 5
@@ -156,6 +160,62 @@ def test_list_voice_modeling_job_configs_reads_saved_configs(tmp_path: Path) -> 
     assert jobs[0]["config_path"] == str(config_path.resolve())
     assert jobs[0]["dataset_name"] == "Dataset Voice"
     assert "Dataset Voice" in voice_modeling_job_label(jobs[0])
+
+
+def test_cleanup_incomplete_voice_modeling_job_archives_logs_and_deletes_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    monkeypatch.setattr("voicebridge.voice_modeling.external_base_dir", lambda: tmp_path)
+    output_dir = tmp_path / "voice_models" / "job-a"
+    config = build_voice_modeling_job_config(export_info, output_dir=output_dir, job_id="job-a")
+    config_path = save_voice_modeling_job_config(config)
+    (output_dir / "training.log").write_text("failure details\n", encoding="utf-8")
+    (output_dir / "run" / "training").mkdir(parents=True)
+    (output_dir / "run" / "training" / "checkpoint.pth").write_bytes(b"x" * 1024)
+
+    result = cleanup_incomplete_voice_modeling_job(config_path, reason="failed")
+
+    archive_dir = Path(result["archive_dir"])
+    assert not output_dir.exists()
+    assert archive_dir.is_dir()
+    assert (archive_dir / "training.log").read_text(encoding="utf-8") == "failure details\n"
+    assert json.loads((archive_dir / "summary.json").read_text(encoding="utf-8"))["reason"] == "failed"
+
+
+def test_prune_previous_voice_modeling_outputs_keeps_current_completed_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    monkeypatch.setattr("voicebridge.voice_modeling.external_base_dir", lambda: tmp_path)
+
+    old_output_dir = tmp_path / "voice_models" / "old-job"
+    old_config = build_voice_modeling_job_config(export_info, output_dir=old_output_dir, job_id="old")
+    old_config["status"] = "completed"
+    old_config["dataset"]["dataset_id"] = "old-dataset-id"
+    old_config_path = save_voice_modeling_job_config(old_config)
+    (old_output_dir / "training.log").write_text("old log\n", encoding="utf-8")
+    (old_output_dir / "training_result.json").write_text("{}", encoding="utf-8")
+
+    current_output_dir = tmp_path / "voice_models" / "current-job"
+    current_config = build_voice_modeling_job_config(export_info, output_dir=current_output_dir, job_id="current")
+    current_config["status"] = "completed"
+    current_config["dataset"]["dataset_id"] = "new-dataset-id"
+    current_config_path = save_voice_modeling_job_config(current_config)
+    (current_output_dir / "training_result.json").write_text("{}", encoding="utf-8")
+
+    deleted = prune_previous_voice_modeling_outputs(current_config_path)
+
+    assert deleted == [old_output_dir.resolve()]
+    assert not old_output_dir.exists()
+    assert current_output_dir.exists()
+    assert current_config_path.exists()
+    assert not old_config_path.exists()
+    assert list((tmp_path / "logs" / "voice_modeling").glob("*/training.log"))
 
 
 def test_prepare_voice_modeling_training_job_writes_coqui_metadata(

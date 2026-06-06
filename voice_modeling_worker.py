@@ -401,6 +401,10 @@ def run_training(config_path):
     result = {
         "status": "completed",
         "config_path": str(Path(config_path).expanduser().resolve()),
+        "dataset_id": config["dataset"].get("dataset_id", ""),
+        "profile_id": config["dataset"].get("profile_id", ""),
+        "dataset_name": config["dataset"].get("name", ""),
+        "language_code": config["dataset"].get("language_code", ""),
         "trainer_output_dir": str(trainer_out_path),
         "inference_dir": str(inference_dir),
         "model_path": str(inference_model_path),

@@ -90,6 +90,16 @@ def apply_app_style(widget, check_icon, chevron_icon):
         #PrimaryButton:hover { background: #265ecb; }
         #DangerButton { color: white; background: #b42318; border-color: #b42318; font-weight: 600; }
         #DangerButton:disabled { color: #98a2b3; background: #eef1f5; border-color: #cfd6e2; }
+        #HeaderHelpButton {
+            color: #aab4c4;
+            background: transparent;
+            border: 1px solid #445269;
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 8pt;
+            font-weight: 700;
+        }
+        #HeaderHelpButton:hover { color: #ffffff; background: #1c2637; border-color: #617083; }
         QToolButton#InlineDangerButton {
             color: #b42318;
             background: transparent;

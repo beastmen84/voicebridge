@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceBridge - User manual</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #626a73;
+      --line: #d8dde3;
+      --soft: #f5f7fa;
+      --soft-strong: #edf2f7;
+      --brand: #1f5b7a;
+      --brand-soft: #e7f2f7;
+      --warn: #8a5b00;
+      --warn-soft: #fff5d8;
+      --good: #1f6b44;
+      --good-soft: #e7f6ee;
+      --danger: #9a2d2d;
+      --danger-soft: #fdeaea;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #e9edf2;
+      color: var(--ink);
+      font-family: "Segoe UI", "Aptos", "Helvetica Neue", Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.48;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 18px auto;
+      background: white;
+      box-shadow: 0 12px 32px rgba(20, 31, 43, 0.18);
+      padding: 18mm 17mm 17mm;
+      position: relative;
+    }
+
+    .cover {
+      min-height: 260mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background:
+        radial-gradient(circle at 16% 16%, rgba(31, 91, 122, 0.16), transparent 34%),
+        linear-gradient(135deg, #ffffff 0%, #f4f8fb 100%);
+    }
+
+    .eyebrow {
+      color: var(--brand);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 9pt;
+    }
+
+    h1 {
+      margin: 18mm 0 3mm;
+      font-size: 34pt;
+      line-height: 1.03;
+      letter-spacing: -0.04em;
+      color: #132a3a;
+    }
+
+    .subtitle {
+      max-width: 145mm;
+      font-size: 13pt;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .cover-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 5mm;
+      margin-top: 16mm;
+    }
+
+    .cover-card, .note, .warning, .success {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 4mm;
+      background: var(--soft);
+      break-inside: avoid;
+    }
+
+    .cover-card strong {
+      display: block;
+      margin-bottom: 1.5mm;
+      color: #17212b;
+      font-size: 11pt;
+    }
+
+    .note { background: var(--brand-soft); border-color: #bed7e5; }
+    .warning { background: var(--warn-soft); border-color: #f0d98c; }
+    .success { background: var(--good-soft); border-color: #b9dfc9; }
+
+    .toc {
+      columns: 2;
+      column-gap: 12mm;
+      margin-top: 7mm;
+    }
+
+    .toc a {
+      display: block;
+      break-inside: avoid;
+      text-decoration: none;
+      color: var(--ink);
+      border-bottom: 1px dotted #b9c1ca;
+      padding: 2.1mm 0;
+    }
+
+    .toc a span {
+      color: var(--brand);
+      font-weight: 700;
+      margin-right: 2mm;
+    }
+
+    h2 {
+      margin: 0 0 5mm;
+      padding-bottom: 2.5mm;
+      border-bottom: 2px solid var(--brand);
+      color: #132a3a;
+      font-size: 20pt;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin: 7mm 0 2.5mm;
+      color: #20394c;
+      font-size: 13.5pt;
+      line-height: 1.25;
+    }
+
+    h4 {
+      margin: 5mm 0 2mm;
+      color: #2a3a47;
+      font-size: 11pt;
+    }
+
+    p { margin: 0 0 3.2mm; }
+
+    ul, ol { margin: 0 0 4mm 5.5mm; padding: 0; }
+    li { margin: 1.4mm 0; padding-left: 0.5mm; }
+
+    code {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      background: #f0f3f6;
+      border: 1px solid #d9e0e7;
+      border-radius: 4px;
+      padding: 0.2mm 1mm;
+      font-size: 9.3pt;
+    }
+
+    .section { page-break-before: always; }
+    .section:first-of-type { page-break-before: auto; }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm;
+      align-items: start;
+    }
+
+    .workflow {
+      counter-reset: step;
+      list-style: none;
+      margin-left: 0;
+    }
+
+    .workflow li {
+      counter-increment: step;
+      position: relative;
+      padding: 2.4mm 3mm 2.4mm 11mm;
+      margin: 0 0 2mm;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      break-inside: avoid;
+    }
+
+    .workflow li::before {
+      content: counter(step);
+      position: absolute;
+      left: 3mm;
+      top: 2.5mm;
+      width: 5.5mm;
+      height: 5.5mm;
+      border-radius: 50%;
+      background: var(--brand);
+      color: white;
+      font-size: 8pt;
+      line-height: 5.5mm;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 0.6mm 2mm;
+      font-size: 8.5pt;
+      font-weight: 700;
+      background: var(--soft-strong);
+      border: 1px solid var(--line);
+      margin-right: 1mm;
+      white-space: nowrap;
+    }
+
+    .badge.good { color: var(--good); background: var(--good-soft); border-color: #b9dfc9; }
+    .badge.warn { color: var(--warn); background: var(--warn-soft); border-color: #f0d98c; }
+    .badge.danger { color: var(--danger); background: var(--danger-soft); border-color: #e9bcbc; }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 3mm 0 5mm;
+      break-inside: avoid;
+    }
+
+    .matrix th, .matrix td {
+      border: 1px solid var(--line);
+      padding: 2.2mm 2.6mm;
+      vertical-align: top;
+    }
+
+    .matrix th {
+      background: var(--soft-strong);
+      text-align: left;
+      color: #263746;
+    }
+
+    .footer {
+      margin-top: 8mm;
+      padding-top: 3mm;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 8.5pt;
+    }
+
+    .language-switch {
+      position: absolute;
+      top: 8mm;
+      right: 10mm;
+      display: flex;
+      gap: 2mm;
+      align-items: center;
+      font-size: 9pt;
+      font-weight: 700;
+    }
+
+    .language-switch a {
+      text-decoration: none;
+      color: var(--brand);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid #bed7e5;
+      border-radius: 999px;
+      padding: 1.3mm 2.5mm;
+      box-shadow: 0 4px 12px rgba(20, 31, 43, 0.08);
+    }
+
+    .language-switch a[aria-current="page"] {
+      color: white;
+      background: var(--brand);
+      border-color: var(--brand);
+    }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 13mm 12mm 14mm;
+      }
+
+      body { background: white; font-size: 10pt; }
+      .page {
+        width: auto;
+        min-height: auto;
+        margin: 0;
+        box-shadow: none;
+        padding: 0;
+      }
+      .cover { min-height: auto; }
+      .section { page-break-before: always; }
+      h2, h3, .cover-card, .note, .warning, .success, .workflow li, table { break-inside: avoid; }
+      a { color: inherit; }
+      .language-switch { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page cover">
+    <nav class="language-switch" aria-label="Manual language">
+      <a href="Manual.it.html" title="Italiano">🇮🇹 IT</a>
+      <a href="Manual.en.html" aria-current="page" title="English">🇬🇧 EN</a>
+    </nav>
+    <div>
+      <div class="eyebrow">User manual</div>
+      <h1>VoiceBridge</h1>
+      <p class="subtitle">Practical guide for using the app: TTS, local voices, datasets, training, transcription, subtitles, and audio/video cleanup.</p>
+      <div class="cover-grid">
+        <div class="cover-card"><strong>Workflows</strong>Text to Speech, Local Voices, Transcription, Subtitles, Audio Cleanup, and Video Cleanup.</div>
+        <div class="cover-card"><strong>Format</strong>Printable A4 HTML. Use the browser Print or Save as PDF command.</div>
+        <div class="cover-card"><strong>UI languages</strong>English and Italian, selectable from the sidebar.</div>
+        <div class="cover-card"><strong>Resolution</strong>Recommended from Full HD, 1920x1080, and above.</div>
+      </div>
+    </div>
+    <div class="footer">This guide explains how to use the app. Developer, build, virtual environment, and repository details are in the README.</div>
+  </main>
+
+  <section class="page section" id="index">
+    <h2>Index</h2>
+    <nav class="toc">
+      <a href="#before"><span>01</span>Before you start</a>
+      <a href="#home"><span>02</span>Home and sidebar</a>
+      <a href="#tts"><span>03</span>Text to Speech</a>
+      <a href="#local-voices"><span>04</span>Local Voices</a>
+      <a href="#datasets"><span>05</span>Datasets</a>
+      <a href="#setup-training"><span>06</span>Setup and Training</a>
+      <a href="#transcription"><span>07</span>Transcription</a>
+      <a href="#subtitles"><span>08</span>Subtitles</a>
+      <a href="#audio-cleanup"><span>09</span>Audio Cleanup</a>
+      <a href="#video-cleanup"><span>10</span>Video Cleanup</a>
+      <a href="#status"><span>11</span>Status and common issues</a>
+    </nav>
+  </section>
+
+  <section class="page section" id="before">
+    <h2>01. Before you start</h2>
+    <div class="two-col">
+      <div>
+        <h3>What VoiceBridge does</h3>
+        <p>VoiceBridge converts documents to audio, transcribes audio/video, creates subtitles, and supports small manual cleanup operations on audio and video.</p>
+        <p>The app is organized by workflow. Usually you select a section, load a file, check the essential options, and start the job.</p>
+      </div>
+      <div class="note">
+        <h3>Operational requirements</h3>
+        <ul>
+          <li>Edge TTS requires internet.</li>
+          <li>Local TTS requires a local XTTS-v2 model.</li>
+          <li>Transcription requires Whisper large-v3.</li>
+          <li>SRT output also requires the alignment model for the spoken language.</li>
+          <li>Audio/Video Cleanup use ffmpeg.</li>
+          <li>Video glitch detection uses OpenCV.</li>
+        </ul>
+      </div>
+    </div>
+    <h3>Optional prerequisites</h3>
+    <table class="matrix">
+      <tr><th>Component</th><th>When it is needed</th></tr>
+      <tr><td>Microsoft Word</td><td>Only for old <code>.doc</code> documents.</td></tr>
+      <tr><td>Tesseract OCR</td><td>Only for scanned or image-based PDFs.</td></tr>
+      <tr><td>CUDA</td><td>Optional. If unavailable, use <code>Auto</code> or <code>CPU</code>.</td></tr>
+    </table>
+    <div class="warning">The practical minimum resolution is Full HD, 1920x1080. Smaller screens or high display scaling may make some screens harder to use.</div>
+  </section>
+
+  <section class="page section" id="home">
+    <h2>02. Home and sidebar</h2>
+    <p>Home shows the operational status of the app: Edge TTS, local runtime, STT models, Local TTS, DVAE, and video tools. If something is missing, the affected section shows the required message or action button.</p>
+    <h3>Main sections</h3>
+    <ul>
+      <li><strong>Text to Speech</strong>: generates MP3 files from documents.</li>
+      <li><strong>Local Voices</strong>: manages profiles, datasets, setup, and training.</li>
+      <li><strong>Transcription</strong>: creates Markdown transcripts or SRT subtitles.</li>
+      <li><strong>Subtitles</strong>: embeds or burns SRT subtitles into videos.</li>
+      <li><strong>Audio Cleanup</strong>: fixes small audio defects.</li>
+      <li><strong>Video Cleanup</strong>: fixes individual problematic frames.</li>
+    </ul>
+    <div class="note">The interface language is changed from the sidebar. File and output fields start empty at every launch to reduce the risk of working on the wrong file.</div>
+  </section>
+
+  <section class="page section" id="tts">
+    <h2>03. Text to Speech</h2>
+    <ol class="workflow">
+      <li>Open <code>Text to Speech</code>.</li>
+      <li>Select a <code>.txt</code>, <code>.docx</code>, <code>.doc</code>, or <code>.pdf</code> file.</li>
+      <li>Choose engine, voice, language, and speed.</li>
+      <li>Choose the MP3 output path.</li>
+      <li>Press <code>Generate MP3</code>.</li>
+      <li>When the job finishes, use <code>Open output</code>, <code>Open folder</code>, or <code>Open in Audio Cleanup</code>.</li>
+    </ol>
+    <h3>Edge TTS</h3>
+    <p>Edge TTS uses Microsoft online voices. If internet is unavailable, VoiceBridge disables Edge TTS, temporarily switches to Local TTS when possible, and retries the voice-list check in the background.</p>
+    <h3>Local TTS</h3>
+    <p>Local TTS uses XTTS-v2 in the local runtime. Before using it, download the model with <code>Download XTTS-v2</code>, then choose the local voice profile, preset, and device.</p>
+    <table class="matrix">
+      <tr><th>Preset</th><th>Recommended use</th></tr>
+      <tr><td><code>Stable</code></td><td>More conservative, useful for long tests.</td></tr>
+      <tr><td><code>Balanced</code></td><td>Recommended compromise.</td></tr>
+      <tr><td><code>Natural</code></td><td>More expressive, potentially less stable.</td></tr>
+    </table>
+    <h3>Multi-voice blocks</h3>
+    <p>Splits the text into blocks and lets you assign different voices and speeds. The output remains one final MP3. When available, VoiceBridge also saves a JSON timeline next to the MP3.</p>
+  </section>
+
+  <section class="page section" id="local-voices">
+    <h2>04. Local Voices</h2>
+    <p>Local Voices contains <code>Profiles</code>, <code>Datasets</code>, <code>Setup</code>, and <code>Training</code>.</p>
+    <h3>Profiles</h3>
+    <ol class="workflow">
+      <li>Create a <code>Reference clone</code> profile if you already have authorized reference audio.</li>
+      <li>Create a <code>Modeling dataset</code> profile if you want to collect clips for future training.</li>
+      <li>To record reference audio, use <code>Record</code>.</li>
+      <li>Listen to the cleaned WAV and choose whether to keep it, retry, or cancel.</li>
+    </ol>
+    <div class="warning">The profile type is selected during creation and then locked. If you delete a profile with linked modeling work, the app asks for destructive confirmation before deleting the dataset and safely identifiable assets.</div>
+  </section>
+
+  <section class="page section" id="datasets">
+    <h2>05. Local Voices &gt; Datasets</h2>
+    <ol class="workflow">
+      <li>Create a <code>Modeling dataset</code> profile first.</li>
+      <li>Open <code>Local Voices &gt; Datasets</code>.</li>
+      <li>Use <code>Generate guided text</code> to create a local prompt suitable for the dataset language.</li>
+      <li>Use <code>Record from text</code> to record the guided clip.</li>
+      <li>Listen to the result, then keep it or retry.</li>
+      <li>Fix transcripts when needed and use <code>Verify text</code> if the check must be rerun.</li>
+      <li>Use <code>Exclude export</code> to keep a clip in the dataset but skip it during export.</li>
+    </ol>
+    <h3>Clip states</h3>
+    <p><span class="badge good">Ready</span> usable audio and transcript.</p>
+    <p><span class="badge">Checking text</span> verification is running.</p>
+    <p><span class="badge good">Match OK</span> audio and text are consistent.</p>
+    <p><span class="badge warn">Needs review</span> text should be checked.</p>
+    <p><span class="badge danger">Check error</span> verification did not complete.</p>
+    <div class="success"><code>Export dataset</code> is available only when the dataset reaches the minimum readiness level. Export copies only ready clips and does not modify the working dataset.</div>
+    <div class="note">Guided prompts generated by the app are limited to 200 characters to stay compatible with XTTS-v2 fine-tuning. If you paste or load custom text, keep each clip within the same limit: exports with longer transcript rows are blocked during training preparation to avoid trainer errors.</div>
+  </section>
+
+  <section class="page section" id="setup-training">
+    <h2>06. Setup and Training</h2>
+    <div class="two-col">
+      <div>
+        <h3>Setup</h3>
+        <ol class="workflow">
+          <li>Export a dataset first.</li>
+          <li>Choose the export from the dropdown.</li>
+          <li>Set output folder, device, epochs, and batch size.</li>
+          <li>Select a checkpoint only when resuming training.</li>
+          <li>Download training assets if they are missing.</li>
+          <li>Run <code>Refresh preflight</code>.</li>
+          <li>Save with <code>Save training config</code>.</li>
+        </ol>
+      </div>
+      <div>
+        <h3>Training</h3>
+        <ol class="workflow">
+          <li>Select a configured job.</li>
+          <li>Use <code>Prepare</code>.</li>
+          <li>Use <code>Dry run</code> to verify without training.</li>
+          <li>Use <code>Start training</code>.</li>
+          <li>Use <code>Cancel</code> to terminate the external process.</li>
+          <li>Use <code>Open job folder</code> to inspect logs and output.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="note">Training asset downloads can be cancelled with <code>Cancel download</code>. If CUDA fails, the app may offer to switch the job to CPU and retry.</div>
+    <div class="note">Buttons follow the job state: after <code>Save training config</code>, only <code>Prepare</code> is available; after <code>Prepare</code>, only <code>Dry run</code> is available; after a successful <code>Dry run</code>, <code>Start training</code> becomes available. If the job fails or is cancelled, start again from <code>Prepare</code>.</div>
+  </section>
+
+  <section class="page section" id="transcription">
+    <h2>07. Transcription</h2>
+    <ol class="workflow">
+      <li>Open <code>Transcription</code>.</li>
+      <li>If <code>Download Whisper large-v3</code> appears, download the model first.</li>
+      <li>Select audio or video.</li>
+      <li>Choose the mode: Markdown, automatic SRT, or SRT from provided text.</li>
+      <li>Choose language and device.</li>
+      <li>Start the job.</li>
+    </ol>
+    <table class="matrix">
+      <tr><th>Mode</th><th>When to use it</th></tr>
+      <tr><td><code>Transcript Markdown (.md)</code></td><td>Readable transcription without SRT timing.</td></tr>
+      <tr><td><code>Auto subtitles (.srt)</code></td><td>Automatically timed subtitles.</td></tr>
+      <tr><td><code>Subtitles from provided text (.srt)</code></td><td>You already have text and want to align it to audio/video.</td></tr>
+    </table>
+    <div class="note">SRT modes require the alignment model for the spoken language. If it is missing, the app asks whether to download it.</div>
+  </section>
+
+  <section class="page section" id="subtitles">
+    <h2>08. Subtitles</h2>
+    <ol class="workflow">
+      <li>Select the source video.</li>
+      <li>Select the <code>.srt</code> file.</li>
+      <li>Choose the output path.</li>
+      <li>Use <code>Embed SRT track</code> for a selectable subtitle track.</li>
+      <li>Use <code>Burn in SRT</code> to make subtitles part of the video image.</li>
+      <li>For burn-in, adjust position, size, outline, shadow, colors, and quality.</li>
+    </ol>
+    <p>Burn-in re-encodes the video. Lower CRF modes increase quality and file size.</p>
+  </section>
+
+  <section class="page section" id="audio-cleanup">
+    <h2>09. Audio Cleanup</h2>
+    <ol class="workflow">
+      <li>Select a supported audio file.</li>
+      <li>Use the waveform, zoom, or <code>Start</code>/<code>End</code> fields to select a range.</li>
+      <li>If a TTS timeline exists, use <code>TTS blocks</code>.</li>
+      <li>Press <code>Cut</code>, <code>Silence</code>, or <code>Fade</code>.</li>
+      <li>Repeat for multiple corrections.</li>
+      <li>Check <code>Applied changes</code>.</li>
+      <li>Press <code>Clean audio</code>.</li>
+    </ol>
+    <div class="success">Changes cannot overlap. Intermediate stages use a lossless format; audio is encoded into the final format only during the last step.</div>
+  </section>
+
+  <section class="page section" id="video-cleanup">
+    <h2>10. Video Cleanup</h2>
+    <ol class="workflow">
+      <li>Select the video.</li>
+      <li>Choose output and quality.</li>
+      <li>Use <code>Frame review</code> to load the filmstrip.</li>
+      <li>Use the arrows near the slider to move one frame at a time.</li>
+      <li>Use <code>Detect black frames</code> to find isolated black frames.</li>
+      <li>Use <code>Detect frame glitches</code> to find suspicious non-black frames.</li>
+      <li>Double-click a result to jump to that frame.</li>
+      <li>Manually mark frames to fix when needed.</li>
+      <li>Apply <code>Freeze previous frame</code> or <code>Remove selected frames</code>.</li>
+      <li>Check <code>Applied changes</code> and press <code>Clean video</code>.</li>
+    </ol>
+    <div class="note"><code>Detect black frames</code> auto-marks only isolated black frames considered repairable. Suspicious non-black frames are only reported and must be reviewed manually.</div>
+    <table class="matrix">
+      <tr><th>Action</th><th>Effect</th></tr>
+      <tr><td><code>Freeze previous frame</code></td><td>Replaces the marked frame with the previous frame and keeps the original duration.</td></tr>
+      <tr><td><code>Remove selected frames</code></td><td>Removes frames and matching micro-portions of audio, shortening the timeline slightly.</td></tr>
+    </table>
+  </section>
+
+  <section class="page section" id="status">
+    <h2>11. Status and common issues</h2>
+    <table class="matrix">
+      <tr><th>Status</th><th>Meaning</th></tr>
+      <tr><td><span class="badge good">Ready</span></td><td>The section is ready.</td></tr>
+      <tr><td><span class="badge">Downloading</span></td><td>A download is running.</td></tr>
+      <tr><td><span class="badge">Checking</span></td><td>A check is running.</td></tr>
+      <tr><td><span class="badge warn">Cancelling</span></td><td>Cancellation was requested.</td></tr>
+      <tr><td><span class="badge danger">Error</span></td><td>Check details, input, output, models, or disk space.</td></tr>
+    </table>
+    <h3>Quick troubleshooting</h3>
+    <ul>
+      <li>Edge TTS unavailable: check internet or use Local TTS.</li>
+      <li>Local TTS unavailable: download XTTS-v2 and verify the voice profile.</li>
+      <li>Transcription not ready: download Whisper large-v3.</li>
+      <li>SRT not generated: check language and alignment model.</li>
+      <li>Audio/video cleanup fails: check output path, disk space, and files opened by other programs.</li>
+      <li>CUDA unavailable: use <code>Auto</code> or <code>CPU</code>.</li>
+      <li>PDF empty or scanned: install Tesseract OCR and use OCR when requested.</li>
+    </ul>
+    <div class="warning">XTTS-v2 uses the Coqui Public Model License and limits the model and its outputs to non-commercial use. See the included license files for complete license terms.</div>
+  </section>
+</body>
+</html>
+

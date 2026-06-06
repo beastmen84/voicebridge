@@ -245,6 +245,33 @@
       font-size: 8.5pt;
     }
 
+    .language-switch {
+      position: absolute;
+      top: 8mm;
+      right: 10mm;
+      display: flex;
+      gap: 2mm;
+      align-items: center;
+      font-size: 9pt;
+      font-weight: 700;
+    }
+
+    .language-switch a {
+      text-decoration: none;
+      color: var(--brand);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid #bed7e5;
+      border-radius: 999px;
+      padding: 1.3mm 2.5mm;
+      box-shadow: 0 4px 12px rgba(20, 31, 43, 0.08);
+    }
+
+    .language-switch a[aria-current="page"] {
+      color: white;
+      background: var(--brand);
+      border-color: var(--brand);
+    }
+
     @media print {
       @page {
         size: A4;
@@ -263,11 +290,16 @@
       .section { page-break-before: always; }
       h2, h3, .cover-card, .note, .warning, .success, .workflow li, table { break-inside: avoid; }
       a { color: inherit; }
+      .language-switch { display: none; }
     }
   </style>
 </head>
 <body>
   <main class="page cover">
+    <nav class="language-switch" aria-label="Lingua manuale">
+      <a href="Manual.it.html" aria-current="page" title="Italiano">🇮🇹 IT</a>
+      <a href="Manual.en.html" title="English">🇬🇧 EN</a>
+    </nav>
     <div>
       <div class="eyebrow">Manuale utente</div>
       <h1>VoiceBridge</h1>
@@ -525,3 +557,4 @@
   </section>
 </body>
 </html>
+

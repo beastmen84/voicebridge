@@ -55,7 +55,7 @@ from voicebridge.constants import (
     VIDEO_SUBTITLE_POSITION_LABELS,
     VIDEO_SUBTITLE_TEXT_COLOR_LABELS,
 )
-from voicebridge.i18n import UI_LANGUAGES, normalize_ui_language, translate_static_ui_text, translate_ui
+from voicebridge.i18n import UI_LANGUAGE_IT, UI_LANGUAGES, normalize_ui_language, translate_static_ui_text, translate_ui
 from voicebridge.languages import LANGUAGE_NAMES
 from voicebridge.media_tools import (
     BlackFrame,
@@ -658,11 +658,12 @@ class VoiceBridgeQt(
         self.retranslate_video_cleanup_page()
 
     def open_user_manual(self) -> None:
+        localized_manual = (
+            "Manual.it.html" if normalize_ui_language(self.ui_language) == UI_LANGUAGE_IT else "Manual.en.html"
+        )
         candidates = [
-            external_base_dir() / "Manual.html",
-            source_base_dir() / "Manual.html",
-            external_base_dir() / "Manual.md",
-            source_base_dir() / "Manual.md",
+            external_base_dir() / localized_manual,
+            source_base_dir() / localized_manual,
         ]
         for path in candidates:
             if path.is_file():
@@ -693,7 +694,7 @@ class VoiceBridgeQt(
         title = QLabel(APP_NAME)
         title.setObjectName("AppTitle")
         self.manual_button = QPushButton(self.ui_text("sidebar.manual"))
-        self.manual_button.setObjectName("SecondaryButton")
+        self.manual_button.setObjectName("HeaderHelpButton")
         self.manual_button.setToolTip(self.ui_text("sidebar.manual.tooltip"))
         self.manual_button.clicked.connect(self.open_user_manual)
         title_row.addWidget(title, 1)

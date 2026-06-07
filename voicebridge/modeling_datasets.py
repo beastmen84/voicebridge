@@ -789,6 +789,8 @@ def build_modeling_dataset_for_profile(
     existing: ModelingDataset | None = None,
 ) -> ModelingDataset:
     timestamp = utc_timestamp()
+    name_changed = bool(existing and profile["name"] != existing["name"])
+    language_changed = bool(existing and profile["language_code"] != existing["language_code"])
     return {
         "id": existing["id"] if existing else profile["id"],
         "profile_id": profile["id"],
@@ -797,7 +799,7 @@ def build_modeling_dataset_for_profile(
         "clips": existing["clips"] if existing else [],
         "guided_prompt_history": existing.get("guided_prompt_history", []) if existing else [],
         "created_at": existing["created_at"] if existing else timestamp,
-        "updated_at": timestamp,
+        "updated_at": timestamp if existing is None or name_changed or language_changed else existing["updated_at"],
     }
 
 

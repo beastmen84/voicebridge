@@ -165,6 +165,43 @@ def test_ensure_modeling_dataset_for_modeling_profile_only(tmp_path: Path) -> No
     assert datasets[0]["name"] == "Model Voice"
 
 
+def test_ensure_modeling_dataset_preserves_updated_at_when_profile_is_unchanged() -> None:
+    modeling = build_voice_profile(
+        name="Model Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    existing = build_modeling_dataset_for_profile(modeling)
+    existing["created_at"] = "2026-01-01T00:00:00Z"
+    existing["updated_at"] = "2026-01-01T00:00:00Z"
+
+    datasets, changed = ensure_modeling_datasets_for_profiles([existing], [modeling])
+
+    assert changed is False
+    assert datasets[0]["updated_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_ensure_modeling_dataset_updates_timestamp_when_profile_metadata_changes() -> None:
+    modeling = build_voice_profile(
+        name="Model Voice",
+        language_code="it",
+        profile_type=VOICE_PROFILE_MODELING,
+        reference_paths=[],
+        consent_confirmed=True,
+    )
+    existing = build_modeling_dataset_for_profile(modeling)
+    existing["name"] = "Old Voice"
+    existing["updated_at"] = "2026-01-01T00:00:00Z"
+
+    datasets, changed = ensure_modeling_datasets_for_profiles([existing], [modeling])
+
+    assert changed is True
+    assert datasets[0]["name"] == "Model Voice"
+    assert datasets[0]["updated_at"] != "2026-01-01T00:00:00Z"
+
+
 def test_open_modeling_dataset_for_profile_selects_single_profile_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
     from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
 
@@ -261,6 +298,65 @@ def test_update_modeling_dataset_buttons_keeps_metric_tiles_in_sync() -> None:
     assert window.metric_tile_summary is summary
     assert window.modeling_export_dataset_button.enabled is True
     assert window.export_button_primary is True
+
+
+def test_update_modeling_dataset_buttons_opens_current_dataset_setup() -> None:
+    from voicebridge.pages.modeling_datasets import ModelingDatasetsWorkflowMixin
+
+    class DummyModelingButtonsWindow(ModelingDatasetsWorkflowMixin):
+        def __init__(self) -> None:
+            self.dataset = {"guided_prompt_history": []}
+            self.current_export = {"dataset_dir": "exports/current"}
+            self.modeling_clip_text_edit = FakeTextEdit("Prompt")
+            self.metric_tile_summary = None
+            self.export_button_primary = None
+            for name in (
+                "modeling_record_text_button",
+                "modeling_record_free_button",
+                "modeling_load_text_button",
+                "modeling_generate_text_button",
+                "modeling_reset_prompt_history_button",
+                "modeling_save_text_button",
+                "modeling_delete_clip_button",
+                "modeling_play_clip_button",
+                "modeling_open_clip_button",
+                "modeling_transcribe_clip_button",
+                "modeling_retry_clip_button",
+                "modeling_verify_clip_button",
+                "modeling_toggle_export_clip_button",
+                "modeling_open_dataset_folder_button",
+                "modeling_export_dataset_button",
+            ):
+                setattr(self, name, FakeActionButton())
+
+        def selected_modeling_dataset(self):
+            return self.dataset
+
+        def selected_modeling_clip(self):
+            return None
+
+        def current_modeling_audio_device_index(self):
+            return 0
+
+        def update_modeling_dataset_metric_tiles(self, summary):
+            self.metric_tile_summary = summary
+
+        def set_modeling_export_dataset_button_primary(self, is_primary: bool) -> None:
+            self.export_button_primary = is_primary
+
+        def current_selected_modeling_dataset_export(self):
+            return self.current_export
+
+        def modeling_text(self, text: str, **kwargs) -> str:
+            return text.format(**kwargs) if kwargs else text
+
+    window = DummyModelingButtonsWindow()
+
+    window.update_modeling_dataset_buttons({"readiness": MODELING_DATASET_USABLE, "exportable_clips": 3})
+
+    assert window.modeling_export_dataset_button.enabled is True
+    assert window.modeling_export_dataset_button.text == "Open Setup"
+    assert window.modeling_export_dataset_button.tooltip == "Open Setup using the current dataset export."
 
 
 def test_modeling_dataset_metric_tiles_show_exportable_yes_for_exportable_dataset(tmp_path: Path) -> None:

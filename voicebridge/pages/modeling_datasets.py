@@ -36,6 +36,7 @@ from voicebridge.modeling_clip_recording_dialog import ModelingClipRecordingDial
 from voicebridge.modeling_datasets import (
     MODELING_CLIP_FREE_RECORDING,
     MODELING_CLIP_TEXT_GUIDED,
+    MODELING_TARGET_READY_SECONDS,
     MODELING_VERIFICATION_ERROR,
     MODELING_VERIFICATION_MATCH_OK,
     MODELING_VERIFICATION_NEEDS_REVIEW,
@@ -83,6 +84,7 @@ from voicebridge.modeling_prompt_generator import (
 from voicebridge.modeling_verification import compare_transcript_to_expected, read_whisper_markdown_text
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card
+from voicebridge.voice_modeling import current_voice_modeling_export_for_dataset
 from voicebridge.voice_profiles import VOICE_PROFILE_MODELING
 
 MODELING_GUIDED_TEXT_MAX_CHARS = 200
@@ -161,8 +163,11 @@ class ModelingDatasetsWorkflowMixin:
         self.selected_modeling_clip_id = ""
         self.refresh_modeling_datasets_page()
         if hasattr(self, "show_local_voices_tab"):
-            self.local_voice_dataset_tab_open_allowed = True
-            self.show_local_voices_tab(1)
+            if hasattr(self, "open_local_voice_workflow_tab"):
+                self.open_local_voice_workflow_tab(1)
+            else:
+                self.local_voice_dataset_tab_open_allowed = True
+                self.show_local_voices_tab(1)
 
     def selected_modeling_clip(self) -> ModelingClip | None:
         dataset = self.selected_modeling_dataset()
@@ -282,6 +287,18 @@ class ModelingDatasetsWorkflowMixin:
                 self.modeling_text("Ready duration\n--"),
                 "",
             )
+            self.set_modeling_dataset_tile(
+                self.modeling_average_clip_tile,
+                "info",
+                self.modeling_text("Avg clip\n--"),
+                "",
+            )
+            self.set_modeling_dataset_tile(
+                self.modeling_target_duration_tile,
+                "info",
+                self.modeling_text("Target duration\n--"),
+                "",
+            )
             self.set_modeling_dataset_tile(self.modeling_tier_tile, "info", self.modeling_text("Tier\n--"), "")
             self.set_modeling_dataset_tile(
                 self.modeling_exportable_tile,
@@ -318,8 +335,28 @@ class ModelingDatasetsWorkflowMixin:
             self.modeling_text("Total duration of ready clips."),
         )
         self.set_modeling_dataset_tile(
+            self.modeling_average_clip_tile,
+            "info" if summary["average_ready_duration_seconds"] else "warn",
+            self.modeling_text(
+                "Avg clip\n{duration:.1f}s",
+                duration=summary["average_ready_duration_seconds"],
+            ),
+            self.modeling_text("Average duration of ready clips."),
+        )
+        target_duration_percent = summary["target_duration_percent"]
+        self.set_modeling_dataset_tile(
+            self.modeling_target_duration_tile,
+            "ok" if target_duration_percent >= 100 else "info",
+            self.modeling_text("Target duration\n{percent}%", percent=target_duration_percent),
+            self.modeling_text(
+                "{ready} of {target} target ready audio.",
+                ready=format_modeling_dataset_duration(summary["ready_duration_seconds"]),
+                target=format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS),
+            ),
+        )
+        self.set_modeling_dataset_tile(
             self.modeling_tier_tile,
-            "ok" if summary["dataset_tier"] != "test" else "info",
+            "ok" if summary["dataset_tier"] not in {"not_ready", "technical_test"} else "info",
             self.modeling_text("Tier\n{tier}", tier=modeling_dataset_tier_label(summary["dataset_tier"])),
             self.modeling_text("Dataset duration tier."),
         )
@@ -711,10 +748,22 @@ class ModelingDatasetsWorkflowMixin:
             return
         dataset = self.selected_modeling_dataset()
         if not dataset:
-            self.modeling_prompt_usage_label.setText("Guided prompts: 0 / 0 used")
+            self.modeling_prompt_usage_label.setText(self.modeling_text("Guided prompts used: --"))
+            self.modeling_prompt_usage_label.setToolTip("")
             return
         used_count, available_count = modeling_dataset_guided_prompt_usage(dataset)
-        self.modeling_prompt_usage_label.setText(f"Guided prompts: {used_count} / {available_count} used")
+        percent = (used_count / available_count * 100.0) if available_count else 0.0
+        percent_text = f"{percent:.4f}" if 0 < percent < 0.01 else f"{percent:.1f}"
+        self.modeling_prompt_usage_label.setText(
+            self.modeling_text("Guided prompts used: {percent}%", percent=percent_text)
+        )
+        self.modeling_prompt_usage_label.setToolTip(
+            self.modeling_text(
+                "{used:,} of {available:,} generated prompt combinations used.",
+                used=used_count,
+                available=available_count,
+            )
+        )
 
     def set_modeling_export_dataset_button_primary(self, is_primary: bool) -> None:
         button = self.modeling_export_dataset_button
@@ -724,6 +773,20 @@ class ModelingDatasetsWorkflowMixin:
         button.setObjectName(object_name)
         button.style().unpolish(button)
         button.style().polish(button)
+
+    def current_selected_modeling_dataset_export(self):
+        dataset = self.selected_modeling_dataset()
+        if not dataset:
+            return None
+        dataset_id = dataset.get("id", "")
+        profile_id = dataset.get("profile_id", "")
+        if not dataset_id and not profile_id:
+            return None
+        return current_voice_modeling_export_for_dataset(
+            dataset_id=dataset_id,
+            profile_id=profile_id,
+            source_updated_at=dataset.get("updated_at", ""),
+        )
 
     def delete_selected_modeling_clip(self) -> None:
         dataset = self.selected_modeling_dataset()
@@ -1009,6 +1072,13 @@ class ModelingDatasetsWorkflowMixin:
         if not dataset:
             self.show_error("Modeling Datasets", "Select a modeling dataset first.")
             return
+        current_export = self.current_selected_modeling_dataset_export()
+        if current_export:
+            self.modeling_dataset_status.setText(
+                self.modeling_text("Dataset export is current. Opening setup.")
+            )
+            self.open_voice_modeling_setup_for_export(current_export["dataset_dir"])
+            return
         try:
             result = export_modeling_dataset(dataset)
         except (OSError, ValueError) as exc:
@@ -1018,18 +1088,10 @@ class ModelingDatasetsWorkflowMixin:
         skipped_clips = result["skipped_clips"]
         self.modeling_dataset_status.setText(
             f"Exported {result['exported_clips']} exportable clip(s); "
-            f"skipped {skipped_clips} non-exportable clip(s)."
+            f"skipped {skipped_clips} non-exportable clip(s). Opening setup."
         )
-        self.refresh_voice_modeling_exports(export_dir)
         self.update_local_voice_tabs()
-        self.show_info(
-            "Modeling Datasets",
-            (
-                f"Dataset exported:\n{export_dir}\n\n"
-                f"Exported clips: {result['exported_clips']}\n"
-                f"Skipped clips: {skipped_clips}"
-            ),
-        )
+        self.open_voice_modeling_setup_for_export(export_dir)
 
     def send_modeling_clip_to_transcription(self) -> None:
         clip = self.selected_modeling_clip()
@@ -1058,6 +1120,7 @@ class ModelingDatasetsWorkflowMixin:
         )
         self.update_modeling_dataset_metric_tiles(dataset_summary)
         has_exportable_clips = bool(dataset_summary and not export_disabled_reason)
+        current_export = self.current_selected_modeling_dataset_export() if has_exportable_clips else None
         can_verify_clip = bool(clip and modeling_clip_can_verify_transcript(clip))
         can_retry_clip = bool(
             clip
@@ -1160,12 +1223,22 @@ class ModelingDatasetsWorkflowMixin:
             "Open the dataset folder." if has_dataset else "Select a modeling dataset first."
         )
         self.modeling_export_dataset_button.setEnabled(has_exportable_clips)
+        self.modeling_export_dataset_button.setText(
+            self.modeling_text("Open Setup") if current_export else self.modeling_text("Setup Dataset")
+        )
         self.set_modeling_export_dataset_button_primary(has_exportable_clips)
         if dataset_summary:
             exportable_count = dataset_summary["exportable_clips"]
             self.modeling_export_dataset_button.setToolTip(
                 export_disabled_reason
-                or f"Export {exportable_count} clip(s) that are ready and pass export checks."
+                or (
+                    self.modeling_text("Open Setup using the current dataset export.")
+                    if current_export
+                    else self.modeling_text(
+                        "Export {count} clip(s) and open Setup.",
+                        count=exportable_count,
+                    )
+                )
             )
         else:
             self.modeling_export_dataset_button.setToolTip("Select a modeling dataset first.")
@@ -1191,6 +1264,8 @@ class ModelingDatasetsWorkflowMixin:
         self.modeling_dataset_profile_label.setObjectName("Muted")
         self.modeling_ready_clips_tile = QLabel("Ready clips\n--")
         self.modeling_ready_duration_tile = QLabel("Ready duration\n--")
+        self.modeling_average_clip_tile = QLabel("Avg clip\n--")
+        self.modeling_target_duration_tile = QLabel("Target duration\n--")
         self.modeling_tier_tile = QLabel("Tier\n--")
         self.modeling_exportable_tile = QLabel("Exportable\n--")
         dataset_metric_grid = QGridLayout()
@@ -1200,6 +1275,8 @@ class ModelingDatasetsWorkflowMixin:
             (
                 self.modeling_ready_clips_tile,
                 self.modeling_ready_duration_tile,
+                self.modeling_average_clip_tile,
+                self.modeling_target_duration_tile,
                 self.modeling_tier_tile,
                 self.modeling_exportable_tile,
             )
@@ -1207,7 +1284,7 @@ class ModelingDatasetsWorkflowMixin:
             tile.setObjectName("StatusTile")
             tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
             tile.setProperty("state", "info")
-            dataset_metric_grid.addWidget(tile, index // 2, index % 2)
+            dataset_metric_grid.addWidget(tile, index // 3, index % 3)
         self.modeling_dataset_summary_box = QPlainTextEdit()
         self.modeling_dataset_summary_box.setObjectName("LogBox")
         self.modeling_dataset_summary_box.setReadOnly(True)
@@ -1216,7 +1293,7 @@ class ModelingDatasetsWorkflowMixin:
         dataset_actions = QHBoxLayout()
         dataset_actions.setContentsMargins(0, 0, 0, 0)
         self.modeling_refresh_button = QPushButton("Refresh")
-        self.modeling_export_dataset_button = QPushButton("Export dataset")
+        self.modeling_export_dataset_button = QPushButton("Setup Dataset")
         self.modeling_open_dataset_folder_button = QPushButton("Open folder")
         self.modeling_refresh_button.clicked.connect(self.sync_modeling_datasets_with_profiles)
         self.modeling_export_dataset_button.clicked.connect(self.export_selected_modeling_dataset)
@@ -1290,7 +1367,7 @@ class ModelingDatasetsWorkflowMixin:
         )
         self.modeling_recording_guidance_label.setObjectName("Muted")
         self.modeling_recording_guidance_label.setWordWrap(True)
-        self.modeling_prompt_usage_label = QLabel("Guided prompts: 0 / 0 used")
+        self.modeling_prompt_usage_label = QLabel("Guided prompts used: --")
         self.modeling_prompt_usage_label.setObjectName("Muted")
         self.modeling_clip_details = QPlainTextEdit()
         self.modeling_clip_details.setObjectName("LogBox")

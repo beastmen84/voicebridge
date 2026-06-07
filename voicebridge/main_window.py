@@ -214,16 +214,16 @@ class VoiceBridgeQt(
     modeling_verification_queued_clip_ids: set[str]
 
     voice_modeling_export_info: VoiceModelingExportInfo | None
-    voice_modeling_export_combo: QComboBox
+    voice_modeling_selected_export_path: str
+    voice_modeling_saved_config_path: str
+    voice_modeling_saved_config_snapshot: dict[str, Any] | None
+    voice_modeling_config_dirty: bool
     voice_modeling_output_picker: FilePicker
-    voice_modeling_resume_picker: FilePicker
     voice_modeling_dataset_info: QPlainTextEdit
     voice_modeling_status: QLabel
     voice_modeling_device_combo: QComboBox
     voice_modeling_epochs_spin: QSpinBox
     voice_modeling_batch_spin: QSpinBox
-    voice_modeling_refresh_exports_button: QPushButton
-    voice_modeling_browse_export_button: QPushButton
     voice_modeling_preflight_box: QFrame
     voice_modeling_preflight_label: QLabel
     voice_modeling_preflight_details_box: QPlainTextEdit
@@ -231,15 +231,16 @@ class VoiceBridgeQt(
     voice_modeling_download_dvae_button: QPushButton
     voice_modeling_cancel_dvae_button: QPushButton
     voice_modeling_dvae_progress: QProgressBar
-    voice_modeling_clear_resume_button: QPushButton
     voice_modeling_save_config_button: QPushButton
+    voice_modeling_go_training_button: QPushButton
     voice_modeling_open_output_button: QPushButton
     voice_modeling_preflight_ok: bool
     voice_modeling_preflight_details: list[str]
     voice_modeling_auto_preflight_enabled: bool
     voice_modeling_dvae_download_running: bool
     voice_modeling_dvae_cancel_requested: bool
-    voice_training_job_combo: QComboBox
+    voice_training_selected_job_path: str
+    voice_training_job_label: QLabel
     voice_training_refresh_jobs_button: QPushButton
     voice_training_prepare_button: QPushButton
     voice_training_dry_run_button: QPushButton

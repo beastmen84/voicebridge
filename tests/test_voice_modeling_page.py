@@ -68,19 +68,29 @@ class FakePicker:
     def text(self) -> str:
         return self.value
 
+    def set_text(self, value: str) -> None:
+        self.value = value
+
 
 class FakeVoiceModelingWorkflow(VoiceModelingWorkflowMixin):
     def __init__(self) -> None:
-        self.voice_modeling_export_info = {"export_dir": "export-a", "name": "Voice A"}
+        self.voice_modeling_export_info = {
+            "dataset_dir": "export-a",
+            "export_dir": "export-a",
+            "name": "Voice A",
+        }
         self.voice_modeling_output_picker = FakePicker("output-a")
-        self.voice_modeling_resume_picker = FakePicker("")
         self.voice_modeling_preflight_label = FakeLabel()
         self.voice_modeling_preflight_box = FakeBox()
         self.voice_modeling_preflight_details_box = FakeTextBox()
         self.voice_modeling_preflight_refresh_button = FakeButton()
         self.voice_modeling_save_config_button = FakeButton()
+        self.voice_modeling_go_training_button = FakeButton()
         self.voice_modeling_open_output_button = FakeButton()
         self.voice_modeling_dvae_progress = FakeProgress()
+        self.voice_modeling_saved_config_path = ""
+        self.voice_modeling_saved_config_snapshot = None
+        self.voice_modeling_config_dirty = True
         self.voice_modeling_preflight_ok = False
         self._voice_modeling_preflight_refreshing = True
         self._voice_modeling_preflight_stale = False
@@ -131,6 +141,25 @@ def test_voice_modeling_stale_preflight_enables_refresh_button() -> None:
     assert workflow.voice_modeling_preflight_refresh_button.enabled is True
     assert workflow.voice_modeling_save_config_button.enabled is True
     assert workflow.voice_modeling_open_output_button.enabled is True
+
+
+def test_voice_modeling_save_and_training_buttons_follow_config_dirty_state() -> None:
+    workflow = FakeVoiceModelingWorkflow()
+    workflow._voice_modeling_preflight_refreshing = False
+    workflow.voice_modeling_saved_config_path = "job_config.json"
+    workflow.voice_modeling_saved_config_snapshot = workflow.current_voice_modeling_config_snapshot()
+    workflow.voice_modeling_config_dirty = False
+
+    workflow.update_voice_modeling_buttons()
+
+    assert workflow.voice_modeling_save_config_button.enabled is False
+    assert workflow.voice_modeling_go_training_button.enabled is True
+
+    workflow.voice_modeling_output_picker.value = "changed-output"
+    workflow.mark_voice_modeling_config_changed()
+
+    assert workflow.voice_modeling_save_config_button.enabled is True
+    assert workflow.voice_modeling_go_training_button.enabled is False
 
 
 def test_voice_modeling_dvae_cancel_button_reflects_cancel_requested(monkeypatch) -> None:

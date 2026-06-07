@@ -2,8 +2,8 @@ import threading
 from contextlib import suppress
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
 
 from voicebridge.app_paths import external_base_dir, ml_python_path, voice_modeling_worker_path
 from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
@@ -38,8 +38,8 @@ class VoiceTrainingWorkflowMixin:
         return self.static_ui_text(text) if hasattr(self, "static_ui_text") else text
 
     def selected_voice_training_job_path(self) -> str:
-        config_path = self.voice_training_job_combo.currentData(Qt.ItemDataRole.UserRole)
-        return config_path if isinstance(config_path, str) else ""
+        selected_path = getattr(self, "voice_training_selected_job_path", "")
+        return selected_path if isinstance(selected_path, str) else ""
 
     def selected_voice_training_job_status(self) -> str:
         config_path = self.selected_voice_training_job_path()
@@ -53,36 +53,34 @@ class VoiceTrainingWorkflowMixin:
         return status if isinstance(status, str) else ""
 
     def refresh_voice_training_jobs(self, selected_path: str = "") -> None:
-        if not hasattr(self, "voice_training_job_combo"):
+        if not hasattr(self, "voice_training_job_status"):
             return
         selected_path = selected_path if isinstance(selected_path, str) else ""
         selected_path = selected_path or self.selected_voice_training_job_path()
         if selected_path:
             selected_path = str(Path(selected_path).expanduser().resolve())
+        if not selected_path:
+            self.voice_training_selected_job_path = ""
+            if hasattr(self, "voice_training_job_label"):
+                self.voice_training_job_label.setText(self.voice_training_text("No training job selected."))
+            self.voice_training_job_status.setPlainText(
+                self.voice_training_text("Use Setup > Go to Training first.")
+            )
+            self.update_voice_training_buttons()
+            return
         jobs = list_voice_modeling_job_configs()
-        self.voice_training_job_combo.blockSignals(True)
-        try:
-            self.voice_training_job_combo.clear()
-            if not jobs:
-                self.voice_training_job_combo.addItem(self.voice_training_text("No training jobs configured."), "")
-                item = self.voice_training_job_combo.model().item(0)
-                if item is not None:
-                    item.setEnabled(False)
-                self.voice_training_job_status.setPlainText(
-                    self.voice_training_text("Save a training config from Setup first.")
-                )
-                self.update_voice_training_buttons()
-                return
-            selected_index = 0
-            for job in jobs:
-                self.voice_training_job_combo.addItem(voice_modeling_job_label(job), job["config_path"])
-                index = self.voice_training_job_combo.count() - 1
-                self.voice_training_job_combo.setItemData(index, job["config_path"], Qt.ItemDataRole.ToolTipRole)
-                if selected_path and job["config_path"] == selected_path:
-                    selected_index = index
-            self.voice_training_job_combo.setCurrentIndex(selected_index)
-        finally:
-            self.voice_training_job_combo.blockSignals(False)
+        selected_job = next((job for job in jobs if job["config_path"] == selected_path), None)
+        if selected_job is None:
+            self.voice_training_selected_job_path = ""
+            if hasattr(self, "voice_training_job_label"):
+                self.voice_training_job_label.setText(self.voice_training_text("No training job selected."))
+            self.voice_training_job_status.setPlainText(
+                self.voice_training_text("The selected training config is no longer available.")
+            )
+            self.update_voice_training_buttons()
+            return
+        self.voice_training_selected_job_path = selected_job["config_path"]
+        self.voice_training_job_label.setText(voice_modeling_job_label(selected_job))
         self.voice_training_job_changed()
 
     def refresh_voice_training_jobs_preserving_status(self, selected_path: str = "") -> None:
@@ -96,6 +94,8 @@ class VoiceTrainingWorkflowMixin:
     def voice_training_job_changed(self) -> None:
         config_path = self.selected_voice_training_job_path()
         if not config_path:
+            if hasattr(self, "voice_training_job_label"):
+                self.voice_training_job_label.setText(self.voice_training_text("No training job selected."))
             self.voice_training_job_status.setPlainText(self.voice_training_text("No training job selected."))
             self.update_voice_training_buttons()
             return
@@ -111,7 +111,6 @@ class VoiceTrainingWorkflowMixin:
         status = self.selected_voice_training_job_status() if has_job else ""
         running = getattr(self, "voice_training_running", False)
         cancel_requested = getattr(self, "voice_training_cancel_requested", False)
-        self.voice_training_job_combo.setEnabled(not running)
         self.voice_training_open_folder_button.setEnabled(has_job and not running)
         self.voice_training_prepare_button.setEnabled(
             has_job and not running and status in VOICE_TRAINING_PREPARE_STATUSES
@@ -259,6 +258,20 @@ class VoiceTrainingWorkflowMixin:
                             count=len(deleted_outputs),
                         )
                     )
+            with suppress(OSError, ValueError):
+                config = load_voice_modeling_job_config(config_path)
+                output_dir = Path(config["output_dir"])
+                model_path = output_dir / "inference_model" / "model.pth"
+                if model_path.is_file() and hasattr(self, "record_job"):
+                    dataset = config.get("dataset", {})
+                    dataset_name = dataset.get("name", "Local voice") if isinstance(dataset, dict) else "Local voice"
+                    self.record_job(
+                        "TRAIN",
+                        self.voice_training_text("Voice training completed"),
+                        config.get("dataset_dir", ""),
+                        str(model_path),
+                        str(dataset_name),
+                    )
         self.refresh_voice_training_jobs_preserving_status(config_path)
         self.refresh_local_voice_profile_combo()
         self.update_local_voice_tabs()
@@ -337,7 +350,7 @@ class VoiceTrainingWorkflowMixin:
     def build_voice_training_page(self, include_header: bool = True):
         page, layout = self.page_container()
         if not include_header:
-            layout.setContentsMargins(0, 26, 0, 24)
+            layout.setContentsMargins(0, 26, 14, 24)
         if include_header:
             self.page_header(
                 layout,
@@ -345,10 +358,10 @@ class VoiceTrainingWorkflowMixin:
                 "Run configured local voice training jobs.",
             )
 
-        jobs_card = Card("Training jobs")
+        jobs_card = Card("Training job")
         jobs_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.voice_training_job_combo = QComboBox()
-        self.voice_training_job_combo.currentIndexChanged.connect(lambda _index: self.voice_training_job_changed())
+        self.voice_training_job_label = QLabel("No training job selected.")
+        self.voice_training_job_label.setObjectName("Muted")
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         self.voice_training_refresh_jobs_button = QPushButton("Refresh")
@@ -379,8 +392,7 @@ class VoiceTrainingWorkflowMixin:
         self.voice_training_job_status.setObjectName("LogBox")
         self.voice_training_job_status.setReadOnly(True)
         self.voice_training_job_status.setMinimumHeight(260)
-        jobs_card.content_layout.addWidget(QLabel("Job config"))
-        jobs_card.content_layout.addWidget(self.voice_training_job_combo)
+        jobs_card.content_layout.addWidget(self.voice_training_job_label)
         jobs_card.content_layout.addLayout(actions)
         jobs_card.content_layout.addWidget(self.voice_training_progress)
         jobs_card.content_layout.addWidget(self.voice_training_job_status)
@@ -389,5 +401,6 @@ class VoiceTrainingWorkflowMixin:
         self.voice_training_running = False
         self.voice_training_cancel_requested = False
         self.voice_training_process = None
+        self.voice_training_selected_job_path = ""
         self.refresh_voice_training_jobs()
         return page

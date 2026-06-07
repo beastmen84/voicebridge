@@ -150,10 +150,6 @@ def apply_app_style(widget, check_icon, chevron_icon):
             font-weight: 650;
             color: #617083;
         }
-        QTabWidget#WorkspaceTabs QTabBar::tab:hover {
-            background: #f1f5fb;
-            color: #1f2937;
-        }
         QTabWidget#WorkspaceTabs QTabBar::tab:selected {
             background: #eef8f5;
             border-color: #b8ddd5;

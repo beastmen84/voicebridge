@@ -24,8 +24,10 @@ from voicebridge.voice_modeling import (
     check_voice_modeling_preflight,
     cleanup_completed_voice_modeling_training_artifacts,
     cleanup_incomplete_voice_modeling_job,
+    current_voice_modeling_export_for_dataset,
     default_voice_modeling_output_dir,
     download_file_to_path,
+    latest_voice_modeling_job_config_for_export,
     list_voice_modeling_exports,
     list_voice_modeling_job_configs,
     prepare_voice_modeling_training_job,
@@ -118,6 +120,27 @@ def test_list_voice_modeling_exports_returns_valid_exports_first(tmp_path: Path)
     assert [export["name"] for export in exports] == ["Newer Voice", "Older Voice"]
     assert "Newer Voice" in voice_modeling_export_label(exports[0])
     assert "Usable" in voice_modeling_export_label(exports[0])
+
+
+def test_current_voice_modeling_export_requires_matching_source_timestamp(tmp_path: Path) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+
+    current = current_voice_modeling_export_for_dataset(
+        dataset_id=export_info["dataset_id"],
+        profile_id=export_info["profile_id"],
+        source_updated_at=export_info["source_updated_at"],
+        exports_root=tmp_path / "exports",
+    )
+    stale = current_voice_modeling_export_for_dataset(
+        dataset_id=export_info["dataset_id"],
+        profile_id=export_info["profile_id"],
+        source_updated_at="2026-01-01T00:00:00Z",
+        exports_root=tmp_path / "exports",
+    )
+
+    assert current == export_info
+    assert stale is None
 
 
 def test_build_and_save_voice_modeling_job_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,6 +255,19 @@ def test_list_voice_modeling_job_configs_reads_saved_configs(tmp_path: Path) -> 
     assert jobs[0]["config_path"] == str(config_path.resolve())
     assert jobs[0]["dataset_name"] == "Dataset Voice"
     assert "Dataset Voice" in voice_modeling_job_label(jobs[0])
+
+
+def test_latest_voice_modeling_job_config_for_export_matches_active_export(tmp_path: Path) -> None:
+    export_dir = exported_dataset(tmp_path)
+    export_info = validate_voice_modeling_export(export_dir)
+    output_dir = tmp_path / "voice-models" / "job-a"
+    config = build_voice_modeling_job_config(export_info, output_dir=output_dir, job_id="job-a")
+    config_path = save_voice_modeling_job_config(config)
+
+    job = latest_voice_modeling_job_config_for_export(export_info, outputs_root=tmp_path / "voice-models")
+
+    assert job is not None
+    assert job["config_path"] == str(config_path.resolve())
 
 
 def test_cleanup_incomplete_voice_modeling_job_archives_logs_and_deletes_output(

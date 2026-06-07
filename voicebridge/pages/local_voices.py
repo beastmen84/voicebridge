@@ -25,10 +25,26 @@ class LocalVoicesWorkflowMixin:
             hasattr(self, "local_voice_tabs")
             and watched is self.local_voice_tabs.tabBar()
             and event.type() == QEvent.Type.MouseButtonPress
-            and watched.tabAt(event.pos()) == LOCAL_VOICES_TAB_DATASETS
         ):
-            return True
+            tab_index = watched.tabAt(event.pos())
+            guarded_tabs = {
+                LOCAL_VOICES_TAB_DATASETS: "local_voice_dataset_tab_open_allowed",
+                LOCAL_VOICES_TAB_SETUP: "local_voice_setup_tab_open_allowed",
+                LOCAL_VOICES_TAB_TRAINING: "local_voice_training_tab_open_allowed",
+            }
+            guard_name = guarded_tabs.get(tab_index)
+            if guard_name and not getattr(self, guard_name, False):
+                return True
         return super().eventFilter(watched, event)
+
+    def open_local_voice_workflow_tab(self, tab_index: int) -> None:
+        if tab_index == LOCAL_VOICES_TAB_DATASETS:
+            self.local_voice_dataset_tab_open_allowed = True
+        if tab_index == LOCAL_VOICES_TAB_SETUP:
+            self.local_voice_setup_tab_open_allowed = True
+        if tab_index == LOCAL_VOICES_TAB_TRAINING:
+            self.local_voice_training_tab_open_allowed = True
+        self.show_local_voices_tab(tab_index)
 
     def show_local_voices_tab(self, tab_index: int = LOCAL_VOICES_TAB_PROFILES) -> None:
         self.show_page(2)
@@ -88,9 +104,19 @@ class LocalVoicesWorkflowMixin:
         else:
             self.local_voice_dataset_tab_open_allowed = False
         if tab_index == LOCAL_VOICES_TAB_SETUP:
+            if not getattr(self, "local_voice_setup_tab_open_allowed", False):
+                self.local_voice_tabs.setCurrentIndex(LOCAL_VOICES_TAB_PROFILES)
+                return
             self.refresh_voice_modeling_exports()
+        else:
+            self.local_voice_setup_tab_open_allowed = False
         if tab_index == LOCAL_VOICES_TAB_TRAINING:
+            if not getattr(self, "local_voice_training_tab_open_allowed", False):
+                self.local_voice_tabs.setCurrentIndex(LOCAL_VOICES_TAB_PROFILES)
+                return
             self.refresh_voice_training_jobs()
+        else:
+            self.local_voice_training_tab_open_allowed = False
 
     def build_local_voices_page(self):
         page = QWidget()
@@ -106,6 +132,8 @@ class LocalVoicesWorkflowMixin:
         self.local_voice_tabs = QTabWidget()
         self.local_voice_tabs.setObjectName("WorkspaceTabs")
         self.local_voice_dataset_tab_open_allowed = False
+        self.local_voice_setup_tab_open_allowed = False
+        self.local_voice_training_tab_open_allowed = False
         self.local_voice_tabs.tabBar().installEventFilter(self)
         self.local_voice_tabs.addTab(
             self.build_voice_profiles_page(include_header=False),

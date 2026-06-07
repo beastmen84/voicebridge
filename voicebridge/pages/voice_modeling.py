@@ -24,7 +24,6 @@ from voicebridge.app_paths import (
     local_tts_mel_stats_ready,
 )
 from voicebridge.constants import STT_DEVICE_BY_LABEL, STT_DEVICE_LABEL_BY_KEY, STT_DEVICE_LABELS
-from voicebridge.modeling_datasets import modeling_dataset_exports_root
 from voicebridge.ui.helpers import open_path
 from voicebridge.ui.widgets import Card, FilePicker
 from voicebridge.voice_modeling import (
@@ -36,11 +35,11 @@ from voicebridge.voice_modeling import (
     check_voice_modeling_preflight,
     default_voice_modeling_output_dir,
     download_xtts_training_assets,
-    list_voice_modeling_exports,
+    latest_voice_modeling_job_config_for_export,
+    load_voice_modeling_job_config,
     recommended_voice_modeling_training_defaults,
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
-    voice_modeling_export_label,
     voice_modeling_export_summary_text,
 )
 
@@ -80,6 +79,7 @@ class VoiceModelingWorkflowMixin:
     def voice_modeling_device_changed(self) -> None:
         if self.voice_modeling_device_key() == "cuda" and not self.stt_cuda_available:
             self.set_voice_modeling_device_key("auto")
+        self.mark_voice_modeling_config_changed()
         self.mark_voice_modeling_preflight_stale()
 
     def update_voice_modeling_device_options(self) -> None:
@@ -112,94 +112,39 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_device_combo.blockSignals(False)
 
     def selected_voice_modeling_export_path(self) -> str:
-        export_path = self.voice_modeling_export_combo.currentData(Qt.ItemDataRole.UserRole)
-        return export_path if isinstance(export_path, str) else ""
+        selected_path = getattr(self, "voice_modeling_selected_export_path", "")
+        return selected_path if isinstance(selected_path, str) else ""
 
     def refresh_voice_modeling_exports(self, selected_path: str = "") -> None:
-        if not hasattr(self, "voice_modeling_export_combo"):
+        if not hasattr(self, "voice_modeling_dataset_info"):
             return
         selected_path = selected_path if isinstance(selected_path, str) else ""
         selected_path = selected_path or self.selected_voice_modeling_export_path()
         if selected_path:
             selected_path = str(Path(selected_path).expanduser().resolve())
-        exports = list_voice_modeling_exports()
-        self.voice_modeling_export_combo.blockSignals(True)
-        try:
-            self.voice_modeling_export_combo.clear()
-            if not exports:
-                self.voice_modeling_export_combo.addItem(
-                    self.voice_modeling_text("No valid dataset exports found."),
-                    "",
-                )
-                item = self.voice_modeling_export_combo.model().item(0)
-                if item is not None:
-                    item.setEnabled(False)
-                self.voice_modeling_export_info = None
-                self.voice_modeling_dataset_info.setPlainText(
-                    self.voice_modeling_text("Export a Usable or Good dataset from Local Voices > Datasets first.")
-                )
-                self.voice_modeling_output_picker.set_text("")
-                self.voice_modeling_status.setText(self.voice_modeling_text("No valid dataset export found."))
-                self.update_voice_modeling_buttons()
-                return
-            selected_index = 0
-            for export_info in exports:
-                self.voice_modeling_export_combo.addItem(
-                    voice_modeling_export_label(export_info),
-                    export_info["dataset_dir"],
-                )
-                index = self.voice_modeling_export_combo.count() - 1
-                self.voice_modeling_export_combo.setItemData(
-                    index,
-                    export_info["dataset_dir"],
-                    Qt.ItemDataRole.ToolTipRole,
-                )
-                if selected_path and export_info["dataset_dir"] == selected_path:
-                    selected_index = index
-            self.voice_modeling_export_combo.setCurrentIndex(selected_index)
-        finally:
-            self.voice_modeling_export_combo.blockSignals(False)
-        self.validate_voice_modeling_dataset()
-
-    def select_voice_modeling_dataset_folder(self) -> None:
-        initial = self.selected_voice_modeling_export_path() or str(modeling_dataset_exports_root())
-        path = QFileDialog.getExistingDirectory(self, self.voice_modeling_text("Select exported dataset"), initial)
-        if path:
-            self.set_external_voice_modeling_export(path)
-
-    def set_external_voice_modeling_export(self, dataset_dir: str) -> None:
-        try:
-            export_info = validate_voice_modeling_export(dataset_dir)
-        except ValueError as exc:
-            self.voice_modeling_export_info = None
-            self.voice_modeling_dataset_info.setPlainText(str(exc))
-            self.voice_modeling_output_picker.set_text("")
-            self.voice_modeling_status.setText(self.voice_modeling_text("Dataset not ready."))
-            self.update_voice_modeling_buttons()
+        if selected_path:
+            self.voice_modeling_selected_export_path = selected_path
+            self.validate_voice_modeling_dataset()
             return
-        export_path = export_info["dataset_dir"]
-        self.voice_modeling_export_combo.blockSignals(True)
-        try:
-            for index in range(self.voice_modeling_export_combo.count()):
-                if self.voice_modeling_export_combo.itemData(index, Qt.ItemDataRole.UserRole) == export_path:
-                    self.voice_modeling_export_combo.setCurrentIndex(index)
-                    break
-            else:
-                self.voice_modeling_export_combo.addItem(
-                    f"External | {voice_modeling_export_label(export_info)}",
-                    export_path,
-                )
-                index = self.voice_modeling_export_combo.count() - 1
-                self.voice_modeling_export_combo.setItemData(index, export_path, Qt.ItemDataRole.ToolTipRole)
-                self.voice_modeling_export_combo.setCurrentIndex(index)
-        finally:
-            self.voice_modeling_export_combo.blockSignals(False)
-        self.apply_voice_modeling_export(export_info)
+        self.voice_modeling_selected_export_path = ""
+        self.voice_modeling_export_info = None
+        self.voice_modeling_saved_config_path = ""
+        self.voice_modeling_saved_config_snapshot = None
+        self.voice_modeling_config_dirty = True
+        self.voice_modeling_dataset_info.setPlainText(
+            self.voice_modeling_text("Use Dataset > Setup Dataset first.")
+        )
+        self.voice_modeling_output_picker.set_text("")
+        self.voice_modeling_status.setText(self.voice_modeling_text("No dataset export selected."))
+        self.update_voice_modeling_buttons()
 
     def validate_voice_modeling_dataset(self) -> VoiceModelingExportInfo | None:
         dataset_dir = self.selected_voice_modeling_export_path()
         if not dataset_dir:
             self.voice_modeling_export_info = None
+            self.voice_modeling_saved_config_path = ""
+            self.voice_modeling_saved_config_snapshot = None
+            self.voice_modeling_config_dirty = True
             self.voice_modeling_dataset_info.setPlainText(self.voice_modeling_text("Select an exported dataset."))
             self.voice_modeling_output_picker.set_text("")
             self.voice_modeling_status.setText(self.voice_modeling_text("No dataset selected."))
@@ -209,29 +154,38 @@ class VoiceModelingWorkflowMixin:
             export_info = validate_voice_modeling_export(dataset_dir)
         except ValueError as exc:
             self.voice_modeling_export_info = None
+            self.voice_modeling_saved_config_path = ""
+            self.voice_modeling_saved_config_snapshot = None
+            self.voice_modeling_config_dirty = True
             self.voice_modeling_dataset_info.setPlainText(str(exc))
             self.voice_modeling_output_picker.set_text("")
             self.voice_modeling_status.setText(self.voice_modeling_text("Dataset not ready."))
             self.update_voice_modeling_buttons()
             return None
+        self.voice_modeling_selected_export_path = export_info["dataset_dir"]
         self.apply_voice_modeling_export(export_info)
         return export_info
 
-    def voice_modeling_export_changed(self) -> None:
-        self.validate_voice_modeling_dataset()
-
     def apply_voice_modeling_export(self, export_info: VoiceModelingExportInfo) -> None:
         self.voice_modeling_export_info = export_info
+        self.voice_modeling_selected_export_path = export_info["dataset_dir"]
         self.voice_modeling_dataset_info.setPlainText(voice_modeling_export_summary_text(export_info))
-        self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
-        defaults = self.apply_voice_modeling_training_defaults(export_info)
-        self.voice_modeling_status.setText(
-            self.voice_modeling_text(
-                "Dataset export validated. Suggested training: {epochs} max epochs, batch size {batch}.",
-                epochs=defaults["max_epochs"],
-                batch=defaults["batch_size"],
+        existing_job = latest_voice_modeling_job_config_for_export(export_info)
+        if existing_job:
+            self.apply_voice_modeling_existing_config(existing_job["config_path"])
+        else:
+            self.voice_modeling_saved_config_path = ""
+            self.voice_modeling_saved_config_snapshot = None
+            self.voice_modeling_output_picker.set_text(str(default_voice_modeling_output_dir(export_info)))
+            defaults = self.apply_voice_modeling_training_defaults(export_info)
+            self.voice_modeling_status.setText(
+                self.voice_modeling_text(
+                    "Dataset export validated. Suggested training: {epochs} max epochs, batch size {batch}.",
+                    epochs=defaults["max_epochs"],
+                    batch=defaults["batch_size"],
+                )
             )
-        )
+            self.voice_modeling_config_dirty = True
         self.update_voice_modeling_buttons()
         if getattr(self, "voice_modeling_auto_preflight_enabled", False):
             self.refresh_voice_modeling_preflight_async()
@@ -239,6 +193,71 @@ class VoiceModelingWorkflowMixin:
             self.voice_modeling_preflight_label.setText(
                 self.voice_modeling_text("Preflight not run yet. Use Refresh preflight.")
             )
+
+    def apply_voice_modeling_existing_config(self, config_path: str) -> None:
+        try:
+            config = load_voice_modeling_job_config(config_path)
+        except (OSError, ValueError):
+            self.voice_modeling_saved_config_path = ""
+            self.voice_modeling_saved_config_snapshot = None
+            self.voice_modeling_config_dirty = True
+            return
+        self.voice_modeling_saved_config_path = str(Path(config_path).expanduser().resolve())
+        self.voice_modeling_output_picker.set_text(config["output_dir"])
+        self.set_voice_modeling_device_key(config.get("device", "auto"))
+        self.voice_modeling_epochs_spin.blockSignals(True)
+        self.voice_modeling_batch_spin.blockSignals(True)
+        try:
+            self.voice_modeling_epochs_spin.setValue(int(config.get("max_epochs", VOICE_MODELING_DEFAULT_MAX_EPOCHS)))
+            self.voice_modeling_batch_spin.setValue(int(config.get("batch_size", VOICE_MODELING_DEFAULT_BATCH_SIZE)))
+        finally:
+            self.voice_modeling_batch_spin.blockSignals(False)
+            self.voice_modeling_epochs_spin.blockSignals(False)
+        self.voice_modeling_saved_config_snapshot = self.current_voice_modeling_config_snapshot()
+        self.voice_modeling_config_dirty = False
+        self.voice_modeling_status.setText(
+            self.voice_modeling_text("Training config available. Use Go to Training.")
+        )
+
+    def current_voice_modeling_config_snapshot(self) -> dict:
+        return {
+            "dataset_dir": self.voice_modeling_export_info["dataset_dir"] if self.voice_modeling_export_info else "",
+            "output_dir": self.voice_modeling_output_picker.text()
+            if hasattr(self, "voice_modeling_output_picker")
+            else "",
+            "device": self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto",
+            "max_epochs": self.voice_modeling_epochs_spin.value()
+            if hasattr(self, "voice_modeling_epochs_spin")
+            else VOICE_MODELING_DEFAULT_MAX_EPOCHS,
+            "batch_size": self.voice_modeling_batch_spin.value()
+            if hasattr(self, "voice_modeling_batch_spin")
+            else VOICE_MODELING_DEFAULT_BATCH_SIZE,
+        }
+
+    def mark_voice_modeling_config_changed(self) -> None:
+        if not hasattr(self, "voice_modeling_save_config_button"):
+            return
+        saved_snapshot = getattr(self, "voice_modeling_saved_config_snapshot", None)
+        self.voice_modeling_config_dirty = saved_snapshot != self.current_voice_modeling_config_snapshot()
+        if (
+            self.voice_modeling_config_dirty
+            and getattr(self, "voice_modeling_saved_config_path", "")
+            and hasattr(self, "voice_modeling_status")
+        ):
+            self.voice_modeling_status.setText(
+                self.voice_modeling_text("Training config changed. Save Config before going to Training.")
+            )
+        self.update_voice_modeling_buttons()
+
+    def open_voice_modeling_setup_for_export(self, dataset_dir: str) -> None:
+        self.voice_modeling_selected_export_path = str(Path(dataset_dir).expanduser().resolve())
+        export_info = self.validate_voice_modeling_dataset()
+        if not export_info:
+            return
+        if hasattr(self, "open_local_voice_workflow_tab"):
+            self.open_local_voice_workflow_tab(2)
+        else:
+            self.show_local_voices_tab(2)
 
     def apply_voice_modeling_training_defaults(
         self,
@@ -287,29 +306,13 @@ class VoiceModelingWorkflowMixin:
             self.update_voice_modeling_buttons()
             self.mark_voice_modeling_preflight_stale()
 
-    def select_voice_modeling_resume_checkpoint(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            self.voice_modeling_text("Select resume checkpoint"),
-            self.voice_modeling_resume_picker.text() or str(Path.home()),
-            "Checkpoint files (*.pth *.pt *.ckpt);;All files (*.*)",
-        )
-        if path:
-            self.voice_modeling_resume_picker.set_text(path)
-
-    def clear_voice_modeling_resume_checkpoint(self) -> None:
-        self.voice_modeling_resume_picker.set_text("")
-        self.mark_voice_modeling_preflight_stale()
-
     def current_voice_modeling_preflight_snapshot(self) -> dict:
         return {
             "export_info": dict(self.voice_modeling_export_info) if self.voice_modeling_export_info else None,
             "output_dir": self.voice_modeling_output_picker.text()
             if hasattr(self, "voice_modeling_output_picker")
             else "",
-            "resume_checkpoint": self.voice_modeling_resume_picker.text()
-            if hasattr(self, "voice_modeling_resume_picker")
-            else "",
+            "resume_checkpoint": "",
             "device": self.voice_modeling_device_key() if hasattr(self, "voice_modeling_device_combo") else "auto",
         }
 
@@ -512,7 +515,7 @@ class VoiceModelingWorkflowMixin:
             config = build_voice_modeling_job_config(
                 export_info,
                 output_dir=self.voice_modeling_output_picker.text(),
-                resume_checkpoint=self.voice_modeling_resume_picker.text(),
+                resume_checkpoint="",
                 device=self.voice_modeling_device_key(),
                 max_epochs=self.voice_modeling_epochs_spin.value(),
                 batch_size=self.voice_modeling_batch_spin.value(),
@@ -525,13 +528,23 @@ class VoiceModelingWorkflowMixin:
         self.voice_modeling_status.setText(
             self.voice_modeling_text("Training job configured: {path}", path=config_path)
         )
-        if hasattr(self, "voice_training_job_combo"):
+        self.voice_modeling_saved_config_path = str(config_path)
+        self.voice_modeling_saved_config_snapshot = self.current_voice_modeling_config_snapshot()
+        self.voice_modeling_config_dirty = False
+        if hasattr(self, "refresh_voice_training_jobs"):
             self.refresh_voice_training_jobs(str(config_path))
         self.update_local_voice_tabs()
-        self.show_info(
-            self.voice_modeling_text("Voice Modeling"),
-            self.voice_modeling_text("Training job config saved:\n{path}", path=config_path),
-        )
+        self.update_voice_modeling_buttons()
+
+    def go_to_voice_training(self) -> None:
+        config_path = getattr(self, "voice_modeling_saved_config_path", "")
+        if not config_path or getattr(self, "voice_modeling_config_dirty", True):
+            return
+        self.refresh_voice_training_jobs(config_path)
+        if hasattr(self, "open_local_voice_workflow_tab"):
+            self.open_local_voice_workflow_tab(3)
+        else:
+            self.show_local_voices_tab(3)
 
     def open_voice_modeling_output_folder(self) -> None:
         output_path = self.voice_modeling_output_picker.text()
@@ -544,8 +557,14 @@ class VoiceModelingWorkflowMixin:
             return
         has_dataset = self.voice_modeling_export_info is not None
         has_output = bool(self.voice_modeling_output_picker.text())
+        config_path = getattr(self, "voice_modeling_saved_config_path", "")
+        config_dirty = getattr(self, "voice_modeling_config_dirty", True)
         preflight_refreshing = getattr(self, "_voice_modeling_preflight_refreshing", False)
-        self.voice_modeling_save_config_button.setEnabled(has_dataset and has_output)
+        self.voice_modeling_save_config_button.setEnabled(has_dataset and has_output and config_dirty)
+        if hasattr(self, "voice_modeling_go_training_button"):
+            self.voice_modeling_go_training_button.setEnabled(
+                has_dataset and has_output and bool(config_path) and not config_dirty
+            )
         self.voice_modeling_open_output_button.setEnabled(has_output)
         if hasattr(self, "voice_modeling_preflight_refresh_button"):
             self.voice_modeling_preflight_refresh_button.setEnabled(
@@ -555,7 +574,7 @@ class VoiceModelingWorkflowMixin:
     def build_voice_modeling_page(self, include_header: bool = True):
         page, layout = self.page_container()
         if not include_header:
-            layout.setContentsMargins(0, 26, 0, 24)
+            layout.setContentsMargins(0, 26, 14, 24)
         if include_header:
             self.page_header(
                 layout,
@@ -567,55 +586,36 @@ class VoiceModelingWorkflowMixin:
         grid.setSpacing(16)
         layout.addLayout(grid)
 
-        dataset_card = Card("Exported dataset")
+        dataset_card = Card("Selected dataset export")
         dataset_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self.voice_modeling_export_combo = QComboBox()
-        self.voice_modeling_export_combo.currentIndexChanged.connect(
-            lambda _index: self.voice_modeling_export_changed()
-        )
-        export_actions = QHBoxLayout()
-        export_actions.setContentsMargins(0, 0, 0, 0)
-        self.voice_modeling_refresh_exports_button = QPushButton("Refresh")
-        self.voice_modeling_browse_export_button = QPushButton("Browse external...")
-        self.voice_modeling_refresh_exports_button.clicked.connect(self.refresh_voice_modeling_exports)
-        self.voice_modeling_browse_export_button.clicked.connect(self.select_voice_modeling_dataset_folder)
-        export_actions.addWidget(self.voice_modeling_refresh_exports_button)
-        export_actions.addStretch(1)
-        export_actions.addWidget(self.voice_modeling_browse_export_button)
         self.voice_modeling_dataset_info = QPlainTextEdit()
         self.voice_modeling_dataset_info.setObjectName("LogBox")
         self.voice_modeling_dataset_info.setReadOnly(True)
         self.voice_modeling_dataset_info.setMinimumHeight(240)
-        self.voice_modeling_dataset_info.setPlainText("Select an exported dataset.")
-        dataset_card.content_layout.addWidget(QLabel("Dataset export"))
-        dataset_card.content_layout.addWidget(self.voice_modeling_export_combo)
-        dataset_card.content_layout.addLayout(export_actions)
+        self.voice_modeling_dataset_info.setPlainText("Use Dataset > Setup Dataset first.")
         dataset_card.content_layout.addWidget(self.voice_modeling_dataset_info)
 
         config_card = Card("Training configuration")
         config_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.voice_modeling_output_picker = FilePicker("Model output folder")
         self.voice_modeling_output_picker.button.clicked.connect(self.select_voice_modeling_output_folder)
-        self.voice_modeling_output_picker.edit.textChanged.connect(lambda _text: self.update_voice_modeling_buttons())
+        self.voice_modeling_output_picker.edit.textChanged.connect(
+            lambda _text: self.mark_voice_modeling_config_changed()
+        )
         self.voice_modeling_output_picker.edit.textChanged.connect(
             lambda _text: self.mark_voice_modeling_preflight_stale()
         )
-        self.voice_modeling_resume_picker = FilePicker("Resume checkpoint", "Browse...")
-        self.voice_modeling_resume_picker.button.clicked.connect(self.select_voice_modeling_resume_checkpoint)
-        self.voice_modeling_resume_picker.edit.textChanged.connect(
-            lambda _text: self.mark_voice_modeling_preflight_stale()
-        )
-        self.voice_modeling_clear_resume_button = QPushButton("Clear checkpoint")
-        self.voice_modeling_clear_resume_button.clicked.connect(self.clear_voice_modeling_resume_checkpoint)
         self.voice_modeling_device_combo = QComboBox()
         self.populate_voice_modeling_device_combo()
         self.voice_modeling_device_combo.currentTextChanged.connect(lambda _text: self.voice_modeling_device_changed())
         self.voice_modeling_epochs_spin = QSpinBox()
         self.voice_modeling_epochs_spin.setRange(1, 500)
         self.voice_modeling_epochs_spin.setValue(VOICE_MODELING_DEFAULT_MAX_EPOCHS)
+        self.voice_modeling_epochs_spin.valueChanged.connect(lambda _value: self.mark_voice_modeling_config_changed())
         self.voice_modeling_batch_spin = QSpinBox()
         self.voice_modeling_batch_spin.setRange(1, 16)
         self.voice_modeling_batch_spin.setValue(VOICE_MODELING_DEFAULT_BATCH_SIZE)
+        self.voice_modeling_batch_spin.valueChanged.connect(lambda _value: self.mark_voice_modeling_config_changed())
         config_grid = QGridLayout()
         config_grid.setContentsMargins(0, 0, 0, 0)
         config_grid.setHorizontalSpacing(10)
@@ -628,8 +628,6 @@ class VoiceModelingWorkflowMixin:
         config_grid.addWidget(self.voice_modeling_batch_spin, 2, 1)
         config_grid.setColumnStretch(1, 1)
         config_card.content_layout.addWidget(self.voice_modeling_output_picker)
-        config_card.content_layout.addWidget(self.voice_modeling_resume_picker)
-        config_card.content_layout.addWidget(self.voice_modeling_clear_resume_button)
         config_card.content_layout.addLayout(config_grid)
 
         preflight_card = Card("Training preflight")
@@ -669,12 +667,16 @@ class VoiceModelingWorkflowMixin:
         actions_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
-        self.voice_modeling_save_config_button = QPushButton("Save training config")
+        self.voice_modeling_save_config_button = QPushButton("Save Config")
         self.voice_modeling_save_config_button.setObjectName("FlowButton")
+        self.voice_modeling_go_training_button = QPushButton("Go to Training")
+        self.voice_modeling_go_training_button.setObjectName("FlowButton")
         self.voice_modeling_open_output_button = QPushButton("Open output folder")
         self.voice_modeling_save_config_button.clicked.connect(self.save_voice_modeling_config)
+        self.voice_modeling_go_training_button.clicked.connect(self.go_to_voice_training)
         self.voice_modeling_open_output_button.clicked.connect(self.open_voice_modeling_output_folder)
         action_row.addWidget(self.voice_modeling_save_config_button)
+        action_row.addWidget(self.voice_modeling_go_training_button)
         action_row.addStretch(1)
         action_row.addWidget(self.voice_modeling_open_output_button)
         self.voice_modeling_status = QLabel("No training job configured.")
@@ -692,6 +694,10 @@ class VoiceModelingWorkflowMixin:
         layout.addStretch(1)
 
         self.voice_modeling_export_info = None
+        self.voice_modeling_selected_export_path = ""
+        self.voice_modeling_saved_config_path = ""
+        self.voice_modeling_saved_config_snapshot = None
+        self.voice_modeling_config_dirty = True
         self.voice_modeling_preflight_ok = False
         self.voice_modeling_preflight_details = []
         self.voice_modeling_auto_preflight_enabled = False

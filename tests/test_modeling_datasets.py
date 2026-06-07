@@ -295,6 +295,8 @@ def test_modeling_dataset_metric_tiles_show_exportable_yes_for_exportable_datase
             self.modeling_dataset_profile_label = FakeLabel()
             self.modeling_ready_clips_tile = FakeLabel()
             self.modeling_ready_duration_tile = FakeLabel()
+            self.modeling_average_clip_tile = FakeLabel()
+            self.modeling_target_duration_tile = FakeLabel()
             self.modeling_tier_tile = FakeLabel()
             self.modeling_exportable_tile = FakeLabel()
 
@@ -308,6 +310,10 @@ def test_modeling_dataset_metric_tiles_show_exportable_yes_for_exportable_datase
 
     window.update_modeling_dataset_metric_tiles(modeling_dataset_summary(dataset))
 
+    assert window.modeling_average_clip_tile.text == "Avg clip\n12.0s"
+    assert window.modeling_average_clip_tile.properties["state"] == "info"
+    assert window.modeling_target_duration_tile.text == "Target duration\n3%"
+    assert window.modeling_target_duration_tile.properties["state"] == "info"
     assert window.modeling_exportable_tile.text == "Exportable\nYes"
     assert window.modeling_exportable_tile.properties["state"] == "ok"
 
@@ -814,6 +820,7 @@ def test_export_modeling_dataset_copies_ready_clips(tmp_path: Path) -> None:
     assert export_data["kind"] == MODELING_DATASET_EXPORT_JSON_KIND
     assert export_data["name"] == "Dataset Voice"
     assert export_data["language_code"] == "en"
+    assert export_data["source_updated_at"] == dataset["updated_at"]
     assert export_data["metadata_format"] == "relative_wav_path|transcript_text"
     assert export_data["exported_clips"][0]["export_audio_path"] == "wavs/0001_ready-0.wav"
     assert export_data["exported_clips"][0]["transcript_source"] == "generated_prompt:1.0"
@@ -1237,8 +1244,13 @@ def test_modeling_dataset_summary_reports_target_dataset(tmp_path: Path) -> None
     assert summary["target_duration_percent"] == 100
     assert summary["issues"] == []
     assert any("High-quality duration reached" in recommendation for recommendation in summary["recommendations"])
-    assert "Target progress: 60/60 clips, 30m 00s/30m 00s" in summary_text
-    assert "Recommended target: 60-120 ready clips, 30m 00s-60m 00s clean audio" in summary_text
+    assert "Target duration: 30m 00s/30m 00s" in summary_text
+    assert "Recommended duration: 30m 00s-60m 00s clean audio" in summary_text
+    assert "Language:" not in summary_text
+    assert "Average ready clip:" not in summary_text
+    assert "Guided prompts:" not in summary_text
+    assert "Target progress:" not in summary_text
+    assert "ready clips, 30m 00s" not in summary_text
     assert "Exportable clips:" not in summary_text
     assert "Dataset tier:" not in summary_text
 

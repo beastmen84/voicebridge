@@ -10,18 +10,6 @@ class FakeButton:
         self.enabled = enabled
 
 
-class FakeCombo:
-    def __init__(self, selected_path: str = "current-job.json") -> None:
-        self.enabled = None
-        self.selected_path = selected_path
-
-    def currentData(self, _role):
-        return self.selected_path
-
-    def setEnabled(self, enabled: bool) -> None:
-        self.enabled = enabled
-
-
 class FakePlainText:
     def __init__(self) -> None:
         self.text = ""
@@ -41,7 +29,7 @@ class FakePlainText:
 
 class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
     def __init__(self) -> None:
-        self.voice_training_job_combo = FakeCombo()
+        self.voice_training_selected_job_path = "current-job.json"
         self.voice_training_job_status = FakePlainText()
         self.voice_training_open_folder_button = FakeButton()
         self.voice_training_prepare_button = FakeButton()
@@ -56,6 +44,7 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
         self.refreshed_paths: list[str] = []
         self.retried_jobs: list[tuple[str, bool]] = []
         self.errors: list[tuple[str, str]] = []
+        self.recorded_jobs: list[tuple[str, str, str, str, str]] = []
         self.local_voice_tab_updates = 0
 
     def voice_training_text(self, text: str, **kwargs) -> str:
@@ -80,6 +69,9 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
     def show_error(self, title: str, message: str) -> None:
         self.errors.append((title, message))
 
+    def record_job(self, kind: str, title: str, input_path: str, output_path: str, detail: str = "") -> None:
+        self.recorded_jobs.append((kind, title, input_path, output_path, detail))
+
     def update_local_voice_tabs(self) -> None:
         self.local_voice_tab_updates += 1
 
@@ -94,7 +86,7 @@ def test_voice_training_cancel_button_disables_after_cancel_requested() -> None:
 
     workflow.update_voice_training_buttons()
 
-    assert workflow.voice_training_job_combo.enabled is False
+    assert workflow.voice_training_refresh_jobs_button.enabled is False
     assert workflow.voice_training_cancel_button.enabled is False
 
 
@@ -205,9 +197,35 @@ def test_voice_training_dry_run_success_preserves_worker_output_after_refresh() 
     assert workflow.refreshed_paths == ["running-job.json"]
 
 
+def test_voice_training_success_records_completed_model_in_job_history(tmp_path, monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+    config_path = tmp_path / "job_config.json"
+    output_dir = tmp_path / "voice-model"
+    model_path = output_dir / "inference_model" / "model.pth"
+    model_path.parent.mkdir(parents=True)
+    model_path.write_bytes(b"model")
+    workflow.voice_training_running_config_path = str(config_path)
+    monkeypatch.setattr(voice_training_page, "prune_previous_voice_modeling_outputs", lambda _path: [])
+    monkeypatch.setattr(
+        voice_training_page,
+        "load_voice_modeling_job_config",
+        lambda _path: {
+            "dataset_dir": "dataset-export",
+            "output_dir": str(output_dir),
+            "dataset": {"name": "Voice A"},
+        },
+    )
+
+    workflow.voice_training_succeeded(dry_run=False)
+
+    assert workflow.recorded_jobs == [
+        ("TRAIN", "Voice training completed", "dataset-export", str(model_path), "Voice A")
+    ]
+
+
 def test_voice_training_cuda_retry_uses_running_config_path(monkeypatch) -> None:
     workflow = FakeVoiceTrainingWorkflow()
-    workflow.voice_training_job_combo.selected_path = "current-job.json"
+    workflow.voice_training_selected_job_path = "current-job.json"
     workflow.voice_training_running_config_path = "captured-job.json"
     loaded_paths = []
     saved_configs = []

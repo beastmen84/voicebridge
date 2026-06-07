@@ -688,6 +688,17 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "No microphone input was detected.": "Nessun input microfono rilevato.",
     "Select a microphone input first.": "Seleziona prima un input microfono.",
     "Export dataset": "Esporta dataset",
+    "Setup Dataset": "Setup dataset",
+    "Open Setup": "Apri setup",
+    "Dataset export is current. Opening setup.": "Export dataset aggiornato. Apertura setup.",
+    "Open Setup using the current dataset export.": "Apri setup usando l'export dataset corrente.",
+    "Export {count} clip(s) and open Setup.": "Esporta {count} clip e apri setup.",
+    "Avg clip\n--": "Clip media\n--",
+    "Avg clip\n{duration:.1f}s": "Clip media\n{duration:.1f}s",
+    "Average duration of ready clips.": "Durata media delle clip pronte.",
+    "Target duration\n--": "Durata target\n--",
+    "Target duration\n{percent}%": "Durata target\n{percent}%",
+    "{ready} of {target} target ready audio.": "{ready} di {target} di audio pronto target.",
     "Open audio": "Apri audio",
     "Retry recording": "Riprova registrazione",
     "Verify text": "Verifica testo",
@@ -713,10 +724,25 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Download training assets": "Scarica asset training",
     "Refresh preflight": "Aggiorna preflight",
     "Save training config": "Salva configurazione training",
+    "Save Config": "Salva config",
+    "Go to Training": "Vai al training",
+    "Selected dataset export": "Export dataset selezionato",
+    "Use Dataset > Setup Dataset first.": "Usa prima Dataset > Setup Dataset.",
+    "No dataset export selected.": "Nessun export dataset selezionato.",
+    "Training config available. Use Go to Training.": "Config training disponibile. Usa Vai al training.",
+    "Training config changed. Save Config before going to Training.": (
+        "Config training modificata. Salva config prima di andare al training."
+    ),
     "Open output folder": "Apri cartella output",
     "Prepare": "Prepara",
     "Dry run": "Dry run",
     "Start training": "Avvia training",
+    "Training job": "Job training",
+    "Use Setup > Go to Training first.": "Usa prima Setup > Vai al training.",
+    "The selected training config is no longer available.": (
+        "La config training selezionata non è più disponibile."
+    ),
+    "Voice training completed": "Training voce completato",
     "Open job folder": "Apri cartella job",
     "Close": "Chiudi",
     "Clear": "Pulisci",
@@ -808,7 +834,11 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Recording quality details appear here after a clip is saved.": (
         "I dettagli qualità registrazione appaiono qui dopo il salvataggio di una clip."
     ),
-    "Guided prompts: 0 / 0 used": "Prompt guidati: 0 / 0 usati",
+    "Guided prompts used: --": "Prompt guidati usati: --",
+    "Guided prompts used: {percent}%": "Prompt guidati usati: {percent}%",
+    "{used:,} of {available:,} generated prompt combinations used.": (
+        "{used:,} di {available:,} combinazioni prompt generate usate."
+    ),
     "No training job configured.": "Nessun job training configurato.",
     "No modeling datasets yet.": "Nessun dataset di modeling.",
     "{name} | {clip_count} clip(s), {ready_count} ready": (

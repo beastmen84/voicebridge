@@ -432,7 +432,7 @@
     <p><span class="badge good">Match OK</span> audio e testo coerenti.</p>
     <p><span class="badge warn">Needs review</span> testo da controllare.</p>
     <p><span class="badge danger">Check error</span> verifica non completata.</p>
-    <div class="success">Export dataset è disponibile solo quando il dataset raggiunge la readiness minima. L'export copia solo clip pronte e non modifica il dataset di lavoro. Se vuoi aprire la cartella, usa <code>Open folder</code>.</div>
+    <div class="success"><code>Setup Dataset</code> è disponibile solo quando il dataset raggiunge la readiness minima. Esporta le clip pronte quando il dataset è cambiato, poi apre Setup. Se l'export corrente è già aggiornato, il pulsante diventa <code>Open Setup</code> e non ricopia i file.</div>
     <div class="note">I prompt guidati generati dall'app sono limitati a 200 caratteri per restare compatibili con il fine-tuning XTTS-v2. Se incolli o carichi testo personalizzato, tieni ogni clip entro lo stesso limite: gli export con transcript più lunghi vengono bloccati in fase di preparazione training per evitare errori del trainer.</div>
   </section>
 
@@ -442,19 +442,18 @@
       <div>
         <h3>Setup</h3>
         <ol class="workflow">
-          <li>Esporta prima un dataset.</li>
-          <li>Scegli l'export dal dropdown.</li>
+          <li>Apri il dataset dal suo profilo, poi usa <code>Setup Dataset</code>.</li>
           <li>Imposta output, device, epoch e batch size. L'app propone valori iniziali in base alla durata del dataset e alla VRAM CUDA rilevata.</li>
-          <li>Indica un checkpoint solo se riprendi un training.</li>
           <li>Scarica asset training se mancano.</li>
           <li>Esegui <code>Refresh preflight</code>.</li>
-          <li>Salva con <code>Save training config</code>. Se vuoi aprire la cartella del job, usa <code>Open output folder</code>.</li>
+          <li>Salva con <code>Save Config</code>. Se non ci sono modifiche visibili alla configurazione, il pulsante resta disattivato.</li>
+          <li>Usa <code>Go to Training</code> quando è disponibile una config salvata.</li>
         </ol>
       </div>
       <div>
         <h3>Training</h3>
         <ol class="workflow">
-          <li>Seleziona un job configurato.</li>
+          <li>Apri Training da Setup con <code>Go to Training</code>.</li>
           <li>Usa <code>Prepare</code>.</li>
           <li>Usa <code>Dry run</code> per verificare senza addestrare.</li>
           <li>Usa <code>Start training</code>.</li>
@@ -464,7 +463,7 @@
       </div>
     </div>
     <div class="note">Il download degli asset training può essere annullato con <code>Cancel download</code>. Se CUDA fallisce, l'app può proporre di passare il job a CPU e ritentare.</div>
-    <div class="note">I pulsanti seguono lo stato del job: dopo <code>Save training config</code> è disponibile solo <code>Prepare</code>; dopo <code>Prepare</code> è disponibile solo <code>Dry run</code>; dopo <code>Dry run</code> completato correttamente è disponibile <code>Start training</code>. Se il job fallisce o viene annullato, riparti da <code>Prepare</code>.</div>
+    <div class="note">I pulsanti seguono lo stato del job: dopo <code>Save Config</code> e <code>Go to Training</code> è disponibile solo <code>Prepare</code>; dopo <code>Prepare</code> è disponibile solo <code>Dry run</code>; dopo <code>Dry run</code> completato correttamente è disponibile <code>Start training</code>. Se il job fallisce o viene annullato, riparti da <code>Prepare</code>.</div>
     <div class="note">A training completato l'app mantiene il modello in <code>inference_model</code>, archivia i log in <code>logs/voice_modeling</code> e rimuove i checkpoint intermedi della cartella <code>run/training</code> per evitare accumuli da molti GB.</div>
   </section>
 

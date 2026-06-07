@@ -81,6 +81,7 @@ class VoiceModelingExportInfo(TypedDict):
     profile_id: str
     name: str
     language_code: str
+    source_updated_at: str
     readiness: str
     ready_clips: int
     ready_duration_seconds: float
@@ -336,12 +337,14 @@ def validate_voice_modeling_export(dataset_dir: str | Path) -> VoiceModelingExpo
     language_code = dataset_data.get("language_code")
     dataset_id = dataset_data.get("dataset_id")
     profile_id = dataset_data.get("profile_id")
+    source_updated_at = dataset_data.get("source_updated_at")
     return {
         "dataset_dir": str(export_dir.resolve()),
         "dataset_id": dataset_id if isinstance(dataset_id, str) else "",
         "profile_id": profile_id if isinstance(profile_id, str) else "",
         "name": name if isinstance(name, str) and name else export_dir.name,
         "language_code": language_code if isinstance(language_code, str) and language_code else "unknown",
+        "source_updated_at": source_updated_at if isinstance(source_updated_at, str) else "",
         "readiness": readiness_text,
         "ready_clips": _int(summary.get("ready_clips")),
         "ready_duration_seconds": _float(summary.get("ready_duration_seconds")),
@@ -545,6 +548,23 @@ def list_voice_modeling_exports(exports_root: str | Path | None = None) -> list[
             reverse=True,
         )
     ]
+
+
+def current_voice_modeling_export_for_dataset(
+    *,
+    dataset_id: str,
+    profile_id: str,
+    source_updated_at: str,
+    exports_root: str | Path | None = None,
+) -> VoiceModelingExportInfo | None:
+    if not source_updated_at:
+        return None
+    for export_info in list_voice_modeling_exports(exports_root):
+        matches_dataset = bool(dataset_id and export_info["dataset_id"] == dataset_id)
+        matches_profile = bool(profile_id and export_info["profile_id"] == profile_id)
+        if (matches_dataset or matches_profile) and export_info["source_updated_at"] == source_updated_at:
+            return export_info
+    return None
 
 
 def parse_voice_modeling_metadata(metadata_path: Path, export_dir: Path) -> list[tuple[str, str]]:
@@ -819,6 +839,29 @@ def list_voice_modeling_job_configs(outputs_root: str | Path | None = None) -> l
             reverse=True,
         )
     ]
+
+
+def latest_voice_modeling_job_config_for_export(
+    export_info: VoiceModelingExportInfo,
+    *,
+    outputs_root: str | Path | None = None,
+) -> VoiceModelingJobSummary | None:
+    for job in list_voice_modeling_job_configs(outputs_root):
+        try:
+            config = load_voice_modeling_job_config(job["config_path"])
+        except (OSError, ValueError):
+            continue
+        dataset = config.get("dataset", {})
+        if not isinstance(dataset, dict):
+            continue
+        if config.get("dataset_dir") == export_info["dataset_dir"]:
+            return job
+        matches_dataset = bool(export_info["dataset_id"] and dataset.get("dataset_id") == export_info["dataset_id"])
+        matches_profile = bool(export_info["profile_id"] and dataset.get("profile_id") == export_info["profile_id"])
+        matches_source = dataset.get("source_updated_at") == export_info["source_updated_at"]
+        if (matches_dataset or matches_profile) and matches_source:
+            return job
+    return None
 
 
 def voice_modeling_job_label(job: VoiceModelingJobSummary) -> str:

@@ -452,9 +452,6 @@ def modeling_dataset_summary_text(
 ) -> str:
     summary = summary or modeling_dataset_summary(dataset)
     lines = [
-        f"Language: {dataset['language_code']}",
-        f"Average ready clip: {summary['average_ready_duration_seconds']:.1f}s",
-        f"Guided prompts: {summary['guided_prompt_used_count']} / {summary['guided_prompt_available_count']} used",
         (
             "Text verification: "
             f"{summary['verification_pending_clips']} pending, "
@@ -462,12 +459,12 @@ def modeling_dataset_summary_text(
             f"{summary['verification_error_clips']} error"
         ),
         (
-            f"Target progress: {summary['ready_clips']}/{MODELING_TARGET_READY_CLIPS} clips, "
+            "Target duration: "
             f"{format_modeling_dataset_duration(summary['ready_duration_seconds'])}/"
             f"{format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS)}"
         ),
         (
-            f"Recommended target: {MODELING_TARGET_READY_CLIPS}-{MODELING_STRETCH_READY_CLIPS} ready clips, "
+            "Recommended duration: "
             f"{format_modeling_dataset_duration(MODELING_TARGET_READY_SECONDS)}-"
             f"{format_modeling_dataset_duration(MODELING_STRETCH_READY_SECONDS)} clean audio"
         ),
@@ -618,6 +615,7 @@ def export_modeling_dataset(
                     "profile_id": dataset["profile_id"],
                     "name": dataset["name"],
                     "language_code": dataset["language_code"],
+                    "source_updated_at": dataset.get("updated_at", ""),
                     "exported_at": utc_timestamp(),
                     "metadata_format": "relative_wav_path|transcript_text",
                     "summary": summary,

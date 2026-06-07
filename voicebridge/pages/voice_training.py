@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy
 
 from voicebridge.app_paths import external_base_dir, ml_python_path, voice_modeling_worker_path
+from voicebridge.file_checks import format_bytes
 from voicebridge.process_jobs import WorkerProcessOutput, run_worker_process_job
 from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.ui.helpers import open_path
@@ -13,12 +14,14 @@ from voicebridge.ui.widgets import Card
 from voicebridge.voice_modeling import (
     build_voice_modeling_training_command,
     cleanup_incomplete_voice_modeling_job,
+    inspect_voice_modeling_cuda_memory,
     list_voice_modeling_job_configs,
     load_voice_modeling_job_config,
     prepare_voice_modeling_training_job,
     prune_previous_voice_modeling_outputs,
     save_voice_modeling_job_config,
     update_voice_modeling_job_status,
+    voice_modeling_cuda_memory_margin_low,
     voice_modeling_job_label,
     voice_modeling_training_plan_text,
 )
@@ -151,16 +154,39 @@ class VoiceTrainingWorkflowMixin:
     def start_voice_training_run(self) -> None:
         if self.selected_voice_training_job_status() not in VOICE_TRAINING_START_STATUSES:
             return
+        warning = self.voice_training_cuda_memory_warning()
+        message = self.voice_training_text(
+            "This will start XTTS-v2 fine-tuning in the ML runtime and can take a long time.\n\n"
+            "Continue?"
+        )
+        if warning:
+            message = f"{warning}\n\n{message}"
         if not self.ask_question(
             self.voice_training_text("Start voice training"),
-            self.voice_training_text(
-                "This will start XTTS-v2 fine-tuning in the ML runtime and can take a long time.\n\n"
-                "Continue?"
-            ),
+            message,
             default_yes=False,
         ):
             return
         self.start_voice_training_worker(dry_run=False)
+
+    def voice_training_cuda_memory_warning(self) -> str:
+        config_path = self.selected_voice_training_job_path()
+        if not config_path:
+            return ""
+        try:
+            config = load_voice_modeling_job_config(config_path)
+        except (OSError, ValueError):
+            return ""
+        memory_info = inspect_voice_modeling_cuda_memory()
+        if not voice_modeling_cuda_memory_margin_low(config, memory_info):
+            return ""
+        return self.voice_training_text(
+            "CUDA VRAM margin looks low: {free} free of {total}. "
+            "XTTS-v2 training can fail late with CUDA out of memory if GPU memory is fragmented "
+            "or other GPU apps are open. Close other GPU apps or reduce batch size to 1 before starting.",
+            free=format_bytes(memory_info["free_bytes"]),
+            total=format_bytes(memory_info["total_bytes"]),
+        )
 
     def start_voice_training_worker(self, *, dry_run: bool) -> None:
         config_path = self.selected_voice_training_job_path()
@@ -279,13 +305,12 @@ class VoiceTrainingWorkflowMixin:
     def voice_training_failed(self, message: str) -> None:
         self.append_voice_training_log(f"ERROR: {message}")
         config_path = getattr(self, "voice_training_running_config_path", "") or self.selected_voice_training_job_path()
+        display_message = self.voice_training_failure_message(message)
         if (
             is_cuda_runtime_failure(message)
             and self.ask_question(
                 self.voice_training_text("Voice Training CUDA failed"),
-                self.voice_training_text(
-                    "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?"
-                ),
+                self.voice_training_cuda_retry_prompt(message),
                 default_yes=False,
             )
         ):
@@ -310,9 +335,28 @@ class VoiceTrainingWorkflowMixin:
                     self.append_voice_training_log(
                         self.voice_training_text("Training log archived: {path}", path=cleanup["archive_dir"])
                     )
-        self.show_error(self.voice_training_text("Voice Training"), message)
+        self.show_error(self.voice_training_text("Voice Training"), display_message)
         self.refresh_voice_training_jobs_preserving_status(config_path)
         self.update_local_voice_tabs()
+
+    def voice_training_failure_message(self, message: str) -> str:
+        if "out of memory" not in (message or "").lower():
+            return message
+        return self.voice_training_text(
+            "Voice training ran out of CUDA VRAM.\n\n"
+            "Close other GPU apps, reduce batch size to 1, or switch this job to CPU and retry."
+        )
+
+    def voice_training_cuda_retry_prompt(self, message: str) -> str:
+        if "out of memory" not in (message or "").lower():
+            return self.voice_training_text(
+                "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?"
+            )
+        return self.voice_training_text(
+            "Voice training ran out of CUDA VRAM.\n\n"
+            "Close other GPU apps or reduce batch size to 1 before retrying on CUDA.\n\n"
+            "Switch this job to CPU and retry?"
+        )
 
     def voice_training_cancelled(self) -> None:
         self.append_voice_training_log(self.voice_training_text("Cancelled."))

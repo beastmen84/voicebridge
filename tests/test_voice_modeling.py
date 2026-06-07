@@ -2,6 +2,7 @@ import json
 import os
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,9 +28,11 @@ from voicebridge.voice_modeling import (
     current_voice_modeling_export_for_dataset,
     default_voice_modeling_output_dir,
     download_file_to_path,
+    inspect_voice_modeling_cuda_memory,
     latest_voice_modeling_job_config_for_export,
     list_voice_modeling_exports,
     list_voice_modeling_job_configs,
+    minimum_voice_modeling_free_cuda_memory_bytes,
     prepare_voice_modeling_training_job,
     prune_previous_voice_modeling_outputs,
     recommended_voice_modeling_batch_size,
@@ -37,6 +40,7 @@ from voicebridge.voice_modeling import (
     save_voice_modeling_job_config,
     validate_voice_modeling_export,
     validate_voice_modeling_training_rows,
+    voice_modeling_cuda_memory_margin_low,
     voice_modeling_export_label,
     voice_modeling_export_summary_text,
     voice_modeling_job_label,
@@ -231,6 +235,45 @@ def test_voice_modeling_batch_size_follows_detected_vram() -> None:
     assert recommended_voice_modeling_batch_size(12 * 1024**3) == 6
     assert recommended_voice_modeling_batch_size(16 * 1024**3) == 8
     assert recommended_voice_modeling_batch_size(24 * 1024**3) == 16
+
+
+def test_inspect_voice_modeling_cuda_memory_parses_nvidia_smi(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(*_args, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout="8151, 6144, 2007\n", stderr="")
+
+    monkeypatch.setattr("voicebridge.voice_modeling.subprocess.run", fake_run)
+
+    info = inspect_voice_modeling_cuda_memory()
+
+    assert info["available"] is True
+    assert info["total_bytes"] == 8151 * 1024**2
+    assert info["free_bytes"] == 6144 * 1024**2
+    assert info["used_bytes"] == 2007 * 1024**2
+
+
+def test_voice_modeling_cuda_memory_margin_detects_low_free_vram() -> None:
+    total = 8 * 1024**3
+    assert minimum_voice_modeling_free_cuda_memory_bytes(2, total) == 7 * 1024**3
+    assert voice_modeling_cuda_memory_margin_low(
+        {"device": "cuda", "batch_size": 2},
+        {
+            "available": True,
+            "total_bytes": total,
+            "free_bytes": 6 * 1024**3,
+            "used_bytes": 2 * 1024**3,
+            "detail": "",
+        },
+    )
+    assert not voice_modeling_cuda_memory_margin_low(
+        {"device": "cpu", "batch_size": 2},
+        {
+            "available": True,
+            "total_bytes": total,
+            "free_bytes": 1 * 1024**3,
+            "used_bytes": 7 * 1024**3,
+            "detail": "",
+        },
+    )
 
 
 def test_build_voice_modeling_job_config_uses_dataset_default_training_values(tmp_path: Path) -> None:

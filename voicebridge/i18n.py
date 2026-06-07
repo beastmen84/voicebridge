@@ -913,6 +913,13 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "This will start XTTS-v2 fine-tuning in the ML runtime and can take a long time.\n\nContinue?": (
         "Questo avvierà il fine-tuning XTTS-v2 nel runtime ML e può richiedere molto tempo.\n\nContinuare?"
     ),
+    "CUDA VRAM margin looks low: {free} free of {total}. "
+    "XTTS-v2 training can fail late with CUDA out of memory if GPU memory is fragmented "
+    "or other GPU apps are open. Close other GPU apps or reduce batch size to 1 before starting.": (
+        "Il margine VRAM CUDA sembra basso: {free} liberi su {total}. "
+        "Il training XTTS-v2 può fallire in ritardo con CUDA out of memory se la memoria GPU è frammentata "
+        "o se altre app GPU sono aperte. Chiudi le altre app GPU o riduci la batch size a 1 prima di iniziare."
+    ),
     "Starting dry run...": "Avvio dry run...",
     "Starting training...": "Avvio training...",
     "Dry run completed.": "Dry run completato.",
@@ -920,6 +927,18 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Voice Training CUDA failed": "CUDA Voice Training fallita",
     "Voice training failed in the CUDA runtime.\n\nSwitch this job to CPU and retry?": (
         "Voice training è fallito nel runtime CUDA.\n\nPassare questo job a CPU e riprovare?"
+    ),
+    "Voice training ran out of CUDA VRAM.\n\n"
+    "Close other GPU apps, reduce batch size to 1, or switch this job to CPU and retry.": (
+        "Il voice training ha esaurito la VRAM CUDA.\n\n"
+        "Chiudi le altre app GPU, riduci la batch size a 1 oppure passa questo job a CPU e riprova."
+    ),
+    "Voice training ran out of CUDA VRAM.\n\n"
+    "Close other GPU apps or reduce batch size to 1 before retrying on CUDA.\n\n"
+    "Switch this job to CPU and retry?": (
+        "Il voice training ha esaurito la VRAM CUDA.\n\n"
+        "Chiudi le altre app GPU o riduci la batch size a 1 prima di riprovare su CUDA.\n\n"
+        "Passare questo job a CPU e riprovare?"
     ),
     "Could not switch the training job to CPU.\n\n{message}": (
         "Impossibile passare il job training a CPU.\n\n{message}"

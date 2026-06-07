@@ -46,12 +46,15 @@ class FakeVoiceTrainingWorkflow(VoiceTrainingWorkflowMixin):
         self.errors: list[tuple[str, str]] = []
         self.recorded_jobs: list[tuple[str, str, str, str, str]] = []
         self.local_voice_tab_updates = 0
+        self.questions: list[tuple[tuple, dict]] = []
+        self.question_result = True
 
     def voice_training_text(self, text: str, **kwargs) -> str:
         return text.format(**kwargs) if kwargs else text
 
-    def ask_question(self, *_args, **_kwargs) -> bool:
-        return True
+    def ask_question(self, *args, **kwargs) -> bool:
+        self.questions.append((args, kwargs))
+        return self.question_result
 
     def append_voice_training_log(self, message: str) -> None:
         self.logs.append(message)
@@ -125,6 +128,17 @@ def test_voice_training_buttons_follow_job_status(monkeypatch) -> None:
 
 def test_voice_training_start_methods_are_guarded_by_job_status(monkeypatch) -> None:
     workflow = FakeVoiceTrainingWorkflow()
+    monkeypatch.setattr(
+        voice_training_page,
+        "inspect_voice_modeling_cuda_memory",
+        lambda: {
+            "available": False,
+            "total_bytes": 0,
+            "free_bytes": 0,
+            "used_bytes": 0,
+            "detail": "",
+        },
+    )
 
     monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": "configured"})
     workflow.start_voice_training_dry_run()
@@ -138,6 +152,33 @@ def test_voice_training_start_methods_are_guarded_by_job_status(monkeypatch) -> 
     monkeypatch.setattr(voice_training_page, "load_voice_modeling_job_config", lambda _path: {"status": "dry_run_ok"})
     workflow.start_voice_training_run()
     assert workflow.retried_jobs == [("current-job.json", True), ("current-job.json", False)]
+
+
+def test_voice_training_start_warns_when_cuda_vram_margin_is_low(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+
+    monkeypatch.setattr(
+        voice_training_page,
+        "load_voice_modeling_job_config",
+        lambda _path: {"status": "dry_run_ok", "device": "cuda", "batch_size": 2},
+    )
+    monkeypatch.setattr(
+        voice_training_page,
+        "inspect_voice_modeling_cuda_memory",
+        lambda: {
+            "available": True,
+            "total_bytes": 8 * 1024**3,
+            "free_bytes": 4 * 1024**3,
+            "used_bytes": 4 * 1024**3,
+            "detail": "",
+        },
+    )
+
+    workflow.start_voice_training_run()
+
+    assert workflow.retried_jobs == [("current-job.json", False)]
+    assert workflow.questions
+    assert "CUDA VRAM margin looks low: 4.0 GB free of 8.0 GB." in workflow.questions[0][0][1]
 
 
 def test_voice_training_cancelled_marks_job_cancelled(monkeypatch) -> None:
@@ -245,3 +286,24 @@ def test_voice_training_cuda_retry_uses_running_config_path(monkeypatch) -> None
     assert workflow.refreshed_paths == ["captured-job.json"]
     assert workflow.retried_jobs == [("captured-job.json", False)]
     assert workflow.errors == []
+
+
+def test_voice_training_cuda_oom_error_is_actionable_when_retry_cancelled(monkeypatch) -> None:
+    workflow = FakeVoiceTrainingWorkflow()
+    workflow.question_result = False
+    workflow.voice_training_running_config_path = "running-job.json"
+    monkeypatch.setattr(
+        voice_training_page,
+        "cleanup_incomplete_voice_modeling_job",
+        lambda _config_path, *, reason: {"archive_dir": "", "deleted_output_dir": ""},
+    )
+
+    workflow.voice_training_failed("torch.AcceleratorError: CUDA error: out of memory")
+
+    assert workflow.errors == [
+        (
+            "Voice Training",
+            "Voice training ran out of CUDA VRAM.\n\n"
+            "Close other GPU apps, reduce batch size to 1, or switch this job to CPU and retry.",
+        )
+    ]

@@ -122,6 +122,14 @@ class VoiceModelingTrainingDefaults(TypedDict):
     batch_size: int
 
 
+class VoiceModelingCudaMemoryInfo(TypedDict):
+    available: bool
+    total_bytes: int
+    free_bytes: int
+    used_bytes: int
+    detail: str
+
+
 class VoiceModelingTrainingPlan(TypedDict):
     config_path: str
     output_dir: str
@@ -640,6 +648,91 @@ def recommended_voice_modeling_batch_size(cuda_total_memory_bytes: int | None = 
     if gib >= 8:
         return 4
     return 2
+
+
+def inspect_voice_modeling_cuda_memory(timeout_seconds: int = 5) -> VoiceModelingCudaMemoryInfo:
+    default_info: VoiceModelingCudaMemoryInfo = {
+        "available": False,
+        "total_bytes": 0,
+        "free_bytes": 0,
+        "used_bytes": 0,
+        "detail": "CUDA memory was not inspected.",
+    }
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total,memory.free,memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        default_info["detail"] = f"Could not inspect CUDA memory with nvidia-smi: {exc}"
+        return default_info
+
+    output = (result.stdout or "").strip()
+    if result.returncode != 0 or not output:
+        default_info["detail"] = (result.stderr or "").strip() or f"nvidia-smi exited with code {result.returncode}."
+        return default_info
+
+    first_line = output.splitlines()[0]
+    parts = [part.strip() for part in first_line.split(",")]
+    if len(parts) < 3:
+        default_info["detail"] = f"Unexpected nvidia-smi memory output: {first_line}"
+        return default_info
+    try:
+        total_mib, free_mib, used_mib = (max(0, int(float(part))) for part in parts[:3])
+    except ValueError:
+        default_info["detail"] = f"Unexpected nvidia-smi memory values: {first_line}"
+        return default_info
+
+    mib = 1024**2
+    return {
+        "available": True,
+        "total_bytes": total_mib * mib,
+        "free_bytes": free_mib * mib,
+        "used_bytes": used_mib * mib,
+        "detail": f"CUDA memory: {free_mib} MiB free of {total_mib} MiB.",
+    }
+
+
+def minimum_voice_modeling_free_cuda_memory_bytes(batch_size: int, total_bytes: int) -> int:
+    try:
+        normalized_batch_size = max(1, int(batch_size))
+    except (TypeError, ValueError):
+        normalized_batch_size = VOICE_MODELING_DEFAULT_BATCH_SIZE
+    gib = 1024**3
+    if normalized_batch_size <= 1:
+        required_bytes = 5 * gib
+    elif normalized_batch_size <= 2:
+        required_bytes = 7 * gib
+    elif normalized_batch_size <= 4:
+        required_bytes = 10 * gib
+    elif normalized_batch_size <= 8:
+        required_bytes = 14 * gib
+    else:
+        required_bytes = 20 * gib
+    return min(required_bytes, int(max(0, total_bytes) * 0.9)) if total_bytes else required_bytes
+
+
+def voice_modeling_cuda_memory_margin_low(
+    config: VoiceModelingJobConfig,
+    memory_info: VoiceModelingCudaMemoryInfo,
+) -> bool:
+    if config.get("device", "auto") == "cpu" or not memory_info["available"]:
+        return False
+    minimum_free = minimum_voice_modeling_free_cuda_memory_bytes(
+        int(config.get("batch_size", VOICE_MODELING_DEFAULT_BATCH_SIZE)),
+        memory_info["total_bytes"],
+    )
+    return bool(minimum_free and memory_info["free_bytes"] < minimum_free)
 
 
 def build_voice_modeling_job_config(

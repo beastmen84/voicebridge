@@ -14,9 +14,11 @@ from voicebridge.media_tools import (
     VIDEO_CLEANUP_METHOD_REMOVE,
 )
 from voicebridge.media_tools import BURN_QUALITY_CRF_VALUES as _BURN_QUALITY_CRF_VALUES
+from voicebridge.version import app_version
 
 APP_NAME = "VoiceBridge"
 APP_ATTRIBUTION = "© Davide Marchi"
+APP_VERSION = app_version()
 APP_ICON = Path("images") / "file_to_mp3.ico"
 APP_ICON_PNG = Path("images") / "file_to_mp3.png"
 DEFAULT_VOICE_SHORT_NAME = "en-US-AriaNeural"

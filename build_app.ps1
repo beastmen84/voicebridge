@@ -97,6 +97,7 @@ $workerSupportModules = @(
     "stt_preflight",
     "tts_text",
     "tts_timeline",
+    "version",
     "video_anomalies",
     "voice_modeling",
     "voice_profiles"
@@ -112,6 +113,7 @@ Copy-Item -Path (Join-Path $PSScriptRoot "CONTRIBUTING.md") -Destination $bundle
 Copy-Item -Path (Join-Path $PSScriptRoot "SECURITY.md") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "Manual.it.html") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "Manual.en.html") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "VERSION") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 $bundleDocsImagesDir = Join-Path $bundleDir "docs\images"

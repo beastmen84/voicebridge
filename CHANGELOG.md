@@ -6,8 +6,13 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 ## Unreleased
 
+- No unreleased changes.
+
+## 1.0 - First stable local release
+
 ### Changed
 
+- Added a root `VERSION` file and displayed `V. 1.0` in the app sidebar footer.
 - Limited generated guided modeling prompts to 200 characters for XTTS-v2 training compatibility.
 - Enforced the Training tab sequence so jobs move through `Prepare`, `Dry run` and `Start training` in order.
 - Updated the recording reader so semicolons no longer force a new reading line.
@@ -23,6 +28,8 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 - Removed safely identifiable empty training output folders when deleting linked modeling profiles.
 - Archived logs and pruned completed XTTS training checkpoint folders after the inference model is exported.
 - Stopped automatically opening Explorer after dataset export and training config save.
+- Preserved current modeling dataset export state when profile sync does not change the dataset.
+- Warned before XTTS training when available CUDA VRAM appears low and improved CUDA out-of-memory guidance.
 
 ## 0.9b - Public-ready beta
 

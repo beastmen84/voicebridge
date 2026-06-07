@@ -37,6 +37,7 @@ from voicebridge.constants import (
     APP_ATTRIBUTION,
     APP_ICON,
     APP_NAME,
+    APP_VERSION,
     BURN_QUALITY_LABELS,
     RATE_CHOICES,
     STT_ALIGNMENT_READY_LANGUAGES,
@@ -767,9 +768,17 @@ class VoiceBridgeQt(
             status_layout.addWidget(tile, index // 2, index % 2)
         side_layout.addWidget(status_panel)
 
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(0, 0, 0, 0)
+        footer_row.setSpacing(8)
         footer = QLabel(APP_ATTRIBUTION)
         footer.setObjectName("AppSubtitle")
-        side_layout.addWidget(footer)
+        version_label = QLabel(f"V. {APP_VERSION}")
+        version_label.setObjectName("AppSubtitle")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        footer_row.addWidget(footer, 1)
+        footer_row.addWidget(version_label)
+        side_layout.addLayout(footer_row)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self.build_home_page())

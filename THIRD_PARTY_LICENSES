@@ -1,5 +1,5 @@
 VoiceBridge third-party notices
-Last updated: 2026-06-01
+Last updated: 2026-06-07
 
 This file summarizes third-party software and model licenses used by VoiceBridge.
 It is a notice file, not legal advice. When dependencies are bundled, their
@@ -33,6 +33,14 @@ pytesseract             Apache-2.0                               https://github.
 Pillow                  MIT-CMU                                  https://python-pillow.org
 Tesseract OCR app       Apache-2.0                               https://github.com/tesseract-ocr/tesseract
 
+Bundled executable/runtime media components
+
+Component               License / notice                         Source
+FFmpeg executable       GPL-3.0; distributed as a separate        https://ffmpeg.org
+                        executable/runtime media component.       https://www.gyan.dev/ffmpeg/builds/
+                        The bundled Gyan.dev Windows build
+                        reports --enable-gpl --enable-version3.
+
 Offline ML runtime dependencies
 
 Package                 License / notice                         Source
@@ -59,7 +67,7 @@ facebook/wav2vec2-xls-r-300m             Apache-2.0                             
 coqui/XTTS-v2                            Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2
 coqui/XTTS-v2 dvae.pth                   Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2/blob/main/dvae.pth
 coqui/XTTS-v2 mel_stats.pth              Coqui Public Model License 1.0.0          https://huggingface.co/coqui/XTTS-v2/blob/main/mel_stats.pth
-Silero VAD                               Check bundled model/source license        https://github.com/snakers4/silero-vad
+Silero VAD / silero_vad_v6.onnx          MIT                                      https://github.com/snakers4/silero-vad
 
 Important XTTS-v2 notice
 
@@ -75,3 +83,11 @@ Microsoft Edge TTS service notice
 edge-tts is an unofficial client for Microsoft Edge text-to-speech voices. Use of
 Microsoft services may be subject to Microsoft's own service terms in addition to
 the open-source license of the client library.
+
+Bundled FFmpeg notice
+
+VoiceBridge uses FFmpeg by launching bundled executables/runtime media components
+as separate tools. The bundled Windows ffmpeg.exe currently comes from Gyan.dev
+and identifies itself as GPLv3 because it is built with GPL/version3 options.
+When redistributing binaries, keep FFmpeg notices, license terms and source-code
+availability obligations separate and visible alongside the VoiceBridge bundle.

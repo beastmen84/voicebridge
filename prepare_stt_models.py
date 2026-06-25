@@ -1,11 +1,27 @@
 import importlib
 import os
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
 STT_MODEL = "large-v3"
 ALIGN_LANGUAGES = ("en", "it")
+TORCHCODEC_AUDIO_DECODING_WARNING = (
+    r"\s*torchcodec is not installed correctly so built-in audio decoding will fail\..*"
+)
+
+
+def ignore_torchcodec_audio_decoding_warning() -> None:
+    warnings.filterwarnings(
+        "ignore",
+        message=TORCHCODEC_AUDIO_DECODING_WARNING,
+        category=UserWarning,
+        module=r"pyannote\.audio\.core\.io",
+    )
+
+
+ignore_torchcodec_audio_decoding_warning()
 
 
 def configure_cache(root):
@@ -27,6 +43,10 @@ def configure_cache(root):
 
 
 def load_optional_module(module_name: str) -> Any:
+    if module_name == "whisperx":
+        with warnings.catch_warnings():
+            ignore_torchcodec_audio_decoding_warning()
+            return importlib.import_module(module_name)
     return importlib.import_module(module_name)
 
 
@@ -97,4 +117,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with warnings.catch_warnings():
+        ignore_torchcodec_audio_decoding_warning()
+        main()

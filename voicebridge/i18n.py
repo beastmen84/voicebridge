@@ -502,6 +502,7 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Cancelling...": "Annullamento...",
     "Download Whisper large-v3": "Scarica Whisper large-v3",
     "Transcript Markdown (.md)": "Transcript Markdown (.md)",
+    "Transcript Word (.docx)": "Transcript Word (.docx)",
     "Auto subtitles (.srt)": "Sottotitoli automatici (.srt)",
     "Subtitles from provided text (.srt)": "Sottotitoli da testo fornito (.srt)",
     "Auto": "Auto",
@@ -525,8 +526,8 @@ STATIC_TEXT_TRANSLATIONS_IT = {
     "Downloaded on this computer and available offline for SRT alignment.": (
         "Scaricato su questo computer e disponibile offline per l'allineamento SRT."
     ),
-    "Markdown transcripts work offline; SRT alignment downloads this language on request.": (
-        "I transcript Markdown funzionano offline; l'allineamento SRT scarica questa lingua su richiesta."
+    "Transcript files work offline; SRT alignment downloads this language on request.": (
+        "I transcript funzionano offline; l'allineamento SRT scarica questa lingua su richiesta."
     ),
     "Select audio or video file": "Seleziona file audio o video",
     "Select transcript file": "Seleziona file transcript",

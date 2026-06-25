@@ -46,7 +46,12 @@ if (-not $ModelsOnly) {
     Copy-Item -Path (Join-Path $PSScriptRoot "requirements-stt.txt") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "requirements-local-tts.txt") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "README.md") -Destination $bundleDir -Force
-    Copy-Item -Path (Join-Path $PSScriptRoot "Manual.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "CHANGELOG.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "CONTRIBUTING.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "SECURITY.md") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "Manual.it.html") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "Manual.en.html") -Destination $bundleDir -Force
+    Copy-Item -Path (Join-Path $PSScriptRoot "VERSION") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "LICENSE") -Destination $bundleDir -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "THIRD_PARTY_LICENSES") -Destination $bundleDir -Force
 

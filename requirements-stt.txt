@@ -9,3 +9,4 @@ imageio-ffmpeg
 opencv-python-headless
 hf_transfer
 hf_xet
+python-docx

@@ -156,17 +156,23 @@ class SttWorkflowMixin:
         self.save_user_settings()
 
     def stt_output_suffix(self):
-        return ".md" if self.stt_mode_key() == "transcript" else ".srt"
+        mode = self.stt_mode_key()
+        if mode == "transcript":
+            return ".md"
+        if mode == "transcript_docx":
+            return ".docx"
+        return ".srt"
 
     def update_stt_output_for_mode_or_media(self):
         media_path = self.stt_media_picker.text()
         current = self.stt_output_picker.text()
         suffix = self.stt_output_suffix()
+        managed_suffixes = {".md", ".docx", ".srt"}
         if media_path:
             suggested = str(Path(media_path).with_suffix(suffix))
-            if not current or Path(current).suffix.lower() in {".md", ".srt"}:
+            if not current or Path(current).suffix.lower() in managed_suffixes:
                 self.stt_output_picker.set_text(suggested)
-        elif current and Path(current).suffix.lower() in {".md", ".srt"}:
+        elif current and Path(current).suffix.lower() in managed_suffixes:
             self.stt_output_picker.set_text(str(Path(current).with_suffix(suffix)))
 
     def select_stt_media_file(self):
@@ -194,11 +200,12 @@ class SttWorkflowMixin:
 
     def select_stt_output_file(self):
         suffix = self.stt_output_suffix()
-        filter_text = (
-            "Markdown files (*.md);;All files (*.*)"
-            if suffix == ".md"
-            else "SubRip subtitles (*.srt);;All files (*.*)"
-        )
+        if suffix == ".md":
+            filter_text = "Markdown files (*.md);;All files (*.*)"
+        elif suffix == ".docx":
+            filter_text = "Word documents (*.docx);;All files (*.*)"
+        else:
+            filter_text = "SubRip subtitles (*.srt);;All files (*.*)"
         initial = self.stt_output_picker.text() or str(Path.home() / f"output{suffix}")
         path, _ = QFileDialog.getSaveFileName(self, self.stt_text("Save output as"), initial, filter_text)
         if path:

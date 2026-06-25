@@ -368,7 +368,7 @@
     <ul>
       <li><strong>Text to Speech</strong>: genera MP3 da documenti.</li>
       <li><strong>Local Voices</strong>: gestisce profili, dataset, setup e training.</li>
-      <li><strong>Transcription</strong>: crea transcript Markdown o sottotitoli SRT.</li>
+      <li><strong>Transcription</strong>: crea transcript Markdown/Word o sottotitoli SRT.</li>
       <li><strong>Subtitles</strong>: aggiunge o imprime SRT nei video.</li>
       <li><strong>Audio Cleanup</strong>: corregge piccoli difetti audio.</li>
       <li><strong>Video Cleanup</strong>: corregge singoli frame problematici.</li>
@@ -473,13 +473,14 @@
       <li>Apri <code>Transcription</code>.</li>
       <li>Se compare <code>Download Whisper large-v3</code>, scarica prima il modello.</li>
       <li>Seleziona audio o video.</li>
-      <li>Scegli modalità: Markdown, SRT automatico o SRT da testo fornito.</li>
+      <li>Scegli modalità: Markdown, Word, SRT automatico o SRT da testo fornito.</li>
       <li>Scegli lingua e device.</li>
       <li>Avvia il job.</li>
     </ol>
     <table class="matrix">
       <tr><th>Modalità</th><th>Quando usarla</th></tr>
       <tr><td><code>Transcript Markdown (.md)</code></td><td>Trascrizione leggibile, senza timing SRT.</td></tr>
+      <tr><td><code>Transcript Word (.docx)</code></td><td>Transcript leggibile in formato Word.</td></tr>
       <tr><td><code>Auto subtitles (.srt)</code></td><td>Sottotitoli temporizzati automaticamente.</td></tr>
       <tr><td><code>Subtitles from provided text (.srt)</code></td><td>Hai già un testo e vuoi allinearlo ad audio/video.</td></tr>
     </table>

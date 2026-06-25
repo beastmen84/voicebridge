@@ -4,7 +4,7 @@
 
 VoiceBridge e' un'app desktop Windows per trasformare documenti in audio, trascrivere audio/video, creare sottotitoli e fare piccoli interventi di cleanup su audio e video.
 
-Versione corrente: `1.0`.
+Versione corrente: `1.0.1`.
 
 La guida utente stampabile e' in [Manual.it.html](Manual.it.html) e [Manual.en.html](Manual.en.html), con switch in testa tra Italiano e English.
 
@@ -16,7 +16,7 @@ La guida utente stampabile e' in [Manual.it.html](Manual.it.html) e [Manual.en.h
 - Gestione profili vocali locali, dataset per voice modeling, setup e training XTTS-v2.
 - Generazione locale di testi guidati e sicuri per dataset vocali multilingua, con verifica Whisper in background.
 - Speech to text offline con WhisperX e Whisper `large-v3`.
-- Transcript Markdown, sottotitoli `.srt` automatici e sottotitoli da transcript fornito.
+- Transcript Markdown/Word, sottotitoli `.srt` automatici e sottotitoli da transcript fornito.
 - Embed o burn-in di sottotitoli su video.
 - Audio Cleanup manuale con taglio, silenziamento e fade su range selezionati.
 - Video Cleanup con filmstrip manuale, detect opzionale dei frame neri, detect di frame sospetti via OpenCV e coda di modifiche Freeze/Remove.

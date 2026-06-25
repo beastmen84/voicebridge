@@ -1160,7 +1160,7 @@ class VoiceBridgeQt(
                 tooltip = self.static_ui_text("Downloaded on this computer and available offline for SRT alignment.")
             else:
                 tooltip = self.static_ui_text(
-                    "Markdown transcripts work offline; SRT alignment downloads this language on request."
+                    "Transcript files work offline; SRT alignment downloads this language on request."
                 )
             self.stt_language_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
         self.set_stt_language_code(selected_code if selected_code in STT_LANGUAGE_CODES else "auto")

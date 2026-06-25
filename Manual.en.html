@@ -368,7 +368,7 @@
     <ul>
       <li><strong>Text to Speech</strong>: generates MP3 files from documents.</li>
       <li><strong>Local Voices</strong>: manages profiles, datasets, setup, and training.</li>
-      <li><strong>Transcription</strong>: creates Markdown transcripts or SRT subtitles.</li>
+      <li><strong>Transcription</strong>: creates Markdown/Word transcripts or SRT subtitles.</li>
       <li><strong>Subtitles</strong>: embeds or burns SRT subtitles into videos.</li>
       <li><strong>Audio Cleanup</strong>: fixes small audio defects.</li>
       <li><strong>Video Cleanup</strong>: fixes individual problematic frames.</li>
@@ -473,13 +473,14 @@
       <li>Open <code>Transcription</code>.</li>
       <li>If <code>Download Whisper large-v3</code> appears, download the model first.</li>
       <li>Select audio or video.</li>
-      <li>Choose the mode: Markdown, automatic SRT, or SRT from provided text.</li>
+      <li>Choose the mode: Markdown, Word, automatic SRT, or SRT from provided text.</li>
       <li>Choose language and device.</li>
       <li>Start the job.</li>
     </ol>
     <table class="matrix">
       <tr><th>Mode</th><th>When to use it</th></tr>
       <tr><td><code>Transcript Markdown (.md)</code></td><td>Readable transcription without SRT timing.</td></tr>
+      <tr><td><code>Transcript Word (.docx)</code></td><td>Readable transcript in Word format.</td></tr>
       <tr><td><code>Auto subtitles (.srt)</code></td><td>Automatically timed subtitles.</td></tr>
       <tr><td><code>Subtitles from provided text (.srt)</code></td><td>You already have text and want to align it to audio/video.</td></tr>
     </table>

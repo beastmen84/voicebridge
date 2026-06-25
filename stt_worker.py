@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,9 @@ SAMPLE_RATE = 16000
 DEFAULT_MODEL = "large-v3"
 SRT_MODES = {"auto_srt", "align_text"}
 MISSING_ALIGNMENT_PREFIX = "MISSING_ALIGNMENT_MODEL:"
+TORCHCODEC_AUDIO_DECODING_WARNING = (
+    r"\s*torchcodec is not installed correctly so built-in audio decoding will fail\..*"
+)
 WHISPER_MODEL_REQUIRED_FILE_SPECS = (
     RequiredFileSpec("config.json", 32),
     RequiredFileSpec("model.bin", 1024 * 1024),
@@ -29,6 +33,18 @@ class AlignmentModelMissing(RuntimeError):
         super().__init__(
             f"Alignment model for language '{language}' is not available in the local STT package."
         )
+
+
+def ignore_torchcodec_audio_decoding_warning() -> None:
+    warnings.filterwarnings(
+        "ignore",
+        message=TORCHCODEC_AUDIO_DECODING_WARNING,
+        category=UserWarning,
+        module=r"pyannote\.audio\.core\.io",
+    )
+
+
+ignore_torchcodec_audio_decoding_warning()
 
 
 def status(message):
@@ -54,6 +70,10 @@ def project_root():
 
 
 def load_optional_module(module_name: str) -> Any:
+    if module_name == "whisperx":
+        with warnings.catch_warnings():
+            ignore_torchcodec_audio_decoding_warning()
+            return importlib.import_module(module_name)
     return importlib.import_module(module_name)
 
 
@@ -139,6 +159,31 @@ def write_markdown(result, media_path, output_path, model_name):
             lines.append(f"- `{start} - {end}` {text}")
 
     Path(output_path).write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+
+
+def write_docx(result, media_path, output_path, model_name):
+    docx = load_optional_module("docx")
+    document = docx.Document()
+    language = result.get("language", "unknown")
+    segments = result.get("segments", [])
+    full_text = clean_text(" ".join(segment.get("text", "") for segment in segments))
+
+    document.add_heading("Transcript", level=1)
+    document.add_paragraph(f"Source: {Path(media_path).name}")
+    document.add_paragraph(f"Detected language: {language}")
+    document.add_paragraph(f"Model: {model_name}")
+    document.add_heading("Text", level=2)
+    document.add_paragraph(full_text)
+    document.add_heading("Timed Segments", level=2)
+
+    for segment in segments:
+        start = format_srt_timestamp(float(segment.get("start", 0))).replace(",", ".")
+        end = format_srt_timestamp(float(segment.get("end", 0))).replace(",", ".")
+        text = clean_text(segment.get("text", ""))
+        if text:
+            document.add_paragraph(f"{start} - {end} {text}", style="List Bullet")
+
+    document.save(str(output_path))
 
 
 def write_srt_from_segments(segments, language, output_path):
@@ -300,6 +345,16 @@ def normalize_stt_language(language):
     if not language or language == "auto":
         return "auto"
     return language.lower().replace("_", "-").split("-", 1)[0]
+
+
+def expected_output_suffixes(mode):
+    if mode == "transcript":
+        return {".md"}
+    if mode == "transcript_docx":
+        return {".docx"}
+    if mode in SRT_MODES:
+        return {".srt"}
+    return {".md", ".docx", ".srt"}
 
 
 def resolve_runtime_options(device, compute_type):
@@ -515,7 +570,7 @@ def run(args):
     output_path = validate_output_path(
         Path(args.output).resolve(),
         source_path=media_path,
-        expected_suffixes={".md", ".srt"},
+        expected_suffixes=expected_output_suffixes(args.mode),
         create_parent=True,
     )
 
@@ -551,6 +606,8 @@ def run(args):
     progress(98)
     if args.mode == "transcript":
         write_markdown(result, media_path, output_path, args.model)
+    elif args.mode == "transcript_docx":
+        write_docx(result, media_path, output_path, args.model)
     elif args.mode in SRT_MODES:
         write_srt_from_segments(result["segments"], result.get("language", "en"), output_path)
     else:
@@ -566,7 +623,7 @@ def parse_args():
     parser.add_argument("--output")
     parser.add_argument(
         "--mode",
-        choices=["transcript", "auto_srt", "align_text", "download_align", "download_whisper"],
+        choices=["transcript", "transcript_docx", "auto_srt", "align_text", "download_align", "download_whisper"],
         required=True,
     )
     parser.add_argument("--text")
@@ -582,7 +639,9 @@ def parse_args():
 
 def main():
     try:
-        run(parse_args())
+        with warnings.catch_warnings():
+            ignore_torchcodec_audio_decoding_warning()
+            run(parse_args())
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         raise

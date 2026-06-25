@@ -6,7 +6,12 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 ## Unreleased
 
-- No unreleased changes.
+No unreleased changes.
+
+## 1.0.1 - Word transcripts and STT details cleanup
+
+- Added Word `.docx` output for offline transcripts.
+- Suppressed the noisy optional TorchCodec audio-decoding warning from STT details.
 
 ## 1.0 - First stable local release
 

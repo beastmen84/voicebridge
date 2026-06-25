@@ -42,6 +42,7 @@ UI_QUEUE_POLL_MS = 50
 
 STT_MODE_LABELS = {
     "Transcript Markdown (.md)": "transcript",
+    "Transcript Word (.docx)": "transcript_docx",
     "Auto subtitles (.srt)": "auto_srt",
     "Subtitles from provided text (.srt)": "align_text",
 }

@@ -4,6 +4,7 @@ import voicebridge.pages.tts as tts_page
 from voicebridge.pages.tts import TtsWorkflowMixin
 from voicebridge.process_jobs import WorkerProcessOutput, WorkerProcessResult
 from voicebridge.tts_engine import ensure_mp3_suffix, suggested_output_path
+from voicebridge.tts_timeline import load_tts_timeline_for_audio
 from voicebridge.voice_profiles import VoiceProfile
 from voicebridge.voices import (
     VOICE_SECTION_OTHER,
@@ -359,6 +360,7 @@ def test_edge_tts_local_output_error_does_not_mark_edge_unavailable(monkeypatch,
         raise OSError("disk is full")
 
     monkeypatch.setattr(tts_page.os, "replace", fail_replace)
+    monkeypatch.setattr(tts_page, "audio_duration_seconds", lambda _path: 1.0)
 
     workflow = FakeEdgeConversionWorkflow()
     workflow.conversion_worker(str(input_path), str(output_path), "voice", "+0%", None)
@@ -379,6 +381,77 @@ def test_edge_tts_generation_error_marks_edge_unavailable(tmp_path) -> None:
     workflow = OfflineWorkflow()
     workflow.conversion_worker(str(input_path), str(output_path), "voice", "+0%", None)
 
+    assert workflow.edge_unavailable_messages == ["offline"]
+    assert workflow.events == [("failed", "offline"), ("finished", "")]
+
+
+def test_edge_single_tts_retries_failed_block_and_writes_timeline(monkeypatch, tmp_path) -> None:
+    class RetryingWorkflow(FakeTtsWorkflow):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls: list[str] = []
+            self.retry_path_was_clean = False
+            self.failed_once = False
+
+        async def generate_edge_audio_to_file(self, text, _voice, save_path, _rate):
+            self.calls.append(text)
+            path = Path(save_path)
+            if text == "second block" and not self.failed_once:
+                self.failed_once = True
+                path.write_bytes(b"partial")
+                raise tts_page.EdgeTtsUnavailableError("temporary outage")
+            if text == "second block" and self.failed_once:
+                self.retry_path_was_clean = not path.exists()
+            path.write_bytes(f"mp3-{text}".encode())
+
+    input_path = tmp_path / "input.txt"
+    output_path = tmp_path / "output.mp3"
+    input_path.write_text("long text", encoding="utf-8")
+    merged_parts: list[Path] = []
+
+    def fake_concatenate_mp3_files(parts, output_path):
+        merged_parts.extend(Path(part) for part in parts)
+        Path(output_path).write_bytes(b"merged")
+
+    monkeypatch.setattr(tts_page, "split_edge_tts_text_for_tts", lambda _text: ["first block", "second block"])
+    monkeypatch.setattr(tts_page, "audio_duration_seconds", lambda _path: 1.0)
+    monkeypatch.setattr(tts_page, "concatenate_mp3_files", fake_concatenate_mp3_files)
+
+    workflow = RetryingWorkflow()
+    workflow.conversion_worker(str(input_path), str(output_path), "it-IT-IsabellaNeural", "+0%", None)
+
+    timeline = load_tts_timeline_for_audio(output_path)
+    assert output_path.read_bytes() == b"merged"
+    assert timeline is not None
+    assert timeline["mode"] == "single"
+    assert [block["text"] for block in timeline["blocks"]] == ["first block", "second block"]
+    assert workflow.calls == ["first block", "second block", "second block"]
+    assert workflow.retry_path_was_clean is True
+    assert workflow.edge_unavailable_messages == []
+    assert workflow.events == [("finished", "")]
+    assert len(merged_parts) == 2
+
+
+def test_edge_single_tts_failure_after_retry_cleans_temp_files(monkeypatch, tmp_path) -> None:
+    class FailingWorkflow(FakeTtsWorkflow):
+        async def generate_edge_audio_to_file(self, text, _voice, save_path, _rate):
+            path = Path(save_path)
+            path.write_bytes(b"partial")
+            if text == "second block":
+                raise tts_page.EdgeTtsUnavailableError("offline")
+
+    input_path = tmp_path / "input.txt"
+    output_path = tmp_path / "output.mp3"
+    input_path.write_text("long text", encoding="utf-8")
+
+    monkeypatch.setattr(tts_page, "split_edge_tts_text_for_tts", lambda _text: ["first block", "second block"])
+    monkeypatch.setattr(tts_page, "audio_duration_seconds", lambda _path: 1.0)
+
+    workflow = FailingWorkflow()
+    workflow.conversion_worker(str(input_path), str(output_path), "it-IT-IsabellaNeural", "+0%", None)
+
+    assert not output_path.exists()
+    assert not list(tmp_path.glob("voicebridge-tts-*"))
     assert workflow.edge_unavailable_messages == ["offline"]
     assert workflow.events == [("failed", "offline"), ("finished", "")]
 

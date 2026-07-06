@@ -98,6 +98,16 @@ def find_ffmpeg_exe():
     return None
 
 
+def ffmpeg_subprocess_kwargs():
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return {"creationflags": creationflags} if creationflags else {}
+
+
+def run_ffmpeg_subprocess(command, **kwargs):
+    check = kwargs.pop("check", False)
+    return subprocess.run(command, check=check, **{**ffmpeg_subprocess_kwargs(), **kwargs})
+
+
 def escape_ffmpeg_concat_path(path):
     return str(path).replace("\\", "/").replace("'", r"'\''")
 
@@ -172,7 +182,7 @@ def concatenate_mp3_files(parts, output_path):
     ffmpeg = find_ffmpeg_exe()
     if not ffmpeg:
         raise RuntimeError(
-            "Could not find ffmpeg to merge multi-voice MP3 parts. "
+            "Could not find ffmpeg to merge TTS MP3 parts. "
             "Use the full VoiceBridge bundle with the offline STT package included."
         )
 
@@ -201,7 +211,7 @@ def concatenate_mp3_files(parts, output_path):
             "copy",
             str(output_path),
         ]
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = run_ffmpeg_subprocess(command, capture_output=True, text=True, check=False)
 
         if result.returncode != 0:
             command = [
@@ -222,7 +232,7 @@ def concatenate_mp3_files(parts, output_path):
                 "4",
                 str(output_path),
             ]
-            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            result = run_ffmpeg_subprocess(command, capture_output=True, text=True, check=False)
 
         if result.returncode != 0:
             error_text = (result.stderr or result.stdout or "").strip()
@@ -257,7 +267,7 @@ def convert_audio_to_mp3(input_path, output_path):
         "4",
         str(output_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, errors="replace", check=False)
+    result = run_ffmpeg_subprocess(command, capture_output=True, text=True, errors="replace", check=False)
     if result.returncode != 0:
         error_text = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(error_text or f"ffmpeg exited with code {result.returncode}.")
@@ -358,7 +368,7 @@ def audio_waveform_peaks(
     bin_count=AUDIO_WAVEFORM_DEFAULT_BINS,
     sample_rate=AUDIO_WAVEFORM_SAMPLE_RATE,
 ) -> list[float]:
-    result = subprocess.run(
+    result = run_ffmpeg_subprocess(
         audio_waveform_command(ffmpeg, media_path, sample_rate=sample_rate),
         capture_output=True,
         check=False,
@@ -371,7 +381,7 @@ def audio_waveform_peaks(
 
 def _ffmpeg_input_info(ffmpeg, media_path):
     command = [str(ffmpeg), "-hide_banner", "-i", str(media_path)]
-    result = subprocess.run(command, capture_output=True, text=True, errors="replace", check=False)
+    result = run_ffmpeg_subprocess(command, capture_output=True, text=True, errors="replace", check=False)
     return f"{result.stdout or ''}\n{result.stderr or ''}"
 
 
@@ -402,7 +412,7 @@ def _ffmpeg_video_frame_count(ffmpeg, media_path):
         "-",
     ]
     with suppress(OSError, subprocess.TimeoutExpired):
-        result = subprocess.run(
+        result = run_ffmpeg_subprocess(
             command,
             capture_output=True,
             text=True,

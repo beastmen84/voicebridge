@@ -4,7 +4,7 @@
 
 VoiceBridge e' un'app desktop Windows per trasformare documenti in audio, trascrivere audio/video, creare sottotitoli e fare piccoli interventi di cleanup su audio e video.
 
-Versione corrente: `1.0.1`.
+Versione corrente: `1.0.2`.
 
 La guida utente stampabile e' in [Manual.it.html](Manual.it.html) e [Manual.en.html](Manual.en.html), con switch in testa tra Italiano e English.
 

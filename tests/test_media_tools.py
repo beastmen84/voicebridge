@@ -15,6 +15,7 @@ from voicebridge.media_tools import (
     audio_cleanup_filter_complex,
     audio_waveform_command,
     auto_burn_quality,
+    ffmpeg_subprocess_kwargs,
     first_srt_timestamp_seconds,
     freezeframes_filter_complex,
     isolated_black_frame_numbers,
@@ -90,6 +91,12 @@ def test_probe_video_info_counts_frames_with_ffmpeg(monkeypatch: pytest.MonkeyPa
 
     assert info["frame_count"] == 7174
     assert round(info["duration_seconds"] * info["fps"]) == 7200
+
+
+def test_ffmpeg_subprocess_kwargs_hide_windows_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    assert ffmpeg_subprocess_kwargs() == {"creationflags": 0x08000000}
 
 
 def test_audio_cleanup_remove_filter_removes_middle_range() -> None:

@@ -3,6 +3,8 @@ import re
 TTS_MAX_CHUNK_CHARS = 240
 TTS_MIN_STANDALONE_CHARS = 40
 TTS_TERMINAL_FULL_STOP = "."
+EDGE_TTS_TARGET_CHUNK_CHARS = 6000
+EDGE_TTS_MAX_CHUNK_CHARS = 8000
 
 NON_SENTENCE_ABBREVIATIONS = {
     "arch.",
@@ -158,6 +160,43 @@ def split_tts_text_for_tts(text: str, max_chars: int = TTS_MAX_CHUNK_CHARS) -> l
         else:
             chunks.extend(pack_text_fragments_for_tts(re.split(r"(?<=[,;:])\s+", sentence), max_chars))
     return merge_short_tts_chunks(chunks, max_chars=max_chars)
+
+
+def split_edge_tts_text_for_tts(
+    text: str,
+    target_chars: int = EDGE_TTS_TARGET_CHUNK_CHARS,
+    max_chars: int = EDGE_TTS_MAX_CHUNK_CHARS,
+) -> list[str]:
+    max_chars = max(1, max_chars)
+    target_chars = max(1, min(target_chars, max_chars))
+    paragraphs = [
+        normalize_tts_text(paragraph)
+        for paragraph in re.split(r"\n\s*\n+", text.replace("\r\n", "\n").replace("\r", "\n"))
+    ]
+    paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+    if not paragraphs:
+        return []
+
+    sections = []
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            sections.append(paragraph)
+        else:
+            sections.extend(split_tts_text_for_tts(paragraph, max_chars=max_chars))
+
+    chunks = []
+    current = ""
+    for section in sections:
+        candidate = section if not current else f"{current}\n\n{section}"
+        if current and len(candidate) > target_chars:
+            chunks.append(current)
+            current = section
+        else:
+            current = candidate
+
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def prepare_tts_chunk_for_generation(text: str) -> str:

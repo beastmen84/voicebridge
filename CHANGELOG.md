@@ -8,6 +8,11 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 No unreleased changes.
 
+## 1.0.2 - Edge TTS long text reliability
+
+- Split single-voice Edge TTS generation into retryable MP3 blocks before merging long outputs.
+- Hid FFmpeg subprocess console windows during TTS block probing and media operations.
+
 ## 1.0.1 - Word transcripts and STT details cleanup
 
 - Added Word `.docx` output for offline transcripts.

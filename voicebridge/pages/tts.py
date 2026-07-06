@@ -6,6 +6,7 @@ import tempfile
 import threading
 import webbrowser
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 import aiohttp
@@ -86,7 +87,7 @@ from voicebridge.readers import (
 )
 from voicebridge.runtime_errors import is_cuda_runtime_failure
 from voicebridge.tts_engine import TtsCancelled, ensure_mp3_suffix, suggested_output_path
-from voicebridge.tts_text import split_tts_text_for_tts
+from voicebridge.tts_text import split_edge_tts_text_for_tts, split_tts_text_for_tts
 from voicebridge.tts_timeline import load_local_tts_chunk_timeline, remove_tts_timeline, write_tts_timeline
 from voicebridge.ui.helpers import open_path, qt_file_filter
 from voicebridge.ui.widgets import Card, FilePicker
@@ -102,6 +103,7 @@ from voicebridge.voices import (
 LOCAL_TTS_MODEL_MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
 TTS_OUTPUT_MIN_FREE_BYTES = 128 * 1024 * 1024
 EDGE_TTS_RETRY_INTERVAL_MS = 2 * 60 * 1000
+EDGE_TTS_BLOCK_ATTEMPTS = 2
 
 
 class EdgeTtsUnavailableError(Exception):
@@ -1312,7 +1314,7 @@ class TtsWorkflowMixin:
         cached_text = self.cached_input_text if signature == self.cached_input_signature else None
         self.tts_running_source_path = input_path
         self.tts_cpu_retry_callback = None
-        self.start_tts_busy("Reading file...")
+        self.start_tts_busy("Reading file...", percent=True)
         threading.Thread(
             target=self.conversion_worker,
             args=(input_path, save_path, voice, rate, cached_text),
@@ -1878,16 +1880,83 @@ class TtsWorkflowMixin:
                 raise TtsCancelled()
             if not text.strip():
                 raise ValueError("The selected file appears to contain no readable text.")
-            self.post(self.tts_status.setText, "Generating audio... please wait.")
+            chunks = split_edge_tts_text_for_tts(text)
+            if not chunks:
+                raise ValueError("The selected file appears to contain no readable text.")
+            self.post(self.tts_status.setText, "Generating audio blocks... please wait.")
             with tempfile.TemporaryDirectory(
                 prefix="voicebridge-tts-",
                 dir=Path(save_path).resolve().parent,
-            ) as temp_dir:
-                temp_output = Path(temp_dir) / Path(save_path).name
-                asyncio.run(self.generate_edge_audio_to_file(text, voice, str(temp_output), rate))
+            ) as temp_dir_name:
+                temp_dir = Path(temp_dir_name)
+                part_paths = []
+                timeline_blocks = []
+                timeline_cursor = 0.0
+                total = max(1, len(chunks))
+                for index, chunk_text in enumerate(chunks, start=1):
+                    if self.tts_cancel_requested:
+                        raise TtsCancelled()
+                    part_path = temp_dir / f"part-{index:04d}.mp3"
+                    part_duration = 0.0
+                    for attempt in range(1, EDGE_TTS_BLOCK_ATTEMPTS + 1):
+                        with suppress(OSError):
+                            part_path.unlink(missing_ok=True)
+                        status = f"Generating block {index}/{total}..."
+                        if attempt > 1:
+                            status = f"Retrying block {index}/{total}..."
+                        self.post(self.tts_status.setText, status)
+                        self.post(self.update_tts_progress_percent, ((index - 1) / total) * 90)
+                        try:
+                            asyncio.run(self.generate_edge_audio_to_file(chunk_text, voice, str(part_path), rate))
+                            part_duration = audio_duration_seconds(part_path)
+                            break
+                        except TtsCancelled:
+                            with suppress(OSError):
+                                part_path.unlink(missing_ok=True)
+                            raise
+                        except (EdgeTtsUnavailableError, OSError, RuntimeError, TimeoutError):
+                            with suppress(OSError):
+                                part_path.unlink(missing_ok=True)
+                            if self.tts_cancel_requested:
+                                raise TtsCancelled() from None
+                            if attempt >= EDGE_TTS_BLOCK_ATTEMPTS:
+                                raise
+                    if self.tts_cancel_requested:
+                        raise TtsCancelled()
+                    part_paths.append(part_path)
+                    timeline_blocks.append(
+                        self.tts_timeline_block(
+                            index=len(timeline_blocks) + 1,
+                            source_block_index=1,
+                            chunk_index=index,
+                            start_seconds=timeline_cursor,
+                            duration_seconds=part_duration,
+                            text=chunk_text,
+                            voice_short_name=voice,
+                            rate=rate,
+                        )
+                    )
+                    timeline_cursor += part_duration
+                    self.post(self.update_tts_progress_percent, (index / total) * 90)
+                self.post(self.tts_status.setText, self.tts_text("Merging audio blocks..."))
+                self.post(self.update_tts_progress_percent, 95)
+                temp_output = temp_dir / Path(save_path).name
+                if len(part_paths) == 1:
+                    shutil.copy2(part_paths[0], temp_output)
+                else:
+                    concatenate_mp3_files(part_paths, temp_output)
                 if self.tts_cancel_requested:
                     raise TtsCancelled()
                 os.replace(temp_output, save_path)
+                write_tts_timeline(
+                    save_path,
+                    engine="edge",
+                    mode="single",
+                    source_path=input_path,
+                    blocks=timeline_blocks,
+                    total_duration_seconds=audio_duration_seconds(save_path),
+                )
+                self.post(self.update_tts_progress_percent, 100)
             self.post(self.conversion_succeeded, save_path, input_path)
         except TtsCancelled:
             self.post(self.conversion_cancelled)

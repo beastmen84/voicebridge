@@ -1,7 +1,9 @@
 from voicebridge.tts_text import (
+    EDGE_TTS_MAX_CHUNK_CHARS,
     normalize_tts_text,
     prepare_tts_chunk_for_generation,
     sentence_fragments_for_tts,
+    split_edge_tts_text_for_tts,
     split_tts_text_for_tts,
 )
 
@@ -46,3 +48,28 @@ def test_prepare_tts_chunk_for_generation_softens_terminal_punctuation() -> None
 
 def test_split_tts_text_for_tts_merges_short_exclamation_chunks() -> None:
     assert split_tts_text_for_tts("Bro!\nFra!\nVenite qui!") == ["Bro! Fra! Venite qui!"]
+
+
+def test_split_edge_tts_text_for_tts_packs_clean_sentence_blocks() -> None:
+    text = " ".join(
+        f"Frase numero {index} con contenuto sufficiente per riempire il blocco senza tagli bruschi."
+        for index in range(1, 16)
+    )
+
+    chunks = split_edge_tts_text_for_tts(text, target_chars=210, max_chars=300)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 300 for chunk in chunks)
+    assert all(chunk.endswith(".") for chunk in chunks)
+
+
+def test_split_edge_tts_text_for_tts_keeps_realistic_chunks_under_maximum() -> None:
+    paragraph = " ".join(
+        f"Questo e' il periodo {index}, con parole aggiuntive per simulare un documento lungo."
+        for index in range(1, 900)
+    )
+
+    chunks = split_edge_tts_text_for_tts(paragraph)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= EDGE_TTS_MAX_CHUNK_CHARS for chunk in chunks)

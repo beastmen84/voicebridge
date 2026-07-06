@@ -11,14 +11,14 @@ from voicebridge.tts_text import (
 def test_normalize_tts_text_handles_numbered_lists_and_file_extensions() -> None:
     text = "1. Primo punto\n2) Secondo punto\nApri file.txt ... poi video.mp4"
 
-    assert normalize_tts_text(text) == "1, Primo punto 2, Secondo punto Apri file txt, poi video mp4"
+    assert normalize_tts_text(text) == "1: Primo punto 2: Secondo punto Apri file txt, poi video mp4"
 
 
 def test_normalize_tts_text_handles_pdf_numbered_items_without_touching_inline_numbers() -> None:
     text = "1 Da mio nonno Vero.\n12 marzo resta una data.\nNel testo 3 Da non apre un punto."
 
     assert normalize_tts_text(text) == (
-        "1, Da mio nonno Vero. 12 marzo resta una data. Nel testo 3 Da non apre un punto."
+        "1: Da mio nonno Vero. 12 marzo resta una data. Nel testo 3 Da non apre un punto."
     )
 
 

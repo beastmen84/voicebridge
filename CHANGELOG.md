@@ -6,7 +6,7 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 ## Unreleased
 
-No unreleased changes.
+- Changed TTS numbered item normalization from comma to colon for a clearer pause after list numbers.
 
 ## 1.0.3 - PDF TTS text cleanup
 

@@ -1,6 +1,6 @@
 from voicebridge.app_paths import external_base_dir, source_base_dir
 
-APP_VERSION_FALLBACK = "1.0.2"
+APP_VERSION_FALLBACK = "1.0.3"
 VERSION_FILENAME = "VERSION"
 
 

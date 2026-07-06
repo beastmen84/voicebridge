@@ -44,6 +44,7 @@ def normalize_tts_text(text: str) -> str:
         flags=re.IGNORECASE,
     )
     text = re.sub(r"(?m)^\s*(\d{1,3})[.)]\s+", r"\1, ", text)
+    text = re.sub(r"(?m)^(\s*)(\d{1,3})(?![.,)\d])\s+(?=[A-ZÀ-ÖØ-Þ])", r"\1\2, ", text)
     text = re.sub(r"(?m)^\s*(?:[-*]|\u2022)\s+", "", text)
     text = re.sub(r"[ \t\f\v]+", " ", text)
     text = re.sub(r" *\n+ *", "\n", text)

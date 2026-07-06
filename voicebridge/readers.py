@@ -52,6 +52,8 @@ TESSERACT_WINDOWS_CANDIDATES = (
 )
 TESSERACT_NOT_INSTALLED_TEXT = "Tesseract OCR is not installed or is not available in PATH."
 WORD_REQUIRED_TEXT = "This requires Microsoft Word installed."
+PDF_NUMBERED_ITEM_RE = re.compile(r"^\s*\d{1,3}(?:[.)])?\s+\S")
+PDF_UPPER_HEADING_RE = re.compile(r"^[A-ZÀ-ÖØ-Þ0-9][A-ZÀ-ÖØ-Þ0-9 '’().,-]{0,80}$")
 
 
 def alphabetic_char_count(text):
@@ -134,6 +136,39 @@ def extract_pdf_page_text(page, page_number):
     if alphabetic_char_count(layout_text) > alphabetic_char_count(plain_text):
         return layout_text
     return plain_text
+
+
+def pdf_line_starts_paragraph(line):
+    return bool(PDF_NUMBERED_ITEM_RE.match(line) or PDF_UPPER_HEADING_RE.match(line))
+
+
+def join_pdf_lines(previous, current):
+    if previous.endswith("-"):
+        return f"{previous[:-1]}{current}"
+    return f"{previous} {current}"
+
+
+def clean_pdf_text(text):
+    # PDF extractors often return visual lines, not logical paragraphs.
+    paragraphs = []
+    current = ""
+
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").splitlines():
+        line = re.sub(r"[ \t]+", " ", raw_line.strip())
+        if not line:
+            continue
+        if not current:
+            current = line
+            continue
+        if pdf_line_starts_paragraph(line):
+            paragraphs.append(current)
+            current = line
+        else:
+            current = join_pdf_lines(current, line)
+
+    if current:
+        paragraphs.append(current)
+    return "\n\n".join(paragraphs).strip()
 
 
 def load_ocr_dependencies():
@@ -235,9 +270,10 @@ def read_pdf(path):
     pages_needing_ocr = []
 
     for page_number, page in enumerate(reader.pages, start=1):
-        text = clean_text(extract_pdf_page_text(page, page_number))
+        text = extract_pdf_page_text(page, page_number)
+        clean_page_text = clean_pdf_text(text)
 
-        if alphabetic_char_count(text) >= MIN_PDF_PAGE_ALPHA_CHARS:
+        if alphabetic_char_count(clean_page_text) >= MIN_PDF_PAGE_ALPHA_CHARS:
             pages_by_number[page_number] = text
         else:
             pages_needing_ocr.append(page_number)
@@ -259,10 +295,10 @@ def read_pdf(path):
             message = f"{message} If it is scanned or image-based, run OCR first."
         raise ValueError(message)
 
-    return "\n\n".join(
+    return clean_pdf_text("\n".join(
         pages_by_number[page_number]
         for page_number in sorted(pages_by_number)
-    )
+    ))
 
 
 def read_doc_legacy(path):

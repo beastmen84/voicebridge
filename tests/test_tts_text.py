@@ -14,6 +14,14 @@ def test_normalize_tts_text_handles_numbered_lists_and_file_extensions() -> None
     assert normalize_tts_text(text) == "1, Primo punto 2, Secondo punto Apri file txt, poi video mp4"
 
 
+def test_normalize_tts_text_handles_pdf_numbered_items_without_touching_inline_numbers() -> None:
+    text = "1 Da mio nonno Vero.\n12 marzo resta una data.\nNel testo 3 Da non apre un punto."
+
+    assert normalize_tts_text(text) == (
+        "1, Da mio nonno Vero. 12 marzo resta una data. Nel testo 3 Da non apre un punto."
+    )
+
+
 def test_sentence_fragments_keep_common_abbreviations_together() -> None:
     text = normalize_tts_text("Il Dott. Rossi parla. Poi continua.")
 

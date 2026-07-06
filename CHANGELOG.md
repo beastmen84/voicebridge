@@ -8,6 +8,11 @@ VoiceBridge currently uses manual release notes. The beta versions below are rec
 
 No unreleased changes.
 
+## 1.0.3 - PDF TTS text cleanup
+
+- Reflowed PDF visual lines before TTS so wrapped sentences no longer create artificial pauses.
+- Normalized PDF-style numbered item prefixes such as `1 Text` only at line starts before TTS.
+
 ## 1.0.2 - Edge TTS long text reliability
 
 - Split single-voice Edge TTS generation into retryable MP3 blocks before merging long outputs.
